@@ -1,3 +1,6 @@
+"use client";
+
+import React, { useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,7 +13,6 @@ import ReactorSimulator from "./pages/ReactorSimulator";
 const queryClient = new QueryClient();
 
 const App = () => (
-
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -19,7 +21,6 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/reactor" element={<ReactorSimulator />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
