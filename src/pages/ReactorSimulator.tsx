@@ -23,6 +23,11 @@ import {
   Activity
 } from "lucide-react";
 
+// Constants for turbine RPM mapping
+const TURBINE_RPM_SCALE = 45; // 0-100 scale maps to 0-4500 RPM
+const SYNC_RPM = 3000;
+const SYNC_TURBINE_SPEED = SYNC_RPM / TURBINE_RPM_SCALE; // 66.67%
+
 const ReactorSimulator = () => {
   const [activePanel, setActivePanel] = useState("status");
   const [reactorPower, setReactorPower] = useState(0);
@@ -35,18 +40,27 @@ const ReactorSimulator = () => {
   const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
   const [coolantFlow, setCoolantFlow] = useState(50);
   const [fuelEnrichment, setFuelEnrichment] = useState(3);
-
-  // Gradual turbine speed adjustment (halved ramp rate)
+  
+  // Steam valve controls
+  const [valveValue, setValveValue] = useState(50);
+  const [valveDirection, setValveDirection] = useState(0); // 0 = idle, 1 = increasing, -1 = decreasing
+  
+  // Sync lock state
+  const [isLocked, setIsLocked] = useState(false);
+  
+  // Gradual turbine speed adjustment
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
+    // Determine target based on lock state
+    const currentTarget = isLocked ? SYNC_TURBINE_SPEED : targetTurbineSpeed;
+    
     if (isRunning && reactorPower > 0) {
       interval = setInterval(() => {
-        // Gradually adjust turbine speed towards target with slower ramp
         setTurbineSpeed(prev => {
-          const diff = targetTurbineSpeed - prev;
+          const diff = currentTarget - prev;
           if (Math.abs(diff) < 0.1) {
-            return targetTurbineSpeed;
+            return currentTarget;
           }
           return prev + diff * 0.025; // Slower ramp (2.5% per tick)
         });
@@ -54,7 +68,32 @@ const ReactorSimulator = () => {
     }
     
     return () => clearInterval(interval);
-  }, [isRunning, reactorPower, targetTurbineSpeed]);
+  }, [isRunning, reactorPower, targetTurbineSpeed, isLocked]);
+  
+  // Steam valve value changer (1% per second)
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (valveDirection !== 0) {
+      interval = setInterval(() => {
+        setValveValue(prev => {
+          const newVal = prev + valveDirection * 0.1; // 0.1% per tick = 1% per second
+          if (newVal >= 100) return 100;
+          if (newVal <= 0) return 0;
+          return newVal;
+        });
+      }, 100);
+    }
+    
+    return () => clearInterval(interval);
+  }, [valveDirection]);
+  
+  // Sync target turbine speed with valve value when unlocked
+  useEffect(() => {
+    if (!isLocked) {
+      setTargetTurbineSpeed(valveValue);
+    }
+  }, [valveValue, isLocked]);
 
   // Simulate reactor physics
   useEffect(() => {
@@ -73,10 +112,9 @@ const ReactorSimulator = () => {
         
         // Grid sync depends on turbine speed matching 3000 RPM ± 3
         const syncMargin = 3;
-        const targetRPM = 3000;
-        const actualRPM = turbineSpeed * 30; // Convert 0-100 scale to 0-3000 RPM
+        const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
         
-        if (Math.abs(actualRPM - targetRPM) <= syncMargin) {
+        if (Math.abs(actualRPM - SYNC_RPM) <= syncMargin) {
           setGridSync(prev => Math.min(prev + 0.5, 100));
         } else {
           setGridSync(prev => Math.max(prev - 0.5, 0));
@@ -137,29 +175,46 @@ const ReactorSimulator = () => {
     return "STANDBY";
   };
 
-  // Calculate actual RPM from 0-100 scale (now 0-4500 RPM)
-  const actualRPM = turbineSpeed * 45; // Changed from 30 to 45
-  const targetRPM = targetTurbineSpeed * 45; // Changed from 30 to 45
+  // Calculate actual RPM
+  const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
+  const targetRPM = targetTurbineSpeed * TURBINE_RPM_SCALE;
   const syncMargin = 3;
-  const targetSyncRPM = 3000;
   
   // Check if synchronized
-  const isSynchronized = Math.abs(actualRPM - targetSyncRPM) <= syncMargin;
-  const syncDeviation = actualRPM - targetSyncRPM;
+  const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= syncMargin;
+  const syncDeviation = actualRPM - SYNC_RPM;
 
-  // Render synchronoscope with proper rotation
+  // Handle valve button presses
+  const handleValvePress = (direction: number) => {
+    setValveDirection(direction);
+  };
+
+  // Sync button handler
+  const handleSyncPress = () => {
+    if (isSynchronized) {
+      if (isLocked) {
+        // Unlock: set target to current valve value
+        setIsLocked(false);
+        setTargetTurbineSpeed(valveValue);
+      } else {
+        // Lock: set target to sync speed (66.67%)
+        setIsLocked(true);
+        setTargetTurbineSpeed(SYNC_TURBINE_SPEED);
+      }
+    }
+  };
+
+  // Render synchronoscope
   const renderSynchronoscope = () => {
     const centerX = 150;
     const centerY = 150;
     const radius = 120;
     
     // Calculate needle angle - 3000 RPM at top (0 degrees), range 0-4500 RPM
-    // 0 RPM = -90 degrees (bottom), 4500 RPM = +90 degrees (top)
     const minRPM = 0;
     const maxRPM = 4500;
     const normalizedRPM = Math.max(minRPM, Math.min(maxRPM, actualRPM));
-    // Map 0-4500 RPM to -90 to +90 degrees, with 3000 RPM at 0 degrees
-    const angle = ((normalizedRPM - 3000) / 1500) * 90;
+    const angle = ((normalizedRPM - SYNC_RPM) / (maxRPM - SYNC_RPM) * 90);
     
     const needleX = centerX + radius * 0.8 * Math.cos(angle * Math.PI / 180);
     const needleY = centerY + radius * 0.8 * Math.sin(angle * Math.PI / 180);
@@ -167,7 +222,7 @@ const ReactorSimulator = () => {
     // Draw scale marks
     const marks = [];
     for (let rpm = 0; rpm <= 4500; rpm += 500) {
-      const markAngle = ((rpm - 3000) / 1500) * 90;
+      const markAngle = ((rpm - SYNC_RPM) / (maxRPM - SYNC_RPM) * 90);
       const x1 = centerX + radius * 0.9 * Math.cos(markAngle * Math.PI / 180);
       const y1 = centerY + radius * 0.9 * Math.sin(markAngle * Math.PI / 180);
       const x2 = centerX + radius * 1.0 * Math.cos(markAngle * Math.PI / 180);
@@ -186,8 +241,8 @@ const ReactorSimulator = () => {
     }
     
     // Draw sync zone (green arc for ±3 RPM around 3000)
-    const syncStartAngle = -3 / 1500 * 90;
-    const syncEndAngle = 3 / 1500 * 90;
+    const syncStartAngle = -3 / (maxRPM - SYNC_RPM) * 90;
+    const syncEndAngle = 3 / (maxRPM - SYNC_RPM) * 90;
     
     return (
       <svg width="300" height="300" viewBox="0 0 300 300">
@@ -227,7 +282,7 @@ const ReactorSimulator = () => {
           {actualRPM.toFixed(0)} RPM
         </text>
         <text x={centerX} y={centerY + 60} fill="white" fontSize="10" textAnchor="middle" dominantBaseline="middle">
-          Target: 3000 ± 3
+          Target: {SYNC_RPM} ± {syncMargin}
         </text>
       </svg>
     );
@@ -576,7 +631,7 @@ const ReactorSimulator = () => {
                         )}
                       </div>
                       <div className="text-sm text-gray-400">
-                        Target: 3000 RPM ± 3 | Current: {actualRPM.toFixed(0)} RPM
+                        Target: {SYNC_RPM} RPM ± {syncMargin} | Current: {actualRPM.toFixed(0)} RPM
                       </div>
                       <div className="text-sm text-gray-400">
                         Deviation: {Math.abs(syncDeviation).toFixed(1)} RPM {syncDeviation > 0 ? "(high)" : syncDeviation < 0 ? "(low)" : ""}
@@ -593,24 +648,66 @@ const ReactorSimulator = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">
-                        Target Turbine Speed (RPM: {targetRPM.toFixed(0)})
-                      </label>
-                      <Slider
-                        value={[targetTurbineSpeed]}
-                        onValueChange={(value) => setTargetTurbineSpeed(value[0])}
-                        max={100}
-                        step={0.1}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>0 RPM</span>
-                        <span>4500 RPM</span>
+                    {/* Steam Valve Display */}
+                    <div className="flex flex-col items-center space-y-2">
+                      <div className="text-2xl font-bold bg-slate-800/50 p-3 rounded-lg w-32 text-center border border-cyan-500/30">
+                        {Math.round(valveValue)}%
+                      </div>
+                      
+                      <div className="flex space-x-4">
+                        <Button
+                          onClick={() => handleValvePress(-1)}
+                          className={`
+                            px-4 py-2 rounded-md font-medium text-base
+                            ${valveDirection === -1 
+                              ? 'bg-red-600 hover:bg-red-700 text-white' 
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'
+                            }
+                          `}
+                        >
+                          −
+                        </Button>
+                        
+                        <Button
+                          onClick={() => handleValvePress(1)}
+                          className={`
+                            px-4 py-2 rounded-md font-medium text-base
+                            ${valveDirection === 1 
+                              ? 'bg-red-600 hover:bg-red-700 text-white' 
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'
+                            }
+                          `}
+                        >
+                          +
+                        </Button>
+                      </div>
+                      
+                      <div className="text-xs text-gray-400 mt-1">
+                        Steam Input Valve
                       </div>
                     </div>
                     
-                    <div className="p-4 bg-slate-900/50 rounded-lg border border-green-500/30">
+                    {/* Sync Button */}
+                    <div className="flex justify-center mt-4">
+                      <Button
+                        onClick={handleSyncPress}
+                        disabled={!isSynchronized}
+                        className={`
+                          px-6 py-3 rounded-md font-bold text-base
+                          ${isLocked 
+                            ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' 
+                            : isSynchronized 
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' 
+                              : 'bg-slate-800/50 border border-gray-600 text-gray-500'
+                          }
+                        `}
+                      >
+                        {isLocked ? 'UNLOCK' : 'SYNC'}
+                      </Button>
+                    </div>
+                    
+                    {/* Turbine Status */}
+                    <div className="mt-4 p-4 bg-slate-900/50 rounded-lg border border-green-500/30">
                       <h3 className="text-green-400 font-bold mb-2">Turbine Status</h3>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
@@ -632,6 +729,12 @@ const ReactorSimulator = () => {
                         <div className="flex justify-between">
                           <span>Ramp Rate:</span>
                           <span>2.5% per tick</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Lock Status:</span>
+                          <span className={isLocked ? "text-green-400" : "text-yellow-400"}>
+                            {isLocked ? "LOCKED" : "UNLOCKED"}
+                          </span>
                         </div>
                       </div>
                     </div>
