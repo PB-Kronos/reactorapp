@@ -36,19 +36,19 @@ const ReactorSimulator = () => {
   const [coolantFlow, setCoolantFlow] = useState(50);
   const [fuelEnrichment, setFuelEnrichment] = useState(3);
 
-  // Gradual turbine speed adjustment
+  // Gradual turbine speed adjustment (halved ramp rate)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
     if (isRunning && reactorPower > 0) {
       interval = setInterval(() => {
-        // Gradually adjust turbine speed towards target
+        // Gradually adjust turbine speed towards target with slower ramp
         setTurbineSpeed(prev => {
           const diff = targetTurbineSpeed - prev;
           if (Math.abs(diff) < 0.1) {
             return targetTurbineSpeed;
           }
-          return prev + diff * 0.05; // Smooth ramp (5% per tick)
+          return prev + diff * 0.025; // Slower ramp (2.5% per tick)
         });
       }, 100);
     }
@@ -137,9 +137,9 @@ const ReactorSimulator = () => {
     return "STANDBY";
   };
 
-  // Calculate actual RPM from 0-100 scale
-  const actualRPM = turbineSpeed * 30;
-  const targetRPM = targetTurbineSpeed * 30;
+  // Calculate actual RPM from 0-100 scale (now 0-4500 RPM)
+  const actualRPM = turbineSpeed * 45; // Changed from 30 to 45
+  const targetRPM = targetTurbineSpeed * 45; // Changed from 30 to 45
   const syncMargin = 3;
   const targetSyncRPM = 3000;
   
@@ -147,26 +147,27 @@ const ReactorSimulator = () => {
   const isSynchronized = Math.abs(actualRPM - targetSyncRPM) <= syncMargin;
   const syncDeviation = actualRPM - targetSyncRPM;
 
-  // Render synchronoscope
+  // Render synchronoscope with proper rotation
   const renderSynchronoscope = () => {
     const centerX = 150;
     const centerY = 150;
     const radius = 120;
     
-    // Calculate needle angle (centered at 3000 RPM)
-    // Range: 2970 to 3030 RPM maps to -90 to +90 degrees
-    const minRPM = targetSyncRPM - 30;
-    const maxRPM = targetSyncRPM + 30;
+    // Calculate needle angle - 3000 RPM at top (0 degrees), range 0-4500 RPM
+    // 0 RPM = -90 degrees (bottom), 4500 RPM = +90 degrees (top)
+    const minRPM = 0;
+    const maxRPM = 4500;
     const normalizedRPM = Math.max(minRPM, Math.min(maxRPM, actualRPM));
-    const angle = ((normalizedRPM - minRPM) / (maxRPM - minRPM) * 180) - 90;
+    // Map 0-4500 RPM to -90 to +90 degrees, with 3000 RPM at 0 degrees
+    const angle = ((normalizedRPM - 3000) / 1500) * 90;
     
     const needleX = centerX + radius * 0.8 * Math.cos(angle * Math.PI / 180);
     const needleY = centerY + radius * 0.8 * Math.sin(angle * Math.PI / 180);
     
     // Draw scale marks
     const marks = [];
-    for (let rpm = 2970; rpm <= 3030; rpm += 30) {
-      const markAngle = ((rpm - minRPM) / (maxRPM - minRPM) * 180) - 90;
+    for (let rpm = 0; rpm <= 4500; rpm += 500) {
+      const markAngle = ((rpm - 3000) / 1500) * 90;
       const x1 = centerX + radius * 0.9 * Math.cos(markAngle * Math.PI / 180);
       const y1 = centerY + radius * 0.9 * Math.sin(markAngle * Math.PI / 180);
       const x2 = centerX + radius * 1.0 * Math.cos(markAngle * Math.PI / 180);
@@ -184,6 +185,10 @@ const ReactorSimulator = () => {
       );
     }
     
+    // Draw sync zone (green arc for ±3 RPM around 3000)
+    const syncStartAngle = -3 / 1500 * 90;
+    const syncEndAngle = 3 / 1500 * 90;
+    
     return (
       <svg width="300" height="300" viewBox="0 0 300 300">
         {/* Background circle */}
@@ -191,7 +196,7 @@ const ReactorSimulator = () => {
         
         {/* Sync zone (green arc for ±3 RPM around 3000) */}
         <path
-          d={`M ${centerX} ${centerY} L ${centerX + radius * 0.95 * Math.cos((-90) * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin((-90) * Math.PI / 180)} A ${radius * 0.95} ${radius * 0.95} 0 0 1 ${centerX + radius * 0.95 * Math.cos((90) * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin((90) * Math.PI / 180)} Z`}
+          d={`M ${centerX} ${centerY} L ${centerX + radius * 0.95 * Math.cos(syncStartAngle * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin(syncStartAngle * Math.PI / 180)} A ${radius * 0.95} ${radius * 0.95} 0 0 1 ${centerX + radius * 0.95 * Math.cos(syncEndAngle * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin(syncEndAngle * Math.PI / 180)} Z`}
           fill="rgba(34, 197, 94, 0.2)"
           stroke="rgb(34, 197, 94)"
           strokeWidth="2"
@@ -601,7 +606,7 @@ const ReactorSimulator = () => {
                       />
                       <div className="flex justify-between text-xs text-gray-400 mt-1">
                         <span>0 RPM</span>
-                        <span>3000 RPM</span>
+                        <span>4500 RPM</span>
                       </div>
                     </div>
                     
@@ -626,7 +631,7 @@ const ReactorSimulator = () => {
                         </div>
                         <div className="flex justify-between">
                           <span>Ramp Rate:</span>
-                          <span>5% per tick</span>
+                          <span>2.5% per tick</span>
                         </div>
                       </div>
                     </div>
