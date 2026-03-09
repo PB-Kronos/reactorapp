@@ -71,6 +71,7 @@ const Index = () => {
           <Button 
             size="lg" 
             className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
+            onClick={() => window.location.href = '/reactor'}
           >
             ENTER REACTOR CONTROL SYSTEM
             <ArrowRight className="ml-2" size={20} />
