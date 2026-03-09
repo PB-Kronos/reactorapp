@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -19,7 +19,8 @@ import {
   Grid3X3,
   ArrowLeft,
   ArrowRight,
-  ArrowDown
+  ArrowDown,
+  Activity
 } from "lucide-react";
 
 const ReactorSimulator = () => {
@@ -31,8 +32,29 @@ const ReactorSimulator = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [gridSync, setGridSync] = useState(0);
   const [turbineSpeed, setTurbineSpeed] = useState(0);
+  const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
   const [coolantFlow, setCoolantFlow] = useState(50);
   const [fuelEnrichment, setFuelEnrichment] = useState(3);
+
+  // Gradual turbine speed adjustment
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isRunning && reactorPower > 0) {
+      interval = setInterval(() => {
+        // Gradually adjust turbine speed towards target
+        setTurbineSpeed(prev => {
+          const diff = targetTurbineSpeed - prev;
+          if (Math.abs(diff) < 0.1) {
+            return targetTurbineSpeed;
+          }
+          return prev + diff * 0.05; // Smooth ramp (5% per tick)
+        });
+      }, 100);
+    }
+    
+    return () => clearInterval(interval);
+  }, [isRunning, reactorPower, targetTurbineSpeed]);
 
   // Simulate reactor physics
   useEffect(() => {
@@ -49,8 +71,16 @@ const ReactorSimulator = () => {
         // Fuel depletes with power
         setFuelLevel(prev => Math.max(prev - reactorPower * 0.001, 0));
         
-        // Grid sync increases with turbine speed
-        setGridSync(prev => Math.min(prev + turbineSpeed * 0.01, 100));
+        // Grid sync depends on turbine speed matching 3000 RPM ± 3
+        const syncMargin = 3;
+        const targetRPM = 3000;
+        const actualRPM = turbineSpeed * 30; // Convert 0-100 scale to 0-3000 RPM
+        
+        if (Math.abs(actualRPM - targetRPM) <= syncMargin) {
+          setGridSync(prev => Math.min(prev + 0.5, 100));
+        } else {
+          setGridSync(prev => Math.max(prev - 0.5, 0));
+        }
       }, 100);
     }
     
@@ -76,12 +106,13 @@ const ReactorSimulator = () => {
   const startReactor = () => {
     setIsRunning(true);
     setReactorPower(50);
+    setTargetTurbineSpeed(50);
   };
 
   const stopReactor = () => {
     setIsRunning(false);
     setReactorPower(0);
-    setTurbineSpeed(0);
+    setTargetTurbineSpeed(0);
   };
 
   const emergencyShutdown = () => {
@@ -89,7 +120,7 @@ const ReactorSimulator = () => {
     setReactorPower(0);
     setTemperature(25);
     setPressure(1);
-    setTurbineSpeed(0);
+    setTargetTurbineSpeed(0);
     setGridSync(0);
   };
 
@@ -106,11 +137,102 @@ const ReactorSimulator = () => {
     return "STANDBY";
   };
 
+  // Calculate actual RPM from 0-100 scale
+  const actualRPM = turbineSpeed * 30;
+  const targetRPM = targetTurbineSpeed * 30;
+  const syncMargin = 3;
+  const targetSyncRPM = 3000;
+  
+  // Check if synchronized
+  const isSynchronized = Math.abs(actualRPM - targetSyncRPM) <= syncMargin;
+  const syncDeviation = actualRPM - targetSyncRPM;
+
+  // Render synchronoscope
+  const renderSynchronoscope = () => {
+    const centerX = 150;
+    const centerY = 150;
+    const radius = 120;
+    
+    // Calculate needle angle (centered at 3000 RPM)
+    // Range: 2970 to 3030 RPM maps to -90 to +90 degrees
+    const minRPM = targetSyncRPM - 30;
+    const maxRPM = targetSyncRPM + 30;
+    const normalizedRPM = Math.max(minRPM, Math.min(maxRPM, actualRPM));
+    const angle = ((normalizedRPM - minRPM) / (maxRPM - minRPM) * 180) - 90;
+    
+    const needleX = centerX + radius * 0.8 * Math.cos(angle * Math.PI / 180);
+    const needleY = centerY + radius * 0.8 * Math.sin(angle * Math.PI / 180);
+    
+    // Draw scale marks
+    const marks = [];
+    for (let rpm = 2970; rpm <= 3030; rpm += 30) {
+      const markAngle = ((rpm - minRPM) / (maxRPM - minRPM) * 180) - 90;
+      const x1 = centerX + radius * 0.9 * Math.cos(markAngle * Math.PI / 180);
+      const y1 = centerY + radius * 0.9 * Math.sin(markAngle * Math.PI / 180);
+      const x2 = centerX + radius * 1.0 * Math.cos(markAngle * Math.PI / 180);
+      const y2 = centerY + radius * 1.0 * Math.sin(markAngle * Math.PI / 180);
+      marks.push(
+        <line key={rpm} x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="2" />
+      );
+      // Add label
+      const labelX = centerX + radius * 1.1 * Math.cos(markAngle * Math.PI / 180);
+      const labelY = centerY + radius * 1.1 * Math.sin(markAngle * Math.PI / 180);
+      marks.push(
+        <text key={`label-${rpm}`} x={labelX} y={labelY} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+          {rpm}
+        </text>
+      );
+    }
+    
+    return (
+      <svg width="300" height="300" viewBox="0 0 300 300">
+        {/* Background circle */}
+        <circle cx={centerX} cy={centerY} r={radius} fill="none" stroke="#333" strokeWidth="2" />
+        
+        {/* Sync zone (green arc for ±3 RPM around 3000) */}
+        <path
+          d={`M ${centerX} ${centerY} L ${centerX + radius * 0.95 * Math.cos((-90) * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin((-90) * Math.PI / 180)} A ${radius * 0.95} ${radius * 0.95} 0 0 1 ${centerX + radius * 0.95 * Math.cos((90) * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin((90) * Math.PI / 180)} Z`}
+          fill="rgba(34, 197, 94, 0.2)"
+          stroke="rgb(34, 197, 94)"
+          strokeWidth="2"
+        />
+        
+        {/* Scale marks */}
+        {marks}
+        
+        {/* Center dot */}
+        <circle cx={centerX} cy={centerY} r="5" fill="white" />
+        
+        {/* Needle */}
+        <line
+          x1={centerX}
+          y1={centerY}
+          x2={needleX}
+          y2={needleY}
+          stroke={isSynchronized ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)"}
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        
+        {/* Sync indicator */}
+        <text x={centerX} y={centerY + 40} fill="white" fontSize="14" textAnchor="middle" dominantBaseline="middle">
+          {isSynchronized ? "SYNC" : "OUT OF SYNC"}
+        </text>
+        <text x={centerX} y={centerY + 60} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+          {actualRPM.toFixed(0)} RPM
+        </text>
+        <text x={centerX} y={centerY + 80} fill="white" fontSize="10" textAnchor="middle" dominantBaseline="middle">
+          Target: 3000 ± 3
+        </text>
+      </svg>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
       <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto">
@@ -432,43 +554,27 @@ const ReactorSimulator = () => {
                 <Card className="bg-slate-800/50 border-blue-500/30">
                   <CardHeader>
                     <CardTitle className="text-blue-400 flex items-center gap-2">
-                      <Grid3X3 className="text-blue-400" size={20} />
-                      Grid Synchronization
+                      <Activity className="text-blue-400" size={20} />
+                      Synchronoscope
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Grid Sync Level</label>
-                      <Slider
-                        value={[gridSync]}
-                        onValueChange={(value) => setGridSync(value[0])}
-                        max={100}
-                        step={0.1}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>0%</span>
-                        <span>100%</span>
-                      </div>
+                  <CardContent>
+                    <div className="flex justify-center mb-4">
+                      {renderSynchronoscope()}
                     </div>
-                    
-                    <div className="p-4 bg-slate-900/50 rounded-lg border border-blue-500/30">
-                      <h3 className="text-blue-400 font-bold mb-2">Grid Status</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Sync Status:</span>
-                          <span className={gridSync > 95 ? "text-green-400" : "text-yellow-400"}>
-                            {gridSync > 95 ? "SYNCHRONIZED" : "SYNCHRONIZING"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Frequency:</span>
-                          <span>50.00 Hz</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Voltage:</span>
-                          <span>110.0 kV</span>
-                        </div>
+                    <div className="text-center space-y-2">
+                      <div className="text-lg font-bold">
+                        {isSynchronized ? (
+                          <span className="text-green-400">✓ SYNCHRONIZED</span>
+                        ) : (
+                          <span className="text-red-400">✗ OUT OF SYNC</span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        Target: 3000 RPM ± 3 | Current: {actualRPM.toFixed(0)} RPM
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        Deviation: {Math.abs(syncDeviation).toFixed(1)} RPM {syncDeviation > 0 ? "(high)" : syncDeviation < 0 ? "(low)" : ""}
                       </div>
                     </div>
                   </CardContent>
@@ -483,17 +589,19 @@ const ReactorSimulator = () => {
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Turbine Speed</label>
+                      <label className="block text-sm font-medium mb-2">
+                        Target Turbine Speed (RPM: {targetRPM.toFixed(0)})
+                      </label>
                       <Slider
-                        value={[turbineSpeed]}
-                        onValueChange={(value) => setTurbineSpeed(value[0])}
+                        value={[targetTurbineSpeed]}
+                        onValueChange={(value) => setTargetTurbineSpeed(value[0])}
                         max={100}
                         step={0.1}
                         className="w-full"
                       />
                       <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>0%</span>
-                        <span>100%</span>
+                        <span>0 RPM</span>
+                        <span>3000 RPM</span>
                       </div>
                     </div>
                     
@@ -501,8 +609,12 @@ const ReactorSimulator = () => {
                       <h3 className="text-green-400 font-bold mb-2">Turbine Status</h3>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span>Speed:</span>
-                          <span>{turbineSpeed.toFixed(1)}%</span>
+                          <span>Target Speed:</span>
+                          <span>{targetRPM.toFixed(0)} RPM</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Actual Speed:</span>
+                          <span>{actualRPM.toFixed(0)} RPM</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Output:</span>
@@ -511,6 +623,10 @@ const ReactorSimulator = () => {
                         <div className="flex justify-between">
                           <span>Efficiency:</span>
                           <span>{(turbineSpeed * 0.95).toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Ramp Rate:</span>
+                          <span>5% per tick</span>
                         </div>
                       </div>
                     </div>
