@@ -52,11 +52,12 @@ const ReactorSimulator = () => {
   
   // Control rod percentage (0-100)
   const [rodPercentage, setRodPercentage] = useState(50);
-  const [rodDirection, setRodDirection] = useState(0); // -1 = decrease, 0 = pause, 1 = increase
+  const [rodDirection, setRodDirection] = useState(0); // -1 = decrease (raise), 0 = pause, 1 = increase (lower)
   
   // Interval references for cleanup
   const valveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const turbineIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const rodIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Steam valve value changer (0.5% per second = 0.05 per tick)
   useEffect(() => {
@@ -88,6 +89,37 @@ const ReactorSimulator = () => {
       }
     };
   }, [valveDirection]);
+
+  // Control rod value changer (1% per second = 0.1 per tick)
+  useEffect(() => {
+    if (rodDirection !== 0) {
+      if (rodIntervalRef.current) {
+        clearInterval(rodIntervalRef.current);
+        rodIntervalRef.current = null;
+      }
+      
+      const interval = setInterval(() => {
+        setRodPercentage(prev => {
+          const newVal = prev + rodDirection * 0.1;
+          return Math.min(Math.max(newVal, 0), 100);
+        });
+      }, 100);
+      
+      rodIntervalRef.current = interval;
+    } else {
+      if (rodIntervalRef.current) {
+        clearInterval(rodIntervalRef.current);
+        rodIntervalRef.current = null;
+      }
+    }
+    
+    return () => {
+      if (rodIntervalRef.current) {
+        clearInterval(rodIntervalRef.current);
+        rodIntervalRef.current = null;
+      }
+    };
+  }, [rodDirection]);
 
   // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
@@ -255,6 +287,15 @@ const ReactorSimulator = () => {
     }
   };
 
+  // Control rod handlers
+  const handleRodPress = (direction: number) => {
+    setRodDirection(direction);
+  };
+
+  const handleRodNeutral = () => {
+    setRodDirection(0);
+  };
+
   // Render synchronoscope
   const renderSynchronoscope = () => {
     const centerX = 150;
@@ -277,14 +318,12 @@ const ReactorSimulator = () => {
       const x2 = centerX + radius * 1.0 * Math.cos(markAngle * Math.PI / 180);
       const y2 = centerY + radius * 1.0 * Math.sin(markAngle * Math.PI / 180);
       marks.push(
-        <line key={rpm} x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="2" />
+        <line key={`mark-${rpm}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="2" />
       );
       const labelX = centerX + radius * 1.1 * Math.cos(markAngle * Math.PI / 180);
       const labelY = centerY + radius * 1.1 * Math.sin(markAngle * Math.PI / 180);
       marks.push(
-        <text key={`label-${rpm}`} x={labelX} y={labelY} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
-          {rpm}
-        </text>
+        <text key={`label-${rpm}`} x={labelX} y={labelY} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle" />
       );
     }
     
@@ -517,13 +556,13 @@ const ReactorSimulator = () => {
                   <div className="flex flex-col items-center space-y-4">
                     {/* Rod percentage display */}
                     <div className="text-4xl font-bold bg-slate-800/50 p-4 rounded-lg w-32 text-center border border-green-500/30">
-                      {rodPercentage}%
+                      {rodPercentage.toFixed(1)}%
                     </div>
                     
                     {/* Control buttons */}
                     <div className="flex space-x-4">
                       <Button
-                        onClick={() => setRodDirection(1)}
+                        onClick={() => handleRodPress(1)}
                         className={`
                           px-6 py-3 rounded-md font-medium text-base
                           ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
@@ -533,7 +572,7 @@ const ReactorSimulator = () => {
                       </Button>
                       
                       <Button
-                        onClick={() => setRodDirection(0)}
+                        onClick={() => handleRodNeutral()}
                         className={`
                           px-6 py-3 rounded-md font-medium text-base
                           ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
@@ -543,7 +582,7 @@ const ReactorSimulator = () => {
                       </Button>
                       
                       <Button
-                        onClick={() => setRodDirection(-1)}
+                        onClick={() => handleRodPress(-1)}
                         className={`
                           px-6 py-3 rounded-md font-medium text-base
                           ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
@@ -568,7 +607,12 @@ const ReactorSimulator = () => {
                     </div>
                     
                     <div className="text-sm text-gray-400 text-center max-w-md">
-                      Controls insertion depth (0-100%). Higher percentage reduces temperature rise.
+                      Controls insertion depth (0-100%). Higher percentage reduces temperature rise from power.
+                      At 100%, power-based temperature rise is fully suppressed. Pressure still affects temperature.
+                      <br /><br />
+                      <strong>+ (Lower):</strong> Inserts rods at 1%/sec<br />
+                      <strong>- (Raise):</strong> Withdraws rods at 1%/sec<br />
+                      <strong>= (Neutral):</strong> Hold position
                     </div>
                   </div>
                 </CardContent>
@@ -779,9 +823,9 @@ const ReactorSimulator = () => {
                         <span>{(pressure * 0.8).toFixed(1)} bar</span>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -846,7 +890,7 @@ const ReactorSimulator = () => {
                         </Button>
                         
                         <Button
-                          onClick={handlePausePress}
+                          onClick={() => handlePausePress()}
                           className={`
                             px-4 py-2 rounded-md font-medium text-base
                             ${valveDirection === 0 
@@ -934,7 +978,7 @@ const ReactorSimulator = () => {
         </div>
 
         {/* Vertical Navigation (Up/Down) */}
-        <div className="flex justify-center">
+        <div className="flex justify-center gap-4">
           <button
             onClick={handleUpArrow}
             className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110"
