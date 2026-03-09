@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { 
@@ -30,7 +29,6 @@ const SYNC_TURBINE_SPEED = SYNC_RPM / TURBINE_RPM_SCALE; // 66.67%
 
 const ReactorSimulator = () => {
   const [activePanel, setActivePanel] = useState("status");
-  const [reactorPower, setReactorPower] = useState(0);
   const [temperature, setTemperature] = useState(25);
   const [pressure, setPressure] = useState(1);
   const [fuelLevel, setFuelLevel] = useState(100);
@@ -39,9 +37,8 @@ const ReactorSimulator = () => {
   const [turbineSpeed, setTurbineSpeed] = useState(0);
   const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
   const [coolantFlow, setCoolantFlow] = useState(50);
-  const [fuelEnrichment, setFuelEnrichment] = useState(3);
   
-  // Steam valve controls
+  // Steam valve controls - now the primary power control
   const [valveValue, setValveValue] = useState(50);
   const [valveDirection, setValveDirection] = useState(0); // 0 = idle, 1 = increasing, -1 = decreasing
   
@@ -52,12 +49,12 @@ const ReactorSimulator = () => {
   const valveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const turbineIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Steam valve value changer (0.5 per second)
+  // Steam valve value changer (0.5% per second = 0.05 per tick)
   useEffect(() => {
     if (valveDirection !== 0) {
       const interval = setInterval(() => {
         setValveValue(prev => {
-          const newVal = prev + valveDirection * 0.05; // 0.5% per tick
+          const newVal = prev + valveDirection * 0.05;
           return Math.min(Math.max(newVal, 0), 100);
         });
       }, 100);
@@ -70,15 +67,15 @@ const ReactorSimulator = () => {
     return () => valveIntervalRef.current?.();
   }, [valveDirection]);
 
-  // Turbine speed adjustment
+  // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
-    if (isRunning && reactorPower > 0) {
+    if (isRunning) {
       const interval = setInterval(() => {
         setTurbineSpeed(prev => {
           const currentTarget = isLocked ? SYNC_TURBINE_SPEED : targetTurbineSpeed;
           const diff = currentTarget - prev;
           if (Math.abs(diff) < 0.01) return currentTarget;
-          return prev + diff * 0.025;
+          return prev + diff * 0.025; // 2.5% per tick adjustment
         });
       }, 100);
       
@@ -88,7 +85,7 @@ const ReactorSimulator = () => {
     }
     
     return () => turbineIntervalRef.current?.();
-  }, [isRunning, reactorPower, targetTurbineSpeed, isLocked]);
+  }, [isRunning, targetTurbineSpeed, isLocked]);
 
   // Sync target turbine speed with valve value when unlocked
   useEffect(() => {
@@ -97,16 +94,23 @@ const ReactorSimulator = () => {
     }
   }, [valveValue, isLocked]);
 
-  // Reactor physics simulation
+  // Reactor physics simulation - now based on valveValue (power output)
   useEffect(() => {
-    if (isRunning && reactorPower > 0) {
+    if (isRunning) {
       const interval = setInterval(() => {
-        setTemperature(prev => Math.min(prev + reactorPower * 0.01, 1200));
-        setPressure(prev => Math.min(prev + temperature * 0.001, 200));
-        setFuelLevel(prev => Math.max(prev - reactorPower * 0.001, 0));
+        // Temperature increases with power (valveValue)
+        setTemperature(prev => Math.min(prev + valveValue * 0.01, 1200));
         
-        const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
+        // Pressure increases with temperature
+        setPressure(prev => Math.min(prev + temperature * 0.001, 200));
+        
+        // Fuel depletes with power (valveValue)
+        setFuelLevel(prev => Math.max(prev - valveValue * 0.001, 0));
+        
+        // Grid sync depends on turbine speed matching 3000 RPM ± 3
         const syncMargin = 3;
+        const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
+        
         if (Math.abs(actualRPM - SYNC_RPM) <= syncMargin) {
           setGridSync(prev => Math.min(prev + 0.5, 100));
         } else {
@@ -114,33 +118,39 @@ const ReactorSimulator = () => {
         }
       }, 100);
       
-      turbineIntervalRef.current?.();
-    } else {
-      turbineIntervalRef.current?.();
+      return () => clearInterval(interval);
     }
-  }, [isRunning, reactorPower, temperature, turbineSpeed]);
+  }, [isRunning, valveValue, temperature, turbineSpeed]);
 
-  // Handle navigation
-  const handleLeftArrow = () => setActivePanel(prev => prev === "status" ? "power-coolant" : "status");
-  const handleRightArrow = () => setActivePanel(prev => prev === "status" ? "power-grid" : "status");
-  const handleBottomArrow = () => setActivePanel(prev => prev === "status" ? "startup-shutdown" : "status");
+  // Navigation handlers
+  const handleLeftArrow = () => {
+    if (activePanel === "status") setActivePanel("power-coolant");
+    else if (activePanel === "power-coolant") setActivePanel("power-grid");
+    else if (activePanel === "power-grid") setActivePanel("status");
+  };
+
+  const handleRightArrow = () => {
+    if (activePanel === "status") setActivePanel("power-grid");
+    else if (activePanel === "power-grid") setActivePanel("status");
+    else if (activePanel === "power-coolant") setActivePanel("status");
+  };
+
+  const handleBottomArrow = () => {
+    setActivePanel(activePanel === "status" ? "startup-shutdown" : "status");
+  };
 
   // Reactor control actions
   const startReactor = () => {
     setIsRunning(true);
-    setReactorPower(50);
-    setTargetTurbineSpeed(50);
   };
   
   const stopReactor = () => {
     setIsRunning(false);
-    setReactorPower(0);
     setTargetTurbineSpeed(0);
   };
   
   const emergencyShutdown = () => {
     setIsRunning(false);
-    setReactorPower(0);
     setTemperature(25);
     setPressure(1);
     setTargetTurbineSpeed(0);
@@ -161,35 +171,86 @@ const ReactorSimulator = () => {
     return "STANDBY";
   };
 
-  // Synchronoscope rendering
+  // Calculate values
+  const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
+  const targetRPM = targetTurbineSpeed * TURBINE_RPM_SCALE;
+  const syncMargin = 3;
+  const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= syncMargin;
+  const syncDeviation = actualRPM - SYNC_RPM;
+  const turbineOutputMW = isRunning ? valveValue * 2 : 0; // 0-200 MW based on valve position
+
+  // Valve control handlers
+  const handleValvePress = (direction: number) => {
+    setValveDirection(direction);
+  };
+
+  const handlePausePress = () => {
+    setValveDirection(0);
+  };
+
+  const handleSyncPress = () => {
+    if (isSynchronized) {
+      if (isLocked) {
+        setIsLocked(false);
+        setTargetTurbineSpeed(valveValue);
+      } else {
+        setIsLocked(true);
+        setTargetTurbineSpeed(SYNC_TURBINE_SPEED);
+      }
+    }
+  };
+
+  // Render synchronoscope
   const renderSynchronoscope = () => {
     const centerX = 150;
     const centerY = 150;
     const radius = 120;
-    
-    const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
-    const normalizedRPM = Math.max(0, Math.min(4500, actualRPM));
-    const angle = ((normalizedRPM - SYNC_RPM) / 4500) * 90;
+    const minRPM = 0;
+    const maxRPM = 4500;
+    const normalizedRPM = Math.max(minRPM, Math.min(maxRPM, actualRPM));
+    const angle = ((normalizedRPM - SYNC_RPM) / (maxRPM - SYNC_RPM) * 90);
     
     const needleX = centerX + radius * 0.8 * Math.cos(angle * Math.PI / 180);
     const needleY = centerY + radius * 0.8 * Math.sin(angle * Math.PI / 180);
     
+    // Draw scale marks
+    const marks = [];
+    for (let rpm = 0; rpm <= 4500; rpm += 500) {
+      const markAngle = ((rpm - SYNC_RPM) / (maxRPM - SYNC_RPM) * 90);
+      const x1 = centerX + radius * 0.9 * Math.cos(markAngle * Math.PI / 180);
+      const y1 = centerY + radius * 0.9 * Math.sin(markAngle * Math.PI / 180);
+      const x2 = centerX + radius * 1.0 * Math.cos(markAngle * Math.PI / 180);
+      const y2 = centerY + radius * 1.0 * Math.sin(markAngle * Math.PI / 180);
+      marks.push(
+        <line key={rpm} x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="2" />
+      );
+      const labelX = centerX + radius * 1.1 * Math.cos(markAngle * Math.PI / 180);
+      const labelY = centerY + radius * 1.1 * Math.sin(markAngle * Math.PI / 180);
+      marks.push(
+        <text key={`label-${rpm}`} x={labelX} y={labelY} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+          {rpm}
+        </text>
+      );
+    }
+    
+    // Draw sync zone
+    const syncStartAngle = -3 / (maxRPM - SYNC_RPM) * 90;
+    const syncEndAngle = 3 / (maxRPM - SYNC_RPM) * 90;
+    
     return (
       <svg width="300" height="300" viewBox="0 0 300 300">
         <circle cx={centerX} cy={centerY} r={radius} fill="none" stroke="#333" strokeWidth="2" />
-        
-        {/* Sync zone */}
         <path
           d={`M ${centerX} ${centerY} 
-            L ${centerX + radius * 0.95 * Math.cos(-3/4500 * 90)} ${centerY + radius * 0.95 * Math.sin(-3/4500 * 90)} 
+            L ${centerX + radius * 0.95 * Math.cos(syncStartAngle * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin(syncStartAngle * Math.PI / 180)} 
             A ${radius * 0.95} ${radius * 0.95} 0 0 1 
-            ${centerX + radius * 0.95 * Math.cos(3/4500 * 90)} ${centerY + radius * 0.95 * Math.sin(3/4500 * 90)} Z`}
+            ${centerX + radius * 0.95 * Math.cos(syncEndAngle * Math.PI / 180)} ${centerY + radius * 0.95 * Math.sin(syncEndAngle * Math.PI / 180)} Z`}
           fill="rgba(34, 197, 94, 0.2)"
           stroke="rgb(34, 197, 94)"
           strokeWidth="2"
         />
-        
-        {/* Needle */}
+        {marks}
+        <circle cx={centerX} cy={centerY} r="5" fill="white" />
         <line
           x1={centerX} y1={centerY}
           x2={needleX} y2={needleY}
@@ -197,13 +258,14 @@ const ReactorSimulator = () => {
           strokeWidth="3"
           strokeLinecap="round"
         />
-        
-        {/* Labels */}
-        <text x={centerX} y={centerY - 40} fill="white" fontSize="14">
+        <text x={centerX} y={centerY - 40} fill="white" fontSize="14" textAnchor="middle" dominantBaseline="middle">
           {isSynchronized ? "SYNC" : "OUT OF SYNC"}
         </text>
-        <text x={centerX} y={centerY + 40} fill="white" fontSize="12">
+        <text x={centerX} y={centerY + 40} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
           {actualRPM.toFixed(0)} RPM
+        </text>
+        <text x={centerX} y={centerY + 60} fill="white" fontSize="10" textAnchor="middle" dominantBaseline="middle">
+          Target: {SYNC_RPM} ± {syncMargin}
         </text>
       </svg>
     );
@@ -258,7 +320,7 @@ const ReactorSimulator = () => {
           {activePanel === "status" && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Power Output */}
+                {/* Power Output - now based on steam valve */}
                 <Card className="bg-slate-800/50 border-cyan-500/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-cyan-400 flex items-center gap-2">
@@ -267,8 +329,8 @@ const ReactorSimulator = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{reactorPower.toFixed(1)} MW</div>
-                    <Progress value={reactorPower} className="mt-2 h-2 bg-cyan-500/20" />
+                    <div className="text-2xl font-bold">{turbineOutputMW.toFixed(1)} MW</div>
+                    <Progress value={valveValue} className="mt-2 h-2 bg-cyan-500/20" />
                   </CardContent>
                 </Card>
 
@@ -442,47 +504,7 @@ const ReactorSimulator = () => {
                 <Card className="bg-slate-800/50 border-cyan-500/30">
                   <CardHeader>
                     <CardTitle className="text-cyan-400 flex items-center gap-2">
-                      <Power className="text-cyan-400" size={20} />
-                      Power Controls
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Reactor Power Output</label>
-                      <Slider
-                        value={[reactorPower]}
-                        onValueChange={(value) => setReactorPower(value[0])}
-                        max={200}
-                        step={1}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>0 MW</span>
-                        <span>200 MW</span>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Fuel Enrichment</label>
-                      <Slider
-                        value={[fuelEnrichment]}
-                        onValueChange={(value) => setFuelEnrichment(value[0])}
-                        max={20}
-                        step={0.1}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>3%</span>
-                        <span>20%</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-800/50 border-purple-500/30">
-                  <CardHeader>
-                    <CardTitle className="text-purple-400 flex items-center gap-2">
-                      <Droplets className="text-purple-400" size={20} />
+                      <Droplets className="text-cyan-400" size={20} />
                       Coolant System
                     </CardTitle>
                   </CardHeader>
@@ -587,7 +609,7 @@ const ReactorSimulator = () => {
                         </Button>
                         
                         <Button
-                          onClick={() => handlePausePress}
+                          onClick={handlePausePress}
                           className={`
                             px-4 py-2 rounded-md font-medium text-base
                             ${valveDirection === 0 
@@ -604,8 +626,7 @@ const ReactorSimulator = () => {
                             px-4 py-2 rounded-md font-medium text-base
                             ${valveDirection === 1 
                               ? 'bg-red-600 hover:bg-red-700 text-white' 
-                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'
-                            }
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}
                           `}
                         >
                           +
@@ -613,7 +634,7 @@ const ReactorSimulator = () => {
                       </div>
                       
                       <div className="text-xs text-gray-400 mt-1">
-                        Steam Input Valve
+                        Steam Input Valve (0.5% per second)
                       </div>
                     </div>
                     
@@ -650,7 +671,7 @@ const ReactorSimulator = () => {
                         </div>
                         <div className="flex justify-between">
                           <span>Output:</span>
-                          <span>{(turbineSpeed * 2).toFixed(1)} MW</span>
+                          <span>{turbineOutputMW.toFixed(1)} MW</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Efficiency:</span>
