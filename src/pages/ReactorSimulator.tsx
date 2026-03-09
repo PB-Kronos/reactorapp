@@ -52,6 +52,7 @@ const ReactorSimulator = () => {
   
   // Control rod percentage (0-100)
   const [rodPercentage, setRodPercentage] = useState(50);
+  const [rodDirection, setRodDirection] = useState(0); // -1 = decrease, 0 = pause, 1 = increase
   
   // Interval references for cleanup
   const valveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -165,8 +166,6 @@ const ReactorSimulator = () => {
   }, [isRunning, valveValue, temperature, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure]);
 
   // Navigation handlers
-  // Vertical panels: status → control-rods → startup-shutdown
-  // Horizontal panels: status → power-coolant → power-grid
   const handleLeftArrow = () => {
     if (activePanel === "status") setActivePanel("power-coolant");
     else if (activePanel === "power-coolant") setActivePanel("power-grid");
@@ -524,32 +523,30 @@ const ReactorSimulator = () => {
                     {/* Control buttons */}
                     <div className="flex space-x-4">
                       <Button
-                        onClick={() => setRodPercentage(prev => Math.min(prev + 5, 100))}
-                        disabled={rodPercentage >= 100}
+                        onClick={() => setRodDirection(1)}
                         className={`
-                          px-6 py-3 rounded-md font-bold text-lg
-                          ${rodPercentage >= 100 ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}
+                          px-6 py-3 rounded-md font-medium text-base
+                          ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
                         `}
                       >
                         + (Lower)
                       </Button>
                       
                       <Button
-                        onClick={() => setRodPercentage(50)}
+                        onClick={() => setRodDirection(0)}
                         className={`
-                          px-6 py-3 rounded-md font-bold text-lg
-                          ${rodPercentage === 50 ? 'bg-gray-600 text-gray-300' : 'bg-yellow-600 hover:bg-yellow-700 text-white'}
+                          px-6 py-3 rounded-md font-medium text-base
+                          ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
                         `}
                       >
                         = (Neutral)
                       </Button>
                       
                       <Button
-                        onClick={() => setRodPercentage(prev => Math.max(prev - 5, 0))}
-                        disabled={rodPercentage <= 0}
+                        onClick={() => setRodDirection(-1)}
                         className={`
-                          px-6 py-3 rounded-md font-bold text-lg
-                          ${rodPercentage <= 0 ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}
+                          px-6 py-3 rounded-md font-medium text-base
+                          ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
                         `}
                       >
                         - (Raise)
@@ -571,8 +568,7 @@ const ReactorSimulator = () => {
                     </div>
                     
                     <div className="text-sm text-gray-400 text-center max-w-md">
-                      Controls insertion depth (0-100%). Higher percentage = more rods inserted = less temperature rise from power.
-                      At 100%, power-based temperature rise is fully suppressed. Pressure still affects temperature.
+                      Controls insertion depth (0-100%). Higher percentage reduces temperature rise.
                     </div>
                   </div>
                 </CardContent>
@@ -783,9 +779,9 @@ const ReactorSimulator = () => {
                         <span>{(pressure * 0.8).toFixed(1)} bar</span>
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
 
@@ -938,7 +934,7 @@ const ReactorSimulator = () => {
         </div>
 
         {/* Vertical Navigation (Up/Down) */}
-        <div className="flex justify-center gap-4">
+        <div className="flex justify-center">
           <button
             onClick={handleUpArrow}
             className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110"
