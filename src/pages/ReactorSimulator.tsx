@@ -70,14 +70,14 @@ const ReactorSimulator = () => {
     return () => clearInterval(interval);
   }, [isRunning, reactorPower, targetTurbineSpeed, isLocked]);
   
-  // Steam valve value changer (1% per second)
+  // Steam valve value changer (0.5 per second)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
     if (valveDirection !== 0) {
       interval = setInterval(() => {
         setValveValue(prev => {
-          const newVal = prev + valveDirection * 0.1; // 0.1% per tick = 1% per second
+          const newVal = prev + valveDirection * 0.05; // 0.05 = 0.5 per second
           if (newVal >= 100) return 100;
           if (newVal <= 0) return 0;
           return newVal;
@@ -187,6 +187,11 @@ const ReactorSimulator = () => {
   // Handle valve button presses
   const handleValvePress = (direction: number) => {
     setValveDirection(direction);
+  };
+
+  // Pause button handler
+  const handlePausePress = () => {
+    setValveDirection(0);
   };
 
   // Sync button handler
@@ -651,7 +656,7 @@ const ReactorSimulator = () => {
                     {/* Steam Valve Display */}
                     <div className="flex flex-col items-center space-y-2">
                       <div className="text-2xl font-bold bg-slate-800/50 p-3 rounded-lg w-32 text-center border border-cyan-500/30">
-                        {Math.round(valveValue)}%
+                        {valveValue.toFixed(1).replace('.', ',')}%
                       </div>
                       
                       <div className="flex space-x-4">
@@ -669,13 +674,24 @@ const ReactorSimulator = () => {
                         </Button>
                         
                         <Button
+                          onClick={() => handlePausePress}
+                          className={`
+                            px-4 py-2 rounded-md font-medium text-base
+                            ${valveDirection === 0 
+                              ? 'bg-yellow-600 hover:bg-yellow-700 text-white' 
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}
+                          `}
+                        >
+                          Pause
+                        </Button>
+                        
+                        <Button
                           onClick={() => handleValvePress(1)}
                           className={`
                             px-4 py-2 rounded-md font-medium text-base
                             ${valveDirection === 1 
                               ? 'bg-red-600 hover:bg-red-700 text-white' 
-                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'
-                            }
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}
                           `}
                         >
                           +
