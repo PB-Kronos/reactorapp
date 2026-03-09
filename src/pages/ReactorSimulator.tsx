@@ -215,13 +215,13 @@ const ReactorSimulator = () => {
         />
         
         {/* Sync indicator */}
-        <text x={centerX} y={centerY + 40} fill="white" fontSize="14" textAnchor="middle" dominantBaseline="middle">
+        <text x={centerX} y={centerY - 40} fill="white" fontSize="14" textAnchor="middle" dominantBaseline="middle">
           {isSynchronized ? "SYNC" : "OUT OF SYNC"}
         </text>
-        <text x={centerX} y={centerY + 60} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+        <text x={centerX} y={centerY + 40} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
           {actualRPM.toFixed(0)} RPM
         </text>
-        <text x={centerX} y={centerY + 80} fill="white" fontSize="10" textAnchor="middle" dominantBaseline="middle">
+        <text x={centerX} y={centerY + 60} fill="white" fontSize="10" textAnchor="middle" dominantBaseline="middle">
           Target: 3000 ± 3
         </text>
       </svg>
