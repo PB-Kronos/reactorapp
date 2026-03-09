@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowDown,
+  ArrowUp,
   Activity
 } from "lucide-react";
 
@@ -47,7 +48,7 @@ const ReactorSimulator = () => {
   
   // Feedwater pump states
   const [pump1Online, setPump1Online] = useState(false);
-  const [pump2Online] = useState(false);
+  const [pump2Online, setPump2Online] = useState(false);
   
   // Control rod percentage (0-100)
   const [rodPercentage, setRodPercentage] = useState(50);
@@ -164,20 +165,34 @@ const ReactorSimulator = () => {
   }, [isRunning, valveValue, temperature, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure]);
 
   // Navigation handlers
+  // Vertical panels: status → control-rods → startup-shutdown
+  // Horizontal panels: status → power-coolant → power-grid
   const handleLeftArrow = () => {
     if (activePanel === "status") setActivePanel("power-coolant");
     else if (activePanel === "power-coolant") setActivePanel("power-grid");
     else if (activePanel === "power-grid") setActivePanel("status");
+    else setActivePanel("status"); // from vertical panels, go to status
   };
 
   const handleRightArrow = () => {
     if (activePanel === "status") setActivePanel("power-grid");
-    else if (activePanel === "power-grid") setActivePanel("status");
+    else if (activePanel === "power-grid") setActivePanel("power-coolant");
     else if (activePanel === "power-coolant") setActivePanel("status");
+    else setActivePanel("status"); // from vertical panels, go to status
   };
 
-  const handleBottomArrow = () => {
-    setActivePanel(activePanel === "status" ? "startup-shutdown" : "status");
+  const handleDownArrow = () => {
+    if (activePanel === "status") setActivePanel("control-rods");
+    else if (activePanel === "control-rods") setActivePanel("startup-shutdown");
+    else if (activePanel === "startup-shutdown") setActivePanel("status");
+    else setActivePanel("status"); // from horizontal panels, go to status
+  };
+
+  const handleUpArrow = () => {
+    if (activePanel === "startup-shutdown") setActivePanel("control-rods");
+    else if (activePanel === "control-rods") setActivePanel("status");
+    else if (activePanel === "status") setActivePanel("startup-shutdown");
+    else setActivePanel("status"); // from horizontal panels, go to status
   };
 
   // Reactor control actions
@@ -312,6 +327,14 @@ const ReactorSimulator = () => {
     );
   };
 
+  // Render pump status icon
+  const renderPumpIcon = (isOnline: boolean) => (
+    <Droplets 
+      size={24} 
+      className={isOnline ? "text-blue-400" : "text-gray-500"} 
+    />
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
@@ -341,6 +364,7 @@ const ReactorSimulator = () => {
             <div className="text-sm text-gray-400 mb-1">ACTIVE PANEL</div>
             <div className="text-lg font-bold text-cyan-400 uppercase">
               {activePanel === "status" && "STATUS"}
+              {activePanel === "control-rods" && "CONTROL RODS"}
               {activePanel === "startup-shutdown" && "STARTUP/SHUTDOWN"}
               {activePanel === "power-coolant" && "POWER & COOLANT"}
               {activePanel === "power-grid" && "POWER GRID"}
@@ -360,226 +384,92 @@ const ReactorSimulator = () => {
           {/* Status Panel */}
           {activePanel === "status" && (
             <div className="space-y-6">
-              {/* Feedwater Pumps Section */}
-              <Card className="bg-slate-800/50 border-cyan-500/30">
-                <CardHeader>
-                  <CardTitle className="text-cyan-400 flex items-center gap-2">
-                    <Droplets className="text-cyan-400" size={20} />
-                    Feedwater Pumps
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* Pump 1 Controls */}
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center">
-                        <Button
-                          onClick={() => setPump1Online(true)}
-                          disabled={pump1Online}
-                          className={`
-                            bg-blue-600 text-white px-2 py-1 rounded
-                            ${pump1Online ? 'opacity-50' : ''}
-                          `}
-                        >
-                          On
-                        </Button>
-                      </div>
-                      <span className="text-green-400">Pump 1</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center">
-                        <Button
-                          onClick={() => setPump1Online(false)}
-                          disabled={!pump1Online}
-                          className={`
-                            bg-gray-600 text-white px-2 py-1 rounded
-                            ${!pump1Online ? 'opacity-50' : ''}
-                          `}
-                        >
-                          Off
-                        </Button>
-                      </div>
-                      <span className="text-gray-300">Status: {pump1Online ? 'Online' : 'Offline'}</span>
-                    </div>
-                    
-                    {/* Pump 2 Controls */}
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center">
-                        <Button
-                          onClick={() => setPump2Online(true)}
-                          disabled={pump2Online}
-                          className={`
-                            bg-blue-600 text-white px-2 py-1 rounded
-                            ${pump2Online ? 'opacity-50' : ''}
-                          `}
-                        >
-                          On
-                        </Button>
-                      </div>
-                      <span className="text-green-400">Pump 2</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center">
-                        <Button
-                          onClick={() => setPump2Online(false)}
-                          disabled={!pump2Online}
-                          className={`
-                            bg-gray-600 text-white px-2 py-1 rounded
-                            ${!pump2Online ? 'opacity-50' : ''}
-                          `}
-                        >
-                          Off
-                        </Button>
-                      </div>
-                      <span className="text-gray-300">Status: {pump2Online ? 'Online' : 'Offline'}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-center">
-                    <span className="text-blue-400 font-medium text-sm">
-                      {(pump1Online || pump2Online) ? 'Feedwater Online' : 'Feedwater Offline'}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Power Output */}
+                <Card className="bg-slate-800/50 border-cyan-500/30">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-cyan-400 flex items-center gap-2">
+                      <Power className="text-cyan-400" size={20} />
+                      Power Output
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{turbineOutputMW.toFixed(1)} MW</div>
+                    <Progress value={valveValue} className="mt-2 h-2 bg-cyan-500/20" />
+                  </CardContent>
+                </Card>
 
-              {/* Power Output Card */}
-              <Card className="bg-slate-800/50 border-cyan-500/30">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-cyan-400 flex items-center gap-2">
-                    <Power className="text-cyan-400" size={20} />
-                    Power Output
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{turbineOutputMW.toFixed(1)} MW</div>
-                  <Progress value={valveValue} className="mt-2 h-2 bg-cyan-500/20" />
-                </CardContent>
-              </Card>
+                {/* Temperature */}
+                <Card className="bg-slate-800/50 border-orange-500/30">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-orange-400 flex items-center gap-2">
+                      <Thermometer className="text-orange-400" size={20} />
+                      Temperature
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{temperature.toFixed(0)}°C</div>
+                    <Progress value={(temperature / 1200) * 100} className="mt-2 h-2 bg-orange-500/20" />
+                  </CardContent>
+                </Card>
 
-              {/* Temperature Card */}
-              <Card className="bg-slate-800/50 border-orange-500/30">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-orange-400 flex items-center gap-2">
-                    <Thermometer className="text-orange-400" size={20} />
-                    Temperature
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{temperature.toFixed(0)}°C</div>
-                  <Progress value={(temperature / 1200) * 100} className="mt-2 h-2 bg-orange-500/20" />
-                </CardContent>
-              </Card>
+                {/* Pressure */}
+                <Card className="bg-slate-800/50 border-purple-500/30">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-purple-400 flex items-center gap-2">
+                      <Gauge className="text-purple-400" size={20} />
+                      Pressure
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{pressure.toFixed(1)} bar</div>
+                    <Progress value={(pressure / 200) * 100} className="mt-2 h-2 bg-purple-500/20" />
+                  </CardContent>
+                </Card>
 
-              {/* Pressure Card */}
-              <Card className="bg-slate-800/50 border-purple-500/30">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-purple-400 flex items-center gap-2">
-                    <Gauge className="text-purple-400" size={20} />
-                    Pressure
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{pressure.toFixed(1)} bar</div>
-                  <Progress value={(pressure / 200) * 100} className="mt-2 h-2 bg-purple-500/20" />
-                </CardContent>
-              </Card>
+                {/* Fuel Level */}
+                <Card className="bg-slate-800/50 border-green-500/30">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-green-400 flex items-center gap-2">
+                      <Fuel className="text-green-400" size={20} />
+                      Fuel Level
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{fuelLevel.toFixed(1)}%</div>
+                    <Progress value={fuelLevel} className="mt-2 h-2 bg-green-500/20" />
+                  </CardContent>
+                </Card>
 
-              {/* Fuel Level Card */}
-              <Card className="bg-slate-800/50 border-green-500/30">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-green-400 flex items-center gap-2">
-                    <Fuel className="text-green-400" size={20} />
-                    Fuel Level
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{fuelLevel.toFixed(1)}%</div>
-                  <Progress value={fuelLevel} className="mt-2 h-2 bg-green-500/20" />
-                </CardContent>
-              </Card>
+                {/* Safety Status */}
+                <Card className="bg-slate-800/50 border-red-500/30">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-red-400 flex items-center gap-2">
+                      <Shield className="text-red-400" size={20} />
+                      Safety Status
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Badge variant={getStatusColor() as any} className="text-lg px-3 py-1">
+                      {getStatusText()}
+                    </Badge>
+                  </CardContent>
+                </Card>
 
-              {/* Safety Status Card */}
-              <Card className="bg-slate-800/50 border-red-500/30">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-red-400 flex items-center gap-2">
-                    <Shield className="text-red-400" size={20} />
-                    Safety Status
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Badge variant={getStatusColor() as any} className="text-lg px-3 py-1">
-                    {getStatusText()}
-                  </Badge>
-                </CardContent>
-              </Card>
-
-              {/* Grid Sync Card */}
-              <Card className="bg-slate-800/50 border-blue-500/30">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-blue-400 flex items-center gap-2">
-                    <Grid3X3 className="text-blue-400" size={20} />
-                    Grid Sync
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{gridSync.toFixed(1)}%</div>
-                  <Progress value={gridSync} className="mt-2 h-2 bg-blue-500/20" />
-                </CardContent>
-              </Card>
-
-              {/* Control Rods Panel (new panel between status and startup/shutdown) */}
-              <Card className="bg-slate-800/50 border-green-500/30 mb-6">
-                <CardHeader>
-                  <CardTitle className="text-green-400 flex items-center gap-2">
-                    <Zap className="text-green-400" size={20} />
-                    Control Rods Position
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col items-center space-y-2">
-                    <div className="text-2xl font-bold bg-slate-800/50 p-3 rounded-lg w-24 text-center border border-green-500/30">
-                      {rodPercentage}%
-                    </div>
-                    <div className="flex space-x-4">
-                      <Button
-                        onClick={() => setRodPercentage(prev => Math.min(prev + 5, 100))}
-                        disabled={rodPercentage >= 100}
-                        className={`
-                          px-4 py-2 rounded-md font-medium text-base
-                          ${rodPercentage >= 100 ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}
-                        `}
-                      >
-                        + (Lower)
-                      </Button>
-                      
-                      <Button
-                        onClick={() => setRodPercentage(50)}
-                        className={`
-                          px-4 py-2 rounded-md font-medium text-base
-                          ${rodPercentage === 50 ? 'bg-gray-600 text-gray-300' : 'bg-yellow-600 hover:bg-yellow-700 text-white'}
-                        `}
-                      >
-                        = (Neutral)
-                      </Button>
-                      
-                      <Button
-                        onClick={() => setRodPercentage(prev => Math.max(prev - 5, 0))}
-                        disabled={rodPercentage <= 0}
-                        className={`
-                          px-4 py-2 rounded-md font-medium text-base
-                          ${rodPercentage <= 0 ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}
-                        `}
-                      >
-                        - (Raise)
-                      </Button>
-                    </div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      Controls insertion depth (0-100%). Higher percentage reduces temperature rise.
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                {/* Grid Sync */}
+                <Card className="bg-slate-800/50 border-blue-500/30">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-blue-400 flex items-center gap-2">
+                      <Grid3X3 className="text-blue-400" size={20} />
+                      Grid Sync
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{gridSync.toFixed(1)}%</div>
+                    <Progress value={gridSync} className="mt-2 h-2 bg-blue-500/20" />
+                  </CardContent>
+                </Card>
+              </div>
 
               {/* Reactor Visualization */}
               <Card className="bg-slate-800/50 border-cyan-500/30">
@@ -608,6 +498,82 @@ const ReactorSimulator = () => {
                         boxShadow: isRunning ? '0 0 20px rgba(34, 211, 238, 0.5)' : 'none'
                       }}
                     ></div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Control Rods Panel */}
+          {activePanel === "control-rods" && (
+            <div className="space-y-6">
+              <Card className="bg-slate-800/50 border-green-500/30">
+                <CardHeader>
+                  <CardTitle className="text-green-400 flex items-center gap-2">
+                    <Zap className="text-green-400" size={24} />
+                    Control Rods Position
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-col items-center space-y-4">
+                    {/* Rod percentage display */}
+                    <div className="text-4xl font-bold bg-slate-800/50 p-4 rounded-lg w-32 text-center border border-green-500/30">
+                      {rodPercentage}%
+                    </div>
+                    
+                    {/* Control buttons */}
+                    <div className="flex space-x-4">
+                      <Button
+                        onClick={() => setRodPercentage(prev => Math.min(prev + 5, 100))}
+                        disabled={rodPercentage >= 100}
+                        className={`
+                          px-6 py-3 rounded-md font-bold text-lg
+                          ${rodPercentage >= 100 ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}
+                        `}
+                      >
+                        + (Lower)
+                      </Button>
+                      
+                      <Button
+                        onClick={() => setRodPercentage(50)}
+                        className={`
+                          px-6 py-3 rounded-md font-bold text-lg
+                          ${rodPercentage === 50 ? 'bg-gray-600 text-gray-300' : 'bg-yellow-600 hover:bg-yellow-700 text-white'}
+                        `}
+                      >
+                        = (Neutral)
+                      </Button>
+                      
+                      <Button
+                        onClick={() => setRodPercentage(prev => Math.max(prev - 5, 0))}
+                        disabled={rodPercentage <= 0}
+                        className={`
+                          px-6 py-3 rounded-md font-bold text-lg
+                          ${rodPercentage <= 0 ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}
+                        `}
+                      >
+                        - (Raise)
+                      </Button>
+                    </div>
+                    
+                    {/* Visual rod indicator */}
+                    <div className="w-full max-w-md">
+                      <div className="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>Raised (0%)</span>
+                        <span>Inserted (100%)</span>
+                      </div>
+                      <div className="h-8 bg-slate-900/50 rounded-lg border border-green-500/30 overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 transition-all duration-300 rounded-lg"
+                          style={{ width: `${rodPercentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-sm text-gray-400 text-center max-w-md">
+                      Controls insertion depth (0-100%). Higher percentage = more rods inserted = less temperature rise from power.
+                      At 100%, power-based temperature rise is fully suppressed. Pressure still affects temperature.
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -672,53 +638,154 @@ const ReactorSimulator = () => {
             </div>
           )}
 
-          {/* Power & Coolant Panel */}
+          {/* Power & Coolant Panel (LEFT panel - contains feedwater pumps) */}
           {activePanel === "power-coolant" && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="bg-slate-800/50 border-cyan-500/30">
-                  <CardHeader>
-                    <CardTitle className="text-cyan-400 flex items-center gap-2">
-                      <Droplets className="text-cyan-400" size={20} />
-                      Coolant System
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Coolant Flow Rate</label>
-                      <Slider
-                        value={[coolantFlow]}
-                        onValueChange={(value) => setCoolantFlow(value[0])}
-                        max={100}
-                        step={1}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>0%</span>
-                        <span>100%</span>
+              {/* Feedwater Pumps */}
+              <Card className="bg-slate-800/50 border-cyan-500/30">
+                <CardHeader>
+                  <CardTitle className="text-cyan-400 flex items-center gap-2">
+                    <Droplets className="text-cyan-400" size={20} />
+                    Feedwater Pumps
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Pump 1 */}
+                  <div className="p-4 bg-slate-900/50 rounded-lg border border-cyan-500/20">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        {renderPumpIcon(pump1Online)}
+                        <span className="text-lg font-bold">Pump 1</span>
+                      </div>
+                      <Badge className={pump1Online ? "bg-blue-600 text-white" : "bg-gray-600 text-gray-300"}>
+                        {pump1Online ? "ONLINE" : "OFFLINE"}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => setPump1Online(true)}
+                        disabled={pump1Online}
+                        className={`
+                          flex-1 py-3 font-bold text-base
+                          ${pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}
+                        `}
+                      >
+                        ON
+                      </Button>
+                      <Button
+                        onClick={() => setPump1Online(false)}
+                        disabled={!pump1Online}
+                        className={`
+                          flex-1 py-3 font-bold text-base
+                          ${!pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}
+                        `}
+                      >
+                        OFF
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Pump 2 */}
+                  <div className="p-4 bg-slate-900/50 rounded-lg border border-cyan-500/20">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        {renderPumpIcon(pump2Online)}
+                        <span className="text-lg font-bold">Pump 2</span>
+                      </div>
+                      <Badge className={pump2Online ? "bg-blue-600 text-white" : "bg-gray-600 text-gray-300"}>
+                        {pump2Online ? "ONLINE" : "OFFLINE"}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => setPump2Online(true)}
+                        disabled={pump2Online}
+                        className={`
+                          flex-1 py-3 font-bold text-base
+                          ${pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}
+                        `}
+                      >
+                        ON
+                      </Button>
+                      <Button
+                        onClick={() => setPump2Online(false)}
+                        disabled={!pump2Online}
+                        className={`
+                          flex-1 py-3 font-bold text-base
+                          ${!pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}
+                        `}
+                      >
+                        OFF
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Feedwater summary */}
+                  <div className="p-4 bg-slate-900/50 rounded-lg border border-blue-500/30">
+                    <h3 className="text-blue-400 font-bold mb-2">Feedwater System Status</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Active Pumps:</span>
+                        <span className="text-blue-400">{(pump1Online ? 1 : 0) + (pump2Online ? 1 : 0)} / 2</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Cooling Rate:</span>
+                        <span className="text-blue-400">{((pump1Online ? 1 : 0) + (pump2Online ? 1 : 0)) * 0.5}°C/s</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>System Status:</span>
+                        <span className={(pump1Online || pump2Online) ? "text-green-400" : "text-yellow-400"}>
+                          {(pump1Online || pump2Online) ? "FEEDWATER ONLINE" : "FEEDWATER OFFLINE"}
+                        </span>
                       </div>
                     </div>
-                    
-                    <div className="p-4 bg-slate-900/50 rounded-lg border border-purple-500/30">
-                      <h3 className="text-purple-400 font-bold mb-2">Coolant Status</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Flow Rate:</span>
-                          <span>{coolantFlow.toFixed(0)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Temperature:</span>
-                          <span>{(temperature * 0.7).toFixed(0)}°C</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Pressure:</span>
-                          <span>{(pressure * 0.8).toFixed(1)} bar</span>
-                        </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Coolant System */}
+              <Card className="bg-slate-800/50 border-purple-500/30">
+                <CardHeader>
+                  <CardTitle className="text-purple-400 flex items-center gap-2">
+                    <Droplets className="text-purple-400" size={20} />
+                    Coolant System
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Coolant Flow Rate</label>
+                    <Slider
+                      value={[coolantFlow]}
+                      onValueChange={(value) => setCoolantFlow(value[0])}
+                      max={100}
+                      step={1}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>0%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 bg-slate-900/50 rounded-lg border border-purple-500/30">
+                    <h3 className="text-purple-400 font-bold mb-2">Coolant Status</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Flow Rate:</span>
+                        <span>{coolantFlow.toFixed(0)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Temperature:</span>
+                        <span>{(temperature * 0.7).toFixed(0)}°C</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Pressure:</span>
+                        <span>{(pressure * 0.8).toFixed(1)} bar</span>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -870,10 +937,16 @@ const ReactorSimulator = () => {
           )}
         </div>
 
-        {/* Bottom Navigation */}
-        <div className="flex justify-center">
+        {/* Vertical Navigation (Up/Down) */}
+        <div className="flex justify-center gap-4">
           <button
-            onClick={handleBottomArrow}
+            onClick={handleUpArrow}
+            className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110"
+          >
+            <ArrowUp className="text-cyan-400" size={24} />
+          </button>
+          <button
+            onClick={handleDownArrow}
             className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110"
           >
             <ArrowDown className="text-cyan-400" size={24} />
