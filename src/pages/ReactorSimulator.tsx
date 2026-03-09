@@ -51,6 +51,12 @@ const ReactorSimulator = () => {
 
   // Steam valve value changer (0.5% per second = 0.05 per tick)
   useEffect(() => {
+    // Clear any existing interval first
+    if (valveIntervalRef.current) {
+      clearInterval(valveIntervalRef.current);
+      valveIntervalRef.current = null;
+    }
+    
     if (valveDirection !== 0) {
       const interval = setInterval(() => {
         setValveValue(prev => {
@@ -60,15 +66,24 @@ const ReactorSimulator = () => {
       }, 100);
       
       valveIntervalRef.current = interval;
-    } else {
-      valveIntervalRef.current?.();
     }
     
-    return () => valveIntervalRef.current?.();
+    return () => {
+      if (valveIntervalRef.current) {
+        clearInterval(valveIntervalRef.current);
+        valveIntervalRef.current = null;
+      }
+    };
   }, [valveDirection]);
 
   // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
+    // Clear any existing interval first
+    if (turbineIntervalRef.current) {
+      clearInterval(turbineIntervalRef.current);
+      turbineIntervalRef.current = null;
+    }
+    
     if (isRunning) {
       const interval = setInterval(() => {
         setTurbineSpeed(prev => {
@@ -80,11 +95,14 @@ const ReactorSimulator = () => {
       }, 100);
       
       turbineIntervalRef.current = interval;
-    } else {
-      turbineIntervalRef.current?.();
     }
     
-    return () => turbineIntervalRef.current?.();
+    return () => {
+      if (turbineIntervalRef.current) {
+        clearInterval(turbineIntervalRef.current);
+        turbineIntervalRef.current = null;
+      }
+    };
   }, [isRunning, targetTurbineSpeed, isLocked]);
 
   // Sync target turbine speed with valve value when unlocked
