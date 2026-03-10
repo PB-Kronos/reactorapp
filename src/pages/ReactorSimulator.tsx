@@ -38,12 +38,12 @@ const ReactorSimulator = () => {
   const [turbineSpeed, setTurbineSpeed] = useState(0);
   const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
   const [coolantFlow, setCoolantFlow] = useState(50);
-  const [coolantPumpActive, setCoolantPumpActive] = useState(false);
-  const [coolantValvePosition, setCoolantValvePosition] = useState(50);
+  const [coolantPumpActive, setCoolantPumpActive] = useState(false); // New state for coolant pump
+  const [coolantValvePosition, setCoolantValvePosition] = useState(50); // New valve for cooling
 
-  // Steam valve controls
+  // Steam valve controls - now the primary power control
   const [valveValue, setValveValue] = useState(50);
-  const [valveDirection, setValveDirection] = useState(0);
+  const [valveDirection, setValveDirection] = useState(0); // 0 = idle, 1 = increasing, -1 = decreasing
   
   // Sync lock state
   const [isLocked, setIsLocked] = useState(false);
@@ -54,14 +54,14 @@ const ReactorSimulator = () => {
   
   // Control rod percentage (0-100)
   const [rodPercentage, setRodPercentage] = useState(50);
-  const [rodDirection, setRodDirection] = useState(0);
+  const [rodDirection, setRodDirection] = useState(0); // -1 = decrease, 0 = pause, 1 = increase
   
-  // Interval references
+  // Interval references for cleanup
   const valveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const turbineIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const rodIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Steam valve changer
+  // Steam valve value changer (0.5% per second = 0.05 per tick)
   useEffect(() => {
     if (valveDirection !== 0) {
       if (valveIntervalRef.current) {
@@ -77,9 +77,11 @@ const ReactorSimulator = () => {
       }, 100);
       
       valveIntervalRef.current = interval;
-    } else if (valveIntervalRef.current) {
-      clearInterval(valveIntervalRef.current);
-      valveIntervalRef.current = null;
+    } else {
+      if (valveIntervalRef.current) {
+        clearInterval(valveIntervalRef.current);
+        valveIntervalRef.current = null;
+      }
     }
     
     return () => {
@@ -90,7 +92,7 @@ const ReactorSimulator = () => {
     };
   }, [valveDirection]);
 
-  // Control rod changer
+  // Control rod value changer (1% per second = 0.1 per tick)
   useEffect(() => {
     if (rodDirection !== 0) {
       if (rodIntervalRef.current) {
@@ -106,9 +108,11 @@ const ReactorSimulator = () => {
       }, 100);
       
       rodIntervalRef.current = interval;
-    } else if (rodIntervalRef.current) {
-      clearInterval(rodIntervalRef.current);
-      rodIntervalRef.current = null;
+    } else {
+      if (rodIntervalRef.current) {
+        clearInterval(rodIntervalRef.current);
+        rodIntervalRef.current = null;
+      }
     }
     
     return () => {
@@ -119,7 +123,7 @@ const ReactorSimulator = () => {
     };
   }, [rodDirection]);
 
-  // Turbine speed adjustment
+  // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
     if (turbineIntervalRef.current) {
       clearInterval(turbineIntervalRef.current);
@@ -147,26 +151,40 @@ const ReactorSimulator = () => {
     };
   }, [isRunning, targetTurbineSpeed, isLocked]);
 
-  // Reactor physics simulation
+  // Reactor physics simulation - now based on valveValue (power output)
   useEffect(() => {
     if (isRunning) {
       const interval = setInterval(() => {
+        // Calculate online pump count for cooling effect
         const onlinePumpCount = (pump1Online ? 1 : 0) + (pump2Online ? 1 : 0);
+        
+        // Temperature increase components:
+        // 1. Base rise from valve position (reduced by rod insertion)
         const baseTempRise = valveValue * 0.01 * (1 - rodPercentage / 100);
+        // 2. Pressure-induced rise (unaffected by rods)
         const pressureTempRise = pressure * 0.001;
+        // 3. Cooling from feedwater pumps
         const coolingEffect = onlinePumpCount * 0.5;
+        
+        // Net temperature change
         const netTempChange = baseTempRise + pressureTempRise - coolingEffect;
         
         setTemperature(prev => Math.max(0, Math.min(prev + netTempChange, 4500)));
+        
+        // Pressure decreases when temperature is going down
         if (netTempChange < 0) {
           setPressure(prev => Math.max(1, prev - 0.1));
         } else {
           setPressure(prev => Math.min(prev + 0.1, 200));
         }
+        
+        // Fuel depletes with power (valveValue)
         setFuelLevel(prev => Math.max(prev - valveValue * 0.001, 0));
         
-        const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
+        // Grid sync depends on turbine speed matching 3000 RPM ± 3
         const syncMargin = 3;
+        const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
+        
         if (Math.abs(actualRPM - SYNC_RPM) <= syncMargin) {
           setGridSync(prev => Math.min(prev + 0.5, 100));
         } else {
@@ -183,36 +201,40 @@ const ReactorSimulator = () => {
     if (activePanel === "status") setActivePanel("power-coolant");
     else if (activePanel === "power-coolant") setActivePanel("power-grid");
     else if (activePanel === "power-grid") setActivePanel("status");
-    else setActivePanel("status");
+    else setActivePanel("status"); // from vertical panels, go to status
   };
 
   const handleRightArrow = () => {
     if (activePanel === "status") setActivePanel("power-grid");
     else if (activePanel === "power-grid") setActivePanel("power-coolant");
     else if (activePanel === "power-coolant") setActivePanel("status");
-    else setActivePanel("status");
+    else setActivePanel("status"); // from vertical panels, go to status
   };
 
   const handleDownArrow = () => {
     if (activePanel === "status") setActivePanel("control-rods");
     else if (activePanel === "control-rods") setActivePanel("startup-shutdown");
     else if (activePanel === "startup-shutdown") setActivePanel("status");
-    else setActivePanel("status");
+    else setActivePanel("status"); // from horizontal panels, go to status
   };
 
   const handleUpArrow = () => {
     if (activePanel === "startup-shutdown") setActivePanel("control-rods");
     else if (activePanel === "control-rods") setActivePanel("status");
     else if (activePanel === "status") setActivePanel("startup-shutdown");
-    else setActivePanel("status");
+    else setActivePanel("status"); // from horizontal panels, go to status
   };
 
   // Reactor control actions
-  const startReactor = () => setIsRunning(true);
+  const startReactor = () => {
+    setIsRunning(true);
+  };
+  
   const stopReactor = () => {
     setIsRunning(false);
     setTargetTurbineSpeed(0);
   };
+  
   const emergencyShutdown = () => {
     if (temperature > 3000) {
       setIsRunning(false);
@@ -229,6 +251,7 @@ const ReactorSimulator = () => {
     if (temperature > 3000) return "warning";
     return "default";
   };
+  
   const getStatusText = () => {
     if (temperature > 4500) return "CRITICAL";
     if (temperature > 3000) return "WARNING";
@@ -242,11 +265,17 @@ const ReactorSimulator = () => {
   const syncMargin = 3;
   const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= syncMargin;
   const syncDeviation = actualRPM - SYNC_RPM;
-  const turbineOutputMW = isRunning ? valveValue * 2 : 0;
+  const turbineOutputMW = isRunning ? valveValue * 2 : 0; // 0-200 MW based on valve position
 
   // Valve control handlers
-  const handleValvePress = (direction: number) => setValveDirection(direction);
-  const handlePausePress = () => setValveDirection(0);
+  const handleValvePress = (direction: number) => {
+    setValveDirection(direction);
+  };
+
+  const handlePausePress = () => {
+    setValveDirection(0);
+  };
+
   const handleSyncPress = () => {
     if (isSynchronized) {
       if (isLocked) {
@@ -260,8 +289,13 @@ const ReactorSimulator = () => {
   };
 
   // Control rod handlers
-  const handleRodPress = (direction: number) => setRodDirection(direction);
-  const handleRodNeutral = () => setRodDirection(0);
+  const handleRodPress = (direction: number) => {
+    setRodDirection(direction);
+  };
+
+  const handleRodNeutral = () => {
+    setRodDirection(0);
+  };
 
   // Render synchronoscope
   const renderSynchronoscope = () => {
@@ -276,6 +310,7 @@ const ReactorSimulator = () => {
     const needleX = centerX + radius * 0.8 * Math.cos(angle * Math.PI / 180);
     const needleY = centerY + radius * 0.8 * Math.sin(angle * Math.PI / 180);
     
+    // Draw scale marks
     const marks = [];
     for (let rpm = 0; rpm <= 4500; rpm += 500) {
       const markAngle = ((rpm - SYNC_RPM) / (maxRPM - SYNC_RPM) * 90);
@@ -295,6 +330,7 @@ const ReactorSimulator = () => {
       );
     }
     
+    // Draw sync zone
     const syncStartAngle = -3 / (maxRPM - SYNC_RPM) * 90;
     const syncEndAngle = 3 / (maxRPM - SYNC_RPM) * 90;
     
@@ -352,7 +388,7 @@ const ReactorSimulator = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
       <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto">
@@ -529,10 +565,12 @@ const ReactorSimulator = () => {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex flex-col items-center space-y-4">
+                    {/* Rod percentage display */}
                     <div className="text-4xl font-bold bg-slate-800/50 p-4 rounded-lg w-32 text-center border border-green-500/30">
                       {rodPercentage}%
                     </div>
                     
+                    {/* Control buttons */}
                     <div className="flex space-x-4">
                       <Button
                         onClick={() => setRodDirection(1)}
@@ -565,6 +603,7 @@ const ReactorSimulator = () => {
                       </Button>
                     </div>
                     
+                    {/* Visual rod indicator */}
                     <div className="w-full max-w-md">
                       <div className="flex justify-between text-xs text-gray-400 mb-1">
                         <span>Raised (0%)</span>
@@ -645,7 +684,7 @@ const ReactorSimulator = () => {
             </div>
           )}
 
-          {/* Power & Coolant Panel */}
+          {/* Power & Coolant Panel (LEFT panel - contains feedwater pumps) */}
           {activePanel === "power-coolant" && (
             <div className="space-y-6">
               {/* Feedwater Pumps */}
@@ -787,11 +826,11 @@ const ReactorSimulator = () => {
                       </div>
                       <div className="flex justify-between">
                         <span>Temperature:</span>
-                        <span>{(temperature * 0.7).toFixed(0)}°C</span>
+                        <span className="text-blue-400">{(temperature * 0.7).toFixed(0)}°C</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Pressure:</span>
-                        <span>{(pressure * 0.8).toFixed(1)} bar</span>
+                        <span className="text-blue-400">{(pressure * 0.8).toFixed(1)} bar</span>
                       </div>
                     </div>
                   </div>
