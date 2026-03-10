@@ -42,6 +42,10 @@ const ReactorSimulator = () => {
   const [rodDirection, setRodDirection] = useState(0);
   const [valveDirection, setValveDirection] = useState(0);
   const [scramPressed, setScramPressed] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [rodPercentage, setRodPercentage] = useState(0);
+  const [pump1Online, setPump1Online] = useState(false);
+  const [pump2Online, setPump2Online] = useState(false);
 
   // Steam valve controls - now the primary power control
   const [valveValue, setValveValue] = useState(50);
