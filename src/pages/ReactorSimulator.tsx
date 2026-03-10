@@ -68,7 +68,6 @@ const ReactorSimulator = () => {
           return Math.min(Math.max(newVal, 0), 100);
         });
       }, 100);
-      valveIntervalRef.current = interval;
     } else {
       if (valveIntervalRef.current) {
         clearInterval(valveIntervalRef.current);
@@ -82,6 +81,13 @@ const ReactorSimulator = () => {
       }
     };
   }, [valveDirection]);
+
+  // Update target turbine speed when valve changes (if reactor is running and not locked)
+  useEffect(() => {
+    if (isRunning && !isLocked) {
+      setTargetTurbineSpeed(valveValue);
+    }
+  }, [valveValue, isRunning, isLocked]);
 
   // Control rod value changer (1% per second = 0.1 per tick)
   useEffect(() => {
