@@ -1,4 +1,3 @@
-3000°C), raised temperature limit to 4500°C, added temperature-rate control, pressure decay on cooling, temperature-influenced power output, renamed Coolant System to Coolant Pump Alpha with on/off control, added coolant intake valve cooling up to 4°C/sec, and ensured up/down navigation arrows remain visible">
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -55,15 +54,10 @@ const ReactorSimulator = () => {
   const [rodPercentage, setRodPercentage] = useState(50);
   const [rodDirection, setRodDirection] = useState(0); // -1 = decrease (raise), 0 = pause, 1 = increase (lower)
   
-  // Coolant pump alpha control
-  const [coolantPumpOn, setCoolantPumpOn] = useState(false);
-  const [coolantIntakeDirection, setCoolantIntakeDirection] = useState(0); // 0 = idle, 1 = cooling
-  
   // Interval references for cleanup
   const valveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const turbineIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const rodIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const coolantIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Steam valve value changer (0.5% per second = 0.05 per tick)
   useEffect(() => {
@@ -127,38 +121,6 @@ const ReactorSimulator = () => {
     };
   }, [rodDirection]);
 
-  // Coolant pump alpha cooling (max 4°C per second)
-  useEffect(() => {
-    if (coolantPumpOn && coolantIntakeDirection === 1) {
-      if (coolantIntervalRef.current) {
-        clearInterval(coolantIntervalRef.current);
-        coolantIntervalRef.current = null;
-      }
-      
-      const interval = setInterval(() => {
-        setCoolantFlow(prev => {
-          // Clamp to 0-100 range
-          const newVal = Math.min(prev + 0.1, 100);
-          return newVal;
-        });
-      }, 100);
-      
-      coolantIntervalRef.current = interval;
-    } else {
-      if (coolantIntervalRef.current) {
-        clearInterval(coolantIntervalRef.current);
-        coolantIntervalRef.current = null;
-      }
-    }
-    
-    return () => {
-      if (coolantIntervalRef.current) {
-        clearInterval(coolantIntervalRef.current);
-        coolantIntervalRef.current = null;
-      }
-    };
-  }, [coolantPumpOn, coolantIntakeDirection]);
-
   // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
     if (turbineIntervalRef.current) {
@@ -200,22 +162,15 @@ const ReactorSimulator = () => {
         // 2. Pressure-induced rise (unaffected by rods)
         const pressureTempRise = pressure * 0.001;
         // 3. Cooling from feedwater pumps
-        const feedwaterCooling = onlinePumpCount * 0.5;
-        // 4. Cooling from Coolant Pump Alpha (up to 4°C/sec)
-        const coolantCooling = coolantPumpOn ? (coolantFlow * 0.04) : 0;
+        const coolingEffect = onlinePumpCount * 0.5;
         
         // Net temperature change
-        const netTempChange = baseTempRise + pressureTempRise - feedwaterCooling - coolantCooling;
+        const netTempChange = baseTempRise + pressureTempRise - coolingEffect;
         
-        // Apply temperature change (max 4500°C)
-        setTemperature(prev => Math.max(0, Math.min(prev + netTempChange, 4500)));
+        setTemperature(prev => Math.max(0, Math.min(prev + netTempChange, 1200)));
         
-        // Pressure decreases when temperature is going down
-        if (netTempChange < 0) {
-          setPressure(prev => Math.max(1, prev - 0.1));
-        } else {
-          setPressure(prev => Math.min(prev + 0.1, 200));
-        }
+        // Pressure increases with temperature
+        setPressure(prev => Math.min(prev + temperature * 0.001, 200));
         
         // Fuel depletes with power (valveValue)
         setFuelLevel(prev => Math.max(prev - valveValue * 0.001, 0));
@@ -233,7 +188,7 @@ const ReactorSimulator = () => {
       
       return () => clearInterval(interval);
     }
-  }, [isRunning, valveValue, temperature, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure, coolantPumpOn, coolantFlow]);
+  }, [isRunning, valveValue, temperature, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure]);
 
   // Navigation handlers
   const handleLeftArrow = () => {
@@ -274,28 +229,24 @@ const ReactorSimulator = () => {
     setTargetTurbineSpeed(0);
   };
   
-  // SCRAM button - only enabled when temperature > 3000°C
-  const canScram = temperature > 3000;
-  const performScram = () => {
-    if (canScram) {
-      setIsRunning(false);
-      setTemperature(25);
-      setPressure(1);
-      setTargetTurbineSpeed(0);
-      setGridSync(0);
-    }
+  const emergencyShutdown = () => {
+    setIsRunning(false);
+    setTemperature(25);
+    setPressure(1);
+    setTargetTurbineSpeed(0);
+    setGridSync(0);
   };
 
   // Status indicators
   const getStatusColor = () => {
-    if (temperature > 4500) return "destructive";
-    if (temperature > 3000) return "warning";
+    if (temperature > 800) return "destructive";
+    if (temperature > 600) return "warning";
     return "default";
   };
   
   const getStatusText = () => {
-    if (temperature > 4500) return "CRITICAL";
-    if (temperature > 3000) return "WARNING";
+    if (temperature > 800) return "CRITICAL";
+    if (temperature > 600) return "WARNING";
     if (isRunning) return "OPERATIONAL";
     return "STANDBY";
   };
@@ -306,11 +257,7 @@ const ReactorSimulator = () => {
   const syncMargin = 3;
   const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= syncMargin;
   const syncDeviation = actualRPM - SYNC_RPM;
-
-  // Power output affected by high temperature (slight reduction when hot)
-  const powerOutputMW = isRunning 
-    ? valveValue * 2 * (1 - Math.min((temperature - 3000) / 1500, 0.1)) 
-    : 0;
+  const turbineOutputMW = isRunning ? valveValue * 2 : 0; // 0-200 MW based on valve position
 
   // Valve control handlers
   const handleValvePress = (direction: number) => {
@@ -342,15 +289,6 @@ const ReactorSimulator = () => {
     setRodDirection(0);
   };
 
-  // Coolant pump alpha handlers
-  const handleCoolantPress = (direction: number) => {
-    setCoolantIntakeDirection(direction);
-  };
-
-  const handleCoolantNeutral = () => {
-    setCoolantIntakeDirection(0);
-  };
-
   // Render synchronoscope
   const renderSynchronoscope = () => {
     const centerX = 150;
@@ -373,14 +311,12 @@ const ReactorSimulator = () => {
       const x2 = centerX + radius * 1.0 * Math.cos(markAngle * Math.PI / 180);
       const y2 = centerY + radius * 1.0 * Math.sin(markAngle * Math.PI / 180);
       marks.push(
-        <line key={rpm} x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="2" />
+        <line key={`mark-${rpm}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="2" />
       );
       const labelX = centerX + radius * 1.1 * Math.cos(markAngle * Math.PI / 180);
       const labelY = centerY + radius * 1.1 * Math.sin(markAngle * Math.PI / 180);
       marks.push(
-        <text key={`label-${rpm}`} x={labelX} y={labelY} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle">
-          {rpm}
-        </text>
+        <text key={`label-${rpm}`} x={labelX} y={labelY} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="middle" />
       );
     }
     
@@ -446,7 +382,7 @@ const ReactorSimulator = () => {
           <p className="text-gray-400">Advanced Reactor Management Interface v2.0</p>
         </div>
 
-        {/* Navigation Arrows - always visible */}
+        {/* Navigation Arrows */}
         <div className="flex justify-between items-center mb-6">
           <button
             onClick={handleLeftArrow}
@@ -489,7 +425,7 @@ const ReactorSimulator = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{powerOutputMW.toFixed(1)} MW</div>
+                    <div className="text-2xl font-bold">{turbineOutputMW.toFixed(1)} MW</div>
                     <Progress value={valveValue} className="mt-2 h-2 bg-cyan-500/20" />
                   </CardContent>
                 </Card>
@@ -504,7 +440,7 @@ const ReactorSimulator = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{temperature.toFixed(0)}°C</div>
-                    <Progress value={(temperature / 4500) * 100} className="mt-2 h-2 bg-orange-500/20" />
+                    <Progress value={(temperature / 1200) * 100} className="mt-2 h-2 bg-orange-500/20" />
                   </CardContent>
                 </Card>
 
@@ -619,7 +555,7 @@ const ReactorSimulator = () => {
                     {/* Control buttons */}
                     <div className="flex space-x-4">
                       <Button
-                        onClick={() => setRodDirection(1)}
+                        onClick={() => handleRodPress(1)}
                         className={`
                           px-6 py-3 rounded-md font-medium text-base
                           ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
@@ -629,7 +565,7 @@ const ReactorSimulator = () => {
                       </Button>
                       
                       <Button
-                        onClick={() => setRodDirection(0)}
+                        onClick={() => handleRodNeutral()}
                         className={`
                           px-6 py-3 rounded-md font-medium text-base
                           ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
@@ -639,7 +575,7 @@ const ReactorSimulator = () => {
                       </Button>
                       
                       <Button
-                        onClick={() => setRodDirection(-1)}
+                        onClick={() => handleRodPress(-1)}
                         className={`
                           px-6 py-3 rounded-md font-medium text-base
                           ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}
@@ -664,7 +600,12 @@ const ReactorSimulator = () => {
                     </div>
                     
                     <div className="text-sm text-gray-400 text-center max-w-md">
-                      Controls insertion depth (0-100%). Higher percentage = more rods inserted = less temperature rise.
+                      Controls insertion depth (0-100%). Higher percentage reduces temperature rise from power.
+                      At 100%, power-based temperature rise is fully suppressed. Pressure still affects temperature.
+                      <br /><br />
+                      <strong>+ (Lower):</strong> Inserts rods at 1%/sec<br />
+                      <strong>- (Raise):</strong> Withdraws rods at 1%/sec<br />
+                      <strong>= (Neutral):</strong> Hold position
                     </div>
                   </div>
                 </CardContent>
@@ -699,11 +640,10 @@ const ReactorSimulator = () => {
                       STOP REACTOR
                     </Button>
                     <Button 
-                      onClick={performScram}
-                      disabled={!canScram}
+                      onClick={emergencyShutdown}
                       className="bg-orange-600 hover:bg-orange-700 h-16 text-lg font-bold border-2 border-orange-500/50"
                     >
-                      {canScram ? 'SCRAM' : 'SCRAM (Locked)'}
+                      EMERGENCY SHUTDOWN
                     </Button>
                   </div>
                   
@@ -731,7 +671,7 @@ const ReactorSimulator = () => {
             </div>
           )}
 
-          {/* Power & Coolant Panel (LEFT panel - contains feedwater pumps and Coolant Pump Alpha) */}
+          {/* Power & Coolant Panel (LEFT panel - contains feedwater pumps) */}
           {activePanel === "power-coolant" && (
             <div className="space-y-6">
               {/* Feedwater Pumps */}
@@ -823,7 +763,7 @@ const ReactorSimulator = () => {
                       </div>
                       <div className="flex justify-between">
                         <span>Cooling Rate:</span>
-                        <span className="text-blue-400">{(pump1Online ? 1 : 0) + (pump2Online ? 1 : 0)}°C/s</span>
+                        <span className="text-blue-400">{((pump1Online ? 1 : 0) + (pump2Online ? 1 : 0)) * 0.5}°C/s</span>
                       </div>
                       <div className="flex justify-between">
                         <span>System Status:</span>
@@ -836,12 +776,12 @@ const ReactorSimulator = () => {
                 </CardContent>
               </Card>
 
-              {/* Coolant Pump Alpha */}
+              {/* Coolant System */}
               <Card className="bg-slate-800/50 border-purple-500/30">
                 <CardHeader>
                   <CardTitle className="text-purple-400 flex items-center gap-2">
                     <Droplets className="text-purple-400" size={20} />
-                    Coolant Pump Alpha
+                    Coolant System
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -860,45 +800,6 @@ const ReactorSimulator = () => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-4">
-                    <Button
-                      onClick={() => setCoolantPumpOn(!coolantPumpOn)}
-                      className={`
-                        px-4 py-2 rounded-md font-medium text-base
-                        ${coolantPumpOn ? 'bg-green-600 text-white' : 'bg-slate-800/50 border border-purple-500/30 hover:bg-purple-600 text-white'}
-                      `}
-                    >
-                      {coolantPumpOn ? 'COOLING ON' : 'COOLING OFF'}
-                    </Button>
-                    <Button
-                      onClick={() => handleCoolantPress(1)}
-                      className={`
-                        px-4 py-2 rounded-md font-medium text-base
-                        ${coolantIntakeDirection === 1 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800/50 border border-purple-500/30 hover:bg-purple-600 text-white'}
-                      `}
-                    >
-                      + (Cool)
-                    </Button>
-                    <Button
-                      onClick={() => handleCoolantNeutral()}
-                      className={`
-                        px-4 py-2 rounded-md font-medium text-base
-                        ${coolantIntakeDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-purple-500/30 hover:bg-purple-600 text-white'}
-                      `}
-                    >
-                      = (Neutral)
-                    </Button>
-                    <Button
-                      onClick={() => handleCoolantPress(-1)}
-                      className={`
-                        px-4 py-2 rounded-md font-medium text-base
-                        ${coolantIntakeDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-purple-500/30 hover:bg-purple-600 text-white'}
-                      `}
-                    >
-                      - (Heat)
-                    </Button>
-                  </div>
-                  
                   <div className="p-4 bg-slate-900/50 rounded-lg border border-purple-500/30">
                     <h3 className="text-purple-400 font-bold mb-2">Coolant Status</h3>
                     <div className="space-y-2 text-sm">
@@ -907,8 +808,8 @@ const ReactorSimulator = () => {
                         <span>{coolantFlow.toFixed(0)}%</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Temperature Change:</span>
-                        <span>{coolantPumpOn ? `${coolantFlow * 0.04.toFixed(1)}°C/s cooling` : '0°C/s'}</span>
+                        <span>Temperature:</span>
+                        <span>{(temperature * 0.7).toFixed(0)}°C</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Pressure:</span>
@@ -938,10 +839,17 @@ const ReactorSimulator = () => {
                     </div>
                     <div className="text-center space-y-2">
                       <div className="text-lg font-bold">
-                        {isSynchronized ? "✓ SYNCHRONIZED" : "✗ OUT OF SYNC"}
+                        {isSynchronized ? (
+                          <span className="text-green-400">✓ SYNCHRONIZED</span>
+                        ) : (
+                          <span className="text-red-400">✗ OUT OF SYNC</span>
+                        )}
                       </div>
                       <div className="text-sm text-gray-400">
                         Target: {SYNC_RPM} RPM ± {syncMargin} | Current: {actualRPM.toFixed(0)} RPM
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        Deviation: {Math.abs(syncDeviation).toFixed(1)} RPM {syncDeviation > 0 ? "(high)" : syncDeviation < 0 ? "(low)" : ""}
                       </div>
                     </div>
                   </CardContent>
@@ -955,54 +863,104 @@ const ReactorSimulator = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="flex justify-center mb-4">
-                      <Button
-                        onClick={startReactor}
-                        disabled={isRunning}
-                        className="bg-green-600 hover:bg-green-700 h-16 text-lg font-bold border-2 border-green-500/50"
-                      >
-                        START REACTOR
-                      </Button>
+                    {/* Steam Valve Display */}
+                    <div className="flex flex-col items-center space-y-2">
+                      <div className="text-2xl font-bold bg-slate-800/50 p-3 rounded-lg w-32 text-center border border-cyan-500/30">
+                        {valveValue.toFixed(1).replace('.', ',')}%
+                      </div>
+                      
+                      <div className="flex space-x-4">
+                        <Button
+                          onClick={() => handleValvePress(-1)}
+                          className={`
+                            px-4 py-2 rounded-md font-medium text-base
+                            ${valveDirection === -1 
+                              ? 'bg-red-600 hover:bg-red-700 text-white' 
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}
+                          `}
+                        >
+                          −
+                        </Button>
+                        
+                        <Button
+                          onClick={() => handlePausePress()}
+                          className={`
+                            px-4 py-2 rounded-md font-medium text-base
+                            ${valveDirection === 0 
+                              ? 'bg-yellow-600 hover:bg-yellow-700 text-white' 
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}
+                          `}
+                        >
+                          Pause
+                        </Button>
+                        
+                        <Button
+                          onClick={() => handleValvePress(1)}
+                          className={`
+                            px-4 py-2 rounded-md font-medium text-base
+                            ${valveDirection === 1 
+                              ? 'bg-red-600 hover:bg-red-700 text-white' 
+                              : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}
+                          `}
+                        >
+                          +
+                        </Button>
+                      </div>
+                      
+                      <div className="text-xs text-gray-400 mt-1">
+                        Steam Input Valve (0.5% per second)
+                      </div>
                     </div>
-                    <div className="flex justify-center mb-4">
-                      <Button
-                        onClick={stopReactor}
-                        disabled={!isRunning}
-                        className="bg-red-600 hover:bg-red-700 h-16 text-lg font-bold border-2 border-red-500/50"
-                      >
-                        STOP REACTOR
-                      </Button>
-                    </div>
-                    <div className="flex justify-center mb-4">
-                      <Button
-                        onClick={performScram}
-                        disabled={!canScram}
-                        className="bg-orange-600 hover:bg-orange-700 h-16 text-lg font-bold border-2 border-orange-500/50"
-                      >
-                        {canScram ? 'SCRAM' : 'SCRAM (Locked)'}
-                      </Button>
-                    </div>
-                    <div className="flex justify-center mb-4">
+                    
+                    {/* Sync Button */}
+                    <div className="flex justify-center mt-4">
                       <Button
                         onClick={handleSyncPress}
+                        disabled={!isSynchronized}
                         className={`
                           px-6 py-3 rounded-md font-bold text-base
                           ${isLocked 
-                            ? 'bg-gray-600 hover:bg-gray-800 text-white' 
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'}
+                            ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' 
+                            : isSynchronized 
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' 
+                              : 'bg-slate-800/50 border border-gray-600 text-gray-500'
+                          }
                         `}
                       >
                         {isLocked ? 'UNLOCK' : 'SYNC'}
                       </Button>
                     </div>
-                    <div className="text-sm text-gray-400">
-                      <div className="flex justify-between">
-                        <span>Valve Direction:</span>
-                        <span className="text-gray-400">{(rodDirection === 1 ? "↑" : rodDirection === -1 ? "↓" : "→")} 1%/sec</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Rod Percentage:</span>
-                        <span className="text-gray-400">{(rodPercentage).toFixed(0)}%</span>
+                    
+                    {/* Turbine Status */}
+                    <div className="mt-4 p-4 bg-slate-900/50 rounded-lg border border-green-500/30">
+                      <h3 className="text-green-400 font-bold mb-2">Turbine Status</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Target Speed:</span>
+                          <span>{targetRPM.toFixed(0)} RPM</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Actual Speed:</span>
+                          <span>{actualRPM.toFixed(0)} RPM</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Output:</span>
+                          <span>{turbineOutputMW.toFixed(1)} MW</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Efficiency:</span>
+                          <span>{(turbineSpeed * 0.95).toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Ramp Rate:</span>
+                          <span>2.5% per tick</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Lock Status:</span>
+                          <span className={isLocked ? "text-green-400" : "text-yellow-400"}>
+                            {isLocked ? "LOCKED" : "UNLOCKED"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -1010,6 +968,22 @@ const ReactorSimulator = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Vertical Navigation (Up/Down) */}
+        <div className="flex justify-center gap-4">
+          <button
+            onClick={handleUpArrow}
+            className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110"
+          >
+            <ArrowUp className="text-cyan-400" size={24} />
+          </button>
+          <button
+            onClick={handleDownArrow}
+            className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110"
+          >
+            <ArrowDown className="text-cyan-400" size={24} />
+          </button>
         </div>
 
         {/* Footer */}
