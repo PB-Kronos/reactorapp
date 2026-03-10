@@ -210,6 +210,8 @@ const ReactorSimulator = () => {
   // Reactor control actions
   const startReactor = () => {
     setIsRunning(true);
+    setTargetTurbineSpeed(SYNC_TURBINE_SPEED); // Auto-set target speed
+    setIsLocked(true); // Lock turbine to sync speed
   };
 
   const stopReactor = () => {
