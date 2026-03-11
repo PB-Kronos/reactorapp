@@ -19,8 +19,11 @@ import {
   ArrowLeft,
   Activity,
   Terminal as LucideTerminal,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
+import { MadeWithDyad } from "@/components/made-with-dyad";
 
 // Constants for turbine RPM mapping
 const TURBINE_RPM_SCALE = 45; // 0-100 scale maps to 0-4500 RPM
@@ -303,6 +306,105 @@ const ReactorSimulator = () => {
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto">
+        {/* HERO SECTION - Same as homepage */}
+        <div className="text-center mb-12">
+          <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+            NUCLEAR REACTOR
+          </h1>
+          <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
+            CONTROL SYSTEM
+          </h2>
+          <p className="text-xl text-gray-300 mb-8">
+            Advanced Reactor Management Interface v2.0
+          </p>
+        </div>
+
+        {/* Main Features */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <Card className="bg-slate-800/50 border-cyan-500/30 hover:border-cyan-400 transition-all duration-300 hover:scale-105">
+            <CardHeader>
+              <Zap className="text-cyan-400 mx-auto mb-2" size={48} />
+              <CardTitle className="text-cyan-400">Real-time Monitoring</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-300">
+                Monitor power output, temperature, pressure, and fuel levels in real-time with advanced sensors.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-800/50 border-purple-500/30 hover:border-purple-400 transition-all duration-300 hover:scale-105">
+            <CardHeader>
+              <Shield className="text-purple-400 mx-auto mb-2" size={48} />
+              <CardTitle className="text-purple-400">Safety Systems</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-300">
+                Advanced safety protocols with emergency shutdown capabilities and containment monitoring.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-800/50 border-green-500/30 hover:border-green-400 transition-all duration-300 hover:scale-105">
+            <CardHeader>
+              <Settings className="text-green-400 mx-auto mb-2" size={48} />
+              <CardTitle className="text-green-400">Full Control</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-300">
+                Complete control over reactor operations, coolant systems, and power grid synchronization.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* CTA Buttons */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <Button 
+            size="lg" 
+            className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
+            onClick={() => window.location.href = '/terminal'}
+          >
+            ACCESS TERMINAL MAINFRAME
+            <LucideTerminal className="ml-2" size={20} />
+          </Button>
+          <Button 
+            size="lg" 
+            className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-4 text-lg font-bold border-2 border-green-400/50 hover:border-green-300 transition-all duration-300 hover:scale-105"
+            disabled
+          >
+            REACTOR CONTROL ACTIVE
+            <Power className="ml-2" size={20} />
+          </Button>
+        </div>
+
+        {/* System Status */}
+        <Card className="bg-slate-800/50 border-cyan-500/30 mb-8">
+          <CardHeader>
+            <CardTitle className="text-cyan-400">System Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+              <div>
+                <div className="text-green-400 font-bold text-lg">OPERATIONAL</div>
+                <div className="text-sm text-gray-400">Reactor Core</div>
+              </div>
+              <div>
+                <div className="text-green-400 font-bold text-lg">NOMINAL</div>
+                <div className="text-sm text-gray-400">Coolant System</div>
+              </div>
+              <div>
+                <div className="text-green-400 font-bold text-lg">SYNCHRONIZED</div>
+                <div className="text-sm text-gray-400">Power Grid</div>
+              </div>
+              <div>
+                <div className="text-green-400 font-bold text-lg">SECURE</div>
+                <div className="text-sm text-gray-400">Containment</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Header with Navigation */}
         <div className="flex justify-between items-center mb-6">
           <Button 
@@ -697,6 +799,9 @@ const ReactorSimulator = () => {
             </div>
           </div>
         </div>
+
+        {/* Made with Dyad */}
+        <MadeWithDyad />
       </div>
     </div>
   );
