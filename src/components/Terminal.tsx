@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/utils/supabase";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,13 +19,14 @@ import {
   Info
 } from "lucide-react";
 
+// Master password for all users
+const MASTER_PASSWORD = "0289";
+
 const Terminal = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [command, setCommand] = useState("");
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when output changes
@@ -51,37 +51,6 @@ const Terminal = () => {
     ]);
   }, []);
 
-  // Login handling
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username || !password) {
-      addTerminalOutput("ERROR: Please enter both username and password", "error");
-      return;
-    }
-    
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: `${username}@reactor.com`,
-        password: password
-      });
-
-      if (error) {
-        addTerminalOutput(`LOGIN FAILED: ${error.message}`, "error");
-        return;
-      }
-
-      if (data.user) {
-        setIsLoggedIn(true);
-        addTerminalOutput(`LOGIN SUCCESSFUL. WELCOME, ${username.toUpperCase()}.`, "success");
-        addTerminalOutput("ACCESS GRANTED TO TERMINAL MAINFRAME", "success");
-        addTerminalOutput("==================================================", "");
-      }
-    } catch (error) {
-      console.error("Login error:", error);
-      addTerminalOutput("ERROR: Database connection failed", "error");
-    }
-  };
-
   // Add terminal output with styling
   const addTerminalOutput = (text: string, type: "normal" | "success" | "error" | "info" = "normal") => {
     const timestamp = new Date().toLocaleTimeString();
@@ -94,16 +63,19 @@ const Terminal = () => {
   const handleCommand = async () => {
     if (!command.trim()) return;
     
-    addTerminalOutput(`> ${command}`, "normal");
+    const cmd = command.trim();
+    addTerminalOutput(`> ${cmd}`, "normal");
     
     try {
-      const commandLower = command.toLowerCase().trim();
+      const parts = cmd.split(' ');
+      const mainCommand = parts[0].toLowerCase();
+      const args = parts.slice(1);
       
       // Help command
-      if (commandLower === "help") {
+      if (mainCommand === "help") {
         addTerminalOutput("AVAILABLE COMMANDS:", "info");
         addTerminalOutput("  status     - Show reactor system status", "");
-        addTerminalOutput("  login      - Login to terminal", "");
+        addTerminalOutput("  login user <username> <password> - Login to terminal", "");
         addTerminalOutput("  logout     - Logout from terminal", "");
         addTerminalOutput("  clear      - Clear terminal screen", "");
         addTerminalOutput("  help       - Show this help message", "");
@@ -112,8 +84,43 @@ const Terminal = () => {
         return;
       }
       
+      // Login command - new simple system
+      if (mainCommand === "login" && args[0] === "user") {
+        if (isLoggedIn) {
+          addTerminalOutput("ALREADY LOGGED IN", "error");
+          return;
+        }
+        
+        if (args.length < 3) {
+          addTerminalOutput("Usage: login user <username> <password>", "error");
+          return;
+        }
+        
+        const username = args[1];
+        const password = args[2];
+        
+        if (password === MASTER_PASSWORD) {
+          setIsLoggedIn(true);
+          setCurrentUser(username);
+          addTerminalOutput(`LOGIN SUCCESSFUL. WELCOME, ${username.toUpperCase()}.`, "success");
+          addTerminalOutput("ACCESS GRANTED TO TERMINAL MAINFRAME", "success");
+          addTerminalOutput("==================================================", "");
+        } else {
+          addTerminalOutput("LOGIN FAILED: Incorrect password", "error");
+        }
+        return;
+      }
+      
+      // Check if user is logged in for protected commands
+      const protectedCommands = ["status", "reactor", "shutdown"];
+      if (protectedCommands.includes(mainCommand) && !isLoggedIn) {
+        addTerminalOutput("ACCESS DENIED: Please login first using 'login user <username> <password>'", "error");
+        addTerminalOutput("Master password: 0289", "info");
+        return;
+      }
+      
       // Status command
-      if (commandLower === "status") {
+      if (mainCommand === "status") {
         addTerminalOutput("REACTOR SYSTEM STATUS:", "info");
         addTerminalOutput("  Core Temperature: 850°C (NOMINAL)", "");
         addTerminalOutput("  Pressure: 15.2 MPa (NOMINAL)", "");
@@ -124,23 +131,11 @@ const Terminal = () => {
         return;
       }
       
-      // Login command
-      if (commandLower === "login") {
-        if (isLoggedIn) {
-          addTerminalOutput("ALREADY LOGGED IN", "error");
-        } else {
-          addTerminalOutput("LOGIN PROMPT:", "info");
-          addTerminalOutput("  Please use the login form above", "");
-        }
-        return;
-      }
-      
       // Logout command
-      if (commandLower === "logout") {
+      if (mainCommand === "logout") {
         if (isLoggedIn) {
           setIsLoggedIn(false);
-          setUsername("");
-          setPassword("");
+          setCurrentUser(null);
           addTerminalOutput("LOGOUT SUCCESSFUL", "success");
           addTerminalOutput("SESSION TERMINATED", "success");
         } else {
@@ -150,13 +145,13 @@ const Terminal = () => {
       }
       
       // Clear command
-      if (commandLower === "clear") {
+      if (mainCommand === "clear") {
         setTerminalOutput([]);
         return;
       }
       
       // Reactor command
-      if (commandLower === "reactor") {
+      if (mainCommand === "reactor") {
         addTerminalOutput("INITIATING REACTOR CONTROL SYSTEM ACCESS...", "info");
         addTerminalOutput("REDIRECTING TO REACTOR SIMULATOR...", "info");
         setTimeout(() => {
@@ -166,7 +161,7 @@ const Terminal = () => {
       }
       
       // Shutdown command
-      if (commandLower === "shutdown") {
+      if (mainCommand === "shutdown") {
         addTerminalOutput("EMERGENCY SHUTDOWN PROCEDURE INITIATED", "error");
         addTerminalOutput("SCRAM SIGNAL SENT TO REACTOR CONTROL SYSTEM", "error");
         addTerminalOutput("COOLANT SYSTEMS ACTIVATED", "error");
@@ -176,7 +171,7 @@ const Terminal = () => {
       }
       
       // Unknown command
-      addTerminalOutput(`COMMAND NOT FOUND: ${command}`, "error");
+      addTerminalOutput(`COMMAND NOT FOUND: ${cmd}`, "error");
       addTerminalOutput("Type 'help' for available commands", "");
       
     } catch (error) {
@@ -215,128 +210,134 @@ const Terminal = () => {
           </p>
         </div>
 
-        {/* Login Form (shown when not logged in) */}
-        {!isLoggedIn && (
-          <Card className="bg-slate-800/50 border-cyan-500/30 mb-8 max-w-md mx-auto">
-            <CardHeader>
-              <CardTitle className="text-cyan-400 flex items-center gap-2">
-                <LucideTerminal className="text-cyan-400" size={24} />
-                Terminal Login
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Username</label>
-                  <Input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter username"
-                    className="bg-slate-700 border-cyan-500/30 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Password</label>
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                    className="bg-slate-700 border-cyan-500/30 text-white"
-                  />
-                </div>
-                <Button 
-                  type="submit" 
-                  className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white"
-                >
-                  ACCESS TERMINAL
-                </Button>
-              </form>
-              <div className="mt-4 text-xs text-gray-400 text-center">
-                <p>Test credentials: admin / password</p>
+        {/* Login Status */}
+        {isLoggedIn && currentUser && (
+          <div className="mb-6 p-4 bg-green-900/30 border border-green-500/30 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="text-green-400" size={20} />
+                <span className="text-green-400 font-medium">
+                  Logged in as: {currentUser}
+                </span>
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Terminal Interface (shown when logged in) */}
-        {isLoggedIn && (
-          <div className="space-y-6">
-            {/* Terminal Output */}
-            <Card className="bg-slate-800/50 border-cyan-500/30">
-              <CardHeader>
-                <CardTitle className="text-cyan-400 flex items-center gap-2">
-                  <LucideTerminal className="text-cyan-400" size={24} />
-                  Terminal Session - {username.toUpperCase()}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div 
-                  ref={terminalRef}
-                  className="bg-black p-4 rounded font-mono text-green-400 h-96 overflow-y-auto whitespace-pre-wrap"
-                >
-                  {terminalOutput.map((line, index) => (
-                    <div key={index} className="mb-1">
-                      {line}
-                    </div>
-                  ))}
-                  <div className="flex items-center">
-                    <span className="text-green-400 mr-2">$</span>
-                    <Input
-                      type="text"
-                      value={command}
-                      onChange={(e) => setCommand(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="Enter command..."
-                      className="bg-transparent border-none text-green-400 placeholder-green-600 focus:outline-none flex-1"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Button 
                 variant="outline"
-                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
-                onClick={() => {
-                  setCommand("status");
-                  setTimeout(handleCommand, 100);
-                }}
-              >
-                <Info className="mr-2" size={16} />
-                System Status
-              </Button>
-              <Button 
-                variant="outline"
-                className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
-                onClick={() => {
-                  setCommand("reactor");
-                  setTimeout(handleCommand, 100);
-                }}
-              >
-                <Settings className="mr-2" size={16} />
-                Reactor Control
-              </Button>
-              <Button 
-                variant="outline"
+                size="sm"
                 className="border-red-500/30 text-red-400 hover:bg-red-500/10"
                 onClick={() => {
-                  setCommand("shutdown");
+                  setCommand("logout");
                   setTimeout(handleCommand, 100);
                 }}
               >
-                <AlertCircle className="mr-2" size={16} />
-                Emergency Shutdown
+                Logout
               </Button>
             </div>
           </div>
         )}
 
-        {/* Navigation Buttons (always visible) */}
+        {/* Terminal Interface */}
+        <Card className="bg-slate-800/50 border-cyan-500/30">
+          <CardHeader>
+            <CardTitle className="text-cyan-400 flex items-center gap-2">
+              <LucideTerminal className="text-cyan-400" size={24} />
+              Terminal Session
+              {currentUser && <span className="text-sm text-gray-400">- {currentUser.toUpperCase()}</span>}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div 
+              ref={terminalRef}
+              className="bg-black p-4 rounded font-mono text-green-400 h-96 overflow-y-auto whitespace-pre-wrap"
+            >
+              {terminalOutput.map((line, index) => (
+                <div key={index} className="mb-1">
+                  {line}
+                </div>
+              ))}
+              <div className="flex items-center">
+                <span className="text-green-400 mr-2">$</span>
+                <Input
+                  type="text"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Enter command..."
+                  className="bg-transparent border-none text-green-400 placeholder-green-600 focus:outline-none flex-1"
+                  autoFocus
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <Button 
+            variant="outline"
+            className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+            onClick={() => {
+              setCommand("status");
+              setTimeout(handleCommand, 100);
+            }}
+          >
+            <Info className="mr-2" size={16} />
+            System Status
+          </Button>
+          <Button 
+            variant="outline"
+            className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
+            onClick={() => {
+              setCommand("reactor");
+              setTimeout(handleCommand, 100);
+            }}
+          >
+            <Settings className="mr-2" size={16} />
+            Reactor Control
+          </Button>
+          <Button 
+            variant="outline"
+            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+            onClick={() => {
+              setCommand("shutdown");
+              setTimeout(handleCommand, 100);
+            }}
+          >
+            <AlertCircle className="mr-2" size={16} />
+            Emergency Shutdown
+          </Button>
+        </div>
+
+        {/* Help Section */}
+        <Card className="bg-slate-800/50 border-cyan-500/30 mt-6">
+          <CardHeader>
+            <CardTitle className="text-cyan-400">Quick Help</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="font-semibold text-cyan-300 mb-2">Login:</p>
+                <code className="bg-slate-900 px-2 py-1 rounded text-green-400">
+                  login user <username> 0289
+                </code>
+                <p className="text-gray-400 mt-1 text-xs">
+                  Example: login user admin 0289
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold text-cyan-300 mb-2">Other Commands:</p>
+                <ul className="space-y-1 text-gray-300">
+                  <li><code className="bg-slate-900 px-1 rounded text-xs">status</code> - System status</li>
+                  <li><code className="bg-slate-900 px-1 rounded text-xs">reactor</code> - Open reactor control</li>
+                  <li><code className="bg-slate-900 px-1 rounded text-xs">shutdown</code> - Emergency shutdown</li>
+                  <li><code className="bg-slate-900 px-1 rounded text-xs">logout</code> - Logout</li>
+                  <li><code className="bg-slate-900 px-1 rounded text-xs">clear</code> - Clear terminal</li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Navigation Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12">
           <Button 
             size="lg" 
