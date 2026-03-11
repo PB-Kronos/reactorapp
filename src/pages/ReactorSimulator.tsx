@@ -57,30 +57,31 @@ const ReactorSimulator = () => {
 
   // Steam valve value changer (0.5% per second = 0.05 per tick)
   useEffect(() => {
+    // Clear any existing interval first
+    if (valveIntervalRef.current) {
+      clearInterval(valveIntervalRef.current);
+      valveIntervalRef.current = null;
+    }
+
+    // Only create new interval if valveDirection is not 0
     if (valveDirection !== 0) {
-      if (valveIntervalRef.current) {
-        clearInterval(valveIntervalRef.current);
-        valveIntervalRef.current = null;
-      }
       const interval = setInterval(() => {
         setValveValue(prev => {
           const newVal = prev + valveDirection * 0.05;
           return Math.min(Math.max(newVal, 0), 100);
         });
-      }, 100);
-    } else {
-      if (valveIntervalRef.current) {
-        clearInterval(valveIntervalRef.current);
-        valveIntervalRef.current = null;
-      }
+      }, 10); // 10ms for smooth updates
+      valveIntervalRef.current = interval;
     }
+
+    // Cleanup function
     return () => {
       if (valveIntervalRef.current) {
         clearInterval(valveIntervalRef.current);
         valveIntervalRef.current = null;
       }
     };
-  }, [valveDirection]);
+  }, [valveDirection]); // Only re-run when valveDirection changes
 
   // Update target turbine speed when valve changes (if reactor is running and not locked)
   useEffect(() => {
@@ -91,31 +92,31 @@ const ReactorSimulator = () => {
 
   // Control rod value changer (1% per second = 0.1 per tick)
   useEffect(() => {
+    // Clear any existing interval first
+    if (rodIntervalRef.current) {
+      clearInterval(rodIntervalRef.current);
+      rodIntervalRef.current = null;
+    }
+
+    // Only create new interval if rodDirection is not 0
     if (rodDirection !== 0) {
-      if (rodIntervalRef.current) {
-        clearInterval(rodIntervalRef.current);
-        rodIntervalRef.current = null;
-      }
       const interval = setInterval(() => {
         setRodPercentage(prev => {
           const newVal = prev + rodDirection * 0.1;
           return Math.min(Math.max(newVal, 0), 100);
         });
-      }, 100);
+      }, 10); // 10ms for smooth updates
       rodIntervalRef.current = interval;
-    } else {
-      if (rodIntervalRef.current) {
-        clearInterval(rodIntervalRef.current);
-        rodIntervalRef.current = null;
-      }
     }
+
+    // Cleanup function
     return () => {
       if (rodIntervalRef.current) {
         clearInterval(rodIntervalRef.current);
         rodIntervalRef.current = null;
       }
     };
-  }, [rodDirection]);
+  }, [rodDirection]); // Only re-run when rodDirection changes
 
   // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
