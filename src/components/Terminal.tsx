@@ -204,7 +204,7 @@ const Terminal = () => {
           </h1>
           <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
             TERMINAL MAINFRAME v2.0
-          </h2>
+          </h1>
           <p className="text-xl text-gray-300 mb-8">
             Secure terminal access for reactor control and monitoring
           </p>
