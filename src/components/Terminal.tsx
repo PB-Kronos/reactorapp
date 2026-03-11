@@ -20,7 +20,8 @@ import {
   Fuel,
   Thermometer,
   Gauge,
-  Grid3X3
+  Grid3X3,
+  ArrowRight
 } from "lucide-react";
 
 const Terminal = () => {
