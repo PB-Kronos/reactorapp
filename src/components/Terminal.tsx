@@ -1,35 +1,30 @@
-`.
-
-So my previous response had a malformed tag. That means the file might not have been written correctly. Let me fix that by writing the file again with the correct tag format</think>I<think>.</think> see the issue - there's a malformed tag in my previous response. Let me fix the file properly:
-
-<dyad-write path="src/components/Terminal.tsx" description="Fixing malformed dyad-write tag and ensuring proper JSX syntax">
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useToast } from "@/hooks/use-toast";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { 
-  Zap, 
-  Shield, 
-  Settings, 
-  ArrowRight, 
   Terminal as LucideTerminal,
   ChevronRight,
   X,
   CheckCircle,
   AlertCircle,
-  Info
+  Info,
+  Zap,
+  Shield,
+  Settings,
+  Power,
+  Droplets,
+  Fuel,
+  Thermometer,
+  Gauge,
+  Grid3X3
 } from "lucide-react";
-
-// Master password for all users
-const MASTER_PASSWORD = "0289";
 
 const Terminal = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [command, setCommand] = useState("");
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -41,149 +36,117 @@ const Terminal = () => {
     }
   }, [terminalOutput]);
 
-  // Add welcome message when component mounts
-  useEffect(() => {
-    setTerminalOutput([
-      "NUCLEAR REACTOR CONTROL SYSTEM - TERMINAL MAINFRAME",
-      "==================================================",
-      "ACCESS LEVEL: CLASS 1 OPERATOR",
-      "SECURITY PROTOCOLS: ACTIVE",
-      "SYSTEM STATUS: ONLINE",
-      "",
-      "Type 'help' for available commands.",
-      "==================================================",
-      ""
-    ]);
-  }, []);
-
-  // Add terminal output with styling
-  const addTerminalOutput = (text: string, type: "normal" | "success" | "error" | "info" = "normal") => {
+  // Add terminal output with timestamp
+  const addTerminalOutput = (text: string) => {
     const timestamp = new Date().toLocaleTimeString();
     const styledText = `[${timestamp}] ${text}`;
-    
     setTerminalOutput(prev => [...prev, styledText]);
   };
 
-  // Command execution
-  const handleCommand = async () => {
+  // Handle command execution
+  const handleCommand = () => {
     if (!command.trim()) return;
-    
+
     const cmd = command.trim();
-    addTerminalOutput(`> ${cmd}`, "normal");
-    
+    addTerminalOutput(`> ${cmd}`);
+
     try {
       const parts = cmd.split(' ');
       const mainCommand = parts[0].toLowerCase();
       const args = parts.slice(1);
-      
+
       // Help command
       if (mainCommand === "help") {
-        addTerminalOutput("AVAILABLE COMMANDS:", "info");
-        addTerminalOutput("  status     - Show reactor system status", "");
-        addTerminalOutput("  login user <username> <password> - Login to terminal", "");
-        addTerminalOutput("  logout     - Logout from terminal", "");
-        addTerminalOutput("  clear      - Clear terminal screen", "");
-        addTerminalOutput("  help       - Show this help message", "");
-        addTerminalOutput("  reactor    - Access reactor control system", "");
-        addTerminalOutput("  shutdown   - Emergency shutdown procedure", "");
+        addTerminalOutput("AVAILABLE COMMANDS:");
+        addTerminalOutput("  status     - Show reactor system status");
+        addTerminalOutput("  login user - Login to terminal");
+        addTerminalOutput("  logout     - Logout from terminal");
+        addTerminalOutput("  clear      - Clear terminal screen");
+        addTerminalOutput("  help       - Show this help message");
+        addTerminalOutput("  reactor    - Access reactor control system");
+        addTerminalOutput("  shutdown   - Emergency shutdown procedure");
         return;
       }
-      
-      // Login command - new simple system
+
+      // Login command - simple system
       if (mainCommand === "login" && args[0] === "user") {
         if (isLoggedIn) {
-          addTerminalOutput("ALREADY LOGGED IN", "error");
+          addTerminalOutput("ALREADY LOGGED IN");
           return;
         }
-        
-        if (args.length < 3) {
-          addTerminalOutput("Usage: login user <username> <password>", "error");
-          return;
-        }
-        
-        const username = args[1];
-        const password = args[2];
-        
-        if (password === MASTER_PASSWORD) {
-          setIsLoggedIn(true);
-          setCurrentUser(username);
-          addTerminalOutput(`LOGIN SUCCESSFUL. WELCOME, ${username.toUpperCase()}.`, "success");
-          addTerminalOutput("ACCESS GRANTED TO TERMINAL MAINFRAME", "success");
-          addTerminalOutput("==================================================", "");
-        } else {
-          addTerminalOutput("LOGIN FAILED: Incorrect password", "error");
-        }
+
+        setIsLoggedIn(true);
+        addTerminalOutput("LOGIN SUCCESSFUL");
+        addTerminalOutput("ACCESS GRANTED TO TERMINAL MAINFRAME");
         return;
       }
-      
+
       // Check if user is logged in for protected commands
       const protectedCommands = ["status", "reactor", "shutdown"];
       if (protectedCommands.includes(mainCommand) && !isLoggedIn) {
-        addTerminalOutput("ACCESS DENIED: Please login first using 'login user <username> <password>'", "error");
-        addTerminalOutput("Master password: 0289", "info");
+        addTerminalOutput("ACCESS DENIED: Please login first using 'login user'");
         return;
       }
-      
+
       // Status command
       if (mainCommand === "status") {
-        addTerminalOutput("REACTOR SYSTEM STATUS:", "info");
-        addTerminalOutput("  Core Temperature: 850°C (NOMINAL)", "");
-        addTerminalOutput("  Pressure: 15.2 MPa (NOMINAL)", "");
-        addTerminalOutput("  Power Output: 850 MW (NOMINAL)", "");
-        addTerminalOutput("  Coolant Flow: 98% (NOMINAL)", "");
-        addTerminalOutput("  Control Rods: 25% (NOMINAL)", "");
-        addTerminalOutput("  Safety Systems: ACTIVE", "");
+        addTerminalOutput("REACTOR SYSTEM STATUS:");
+        addTerminalOutput("  Core Temperature: 850°C (NOMINAL)");
+        addTerminalOutput("  Pressure: 15.2 MPa (NOMINAL)");
+        addTerminalOutput("  Power Output: 850 MW (NOMINAL)");
+        addTerminalOutput("  Coolant Flow: 98% (NOMINAL)");
+        addTerminalOutput("  Control Rods: 25% (NOMINAL)");
+        addTerminalOutput("  Safety Systems: ACTIVE");
         return;
       }
-      
+
       // Logout command
       if (mainCommand === "logout") {
         if (isLoggedIn) {
           setIsLoggedIn(false);
-          setCurrentUser(null);
-          addTerminalOutput("LOGOUT SUCCESSFUL", "success");
-          addTerminalOutput("SESSION TERMINATED", "success");
+          addTerminalOutput("LOGOUT SUCCESSFUL");
+          addTerminalOutput("SESSION TERMINATED");
         } else {
-          addTerminalOutput("NOT LOGGED IN", "error");
+          addTerminalOutput("NOT LOGGED IN");
         }
         return;
       }
-      
+
       // Clear command
       if (mainCommand === "clear") {
         setTerminalOutput([]);
         return;
       }
-      
+
       // Reactor command
       if (mainCommand === "reactor") {
-        addTerminalOutput("INITIATING REACTOR CONTROL SYSTEM ACCESS...", "info");
-        addTerminalOutput("REDIRECTING TO REACTOR SIMULATOR...", "info");
+        addTerminalOutput("INITIATING REACTOR CONTROL SYSTEM ACCESS...");
+        addTerminalOutput("REDIRECTING TO REACTOR SIMULATOR...");
         setTimeout(() => {
           window.location.href = '/reactor';
         }, 1500);
         return;
       }
-      
+
       // Shutdown command
       if (mainCommand === "shutdown") {
-        addTerminalOutput("EMERGENCY SHUTDOWN PROCEDURE INITIATED", "error");
-        addTerminalOutput("SCRAM SIGNAL SENT TO REACTOR CONTROL SYSTEM", "error");
-        addTerminalOutput("COOLANT SYSTEMS ACTIVATED", "error");
-        addTerminalOutput("REACTOR POWER DECREASING...", "error");
-        addTerminalOutput("SHUTDOWN COMPLETE", "success");
+        addTerminalOutput("EMERGENCY SHUTDOWN PROCEDURE INITIATED");
+        addTerminalOutput("SCRAM SIGNAL SENT TO REACTOR CONTROL SYSTEM");
+        addTerminalOutput("COOLANT SYSTEMS ACTIVATED");
+        addTerminalOutput("REACTOR POWER DECREASING...");
+        addTerminalOutput("SHUTDOWN COMPLETE");
         return;
       }
-      
+
       // Unknown command
-      addTerminalOutput(`COMMAND NOT FOUND: ${cmd}`, "error");
-      addTerminalOutput("Type 'help' for available commands", "");
-      
+      addTerminalOutput(`COMMAND NOT FOUND: ${cmd}`);
+      addTerminalOutput("Type 'help' for available commands");
+
     } catch (error) {
       console.error("Command error:", error);
-      addTerminalOutput("ERROR: Command execution failed", "error");
+      addTerminalOutput("ERROR: Command execution failed");
     }
-    
+
     setCommand("");
   };
 
@@ -216,13 +179,13 @@ const Terminal = () => {
         </div>
 
         {/* Login Status */}
-        {isLoggedIn && currentUser && (
+        {isLoggedIn && (
           <div className="mb-6 p-4 bg-green-900/30 border border-green-500/30 rounded-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle className="text-green-400" size={20} />
                 <span className="text-green-400 font-medium">
-                  Logged in as: {currentUser}
+                  Logged in as: OPERATOR
                 </span>
               </div>
               <Button 
@@ -246,7 +209,7 @@ const Terminal = () => {
             <CardTitle className="text-cyan-400 flex items-center gap-2">
               <LucideTerminal className="text-cyan-400" size={24} />
               Terminal Session
-              {currentUser && <span className="text-sm text-gray-400">- {currentUser.toUpperCase()}</span>}
+              {!isLoggedIn && <span className="text-sm text-gray-400">- NOT LOGGED IN</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -322,10 +285,10 @@ const Terminal = () => {
               <div>
                 <p className="font-semibold text-cyan-300 mb-2">Login:</p>
                 <code className="bg-slate-900 px-2 py-1 rounded text-green-400">
-                  login user <username> 0289
+                  login user
                 </code>
                 <p className="text-gray-400 mt-1 text-xs">
-                  Example: login user admin 0289
+                  No password required
                 </p>
               </div>
               <div>
@@ -336,6 +299,7 @@ const Terminal = () => {
                   <li><code className="bg-slate-900 px-1 rounded text-xs">shutdown</code> - Emergency shutdown</li>
                   <li><code className="bg-slate-900 px-1 rounded text-xs">logout</code> - Logout</li>
                   <li><code className="bg-slate-900 px-1 rounded text-xs">clear</code> - Clear terminal</li>
+                  <li><code className="bg-slate-900 px-1 rounded text-xs">help</code> - Show help</li>
                 </ul>
               </div>
             </div>
