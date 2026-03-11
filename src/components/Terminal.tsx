@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase, getUser, verifyPassword, getCommands, executeCommand } from "@/utils/supabase";
-import { Terminal as LucideTerminal } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent, Button, Input, Badge } from "@/components/ui";
+import { Zap, Shield, Settings, ArrowRight, Terminal as LucideTerminal } from "lucide-react";
 
 const Terminal = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -9,13 +10,12 @@ const Terminal = () => {
   const [password, setPassword] = useState("");
   const [command, setCommand] = useState("");
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
-  const toast = useToast();
 
   // Login handling
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
-      toast({ title: "Error", description: "Please enter both username and password", variant: "destructive" });
+      useToast().toast({ title: "Error", description: "Please enter both username and password", variant: "destructive" });
       return;
     }
     
@@ -24,14 +24,14 @@ const Terminal = () => {
       if (isValid) {
         setIsLoggedIn(true);
         setTerminalOutput(prev => [...prev, `> LOGIN SUCCESSFUL. WELCOME, ${username.toUpperCase()}.`]);
-        toast({ title: "Success", description: "Login successful", variant: "success" });
+        useToast().toast({ title: "Success", description: "Login successful", variant: "success" });
       } else {
         setTerminalOutput(prev => [...prev, "> LOGIN FAILED. INVALID CREDENTIALS."]);
-        toast({ title: "Error", description: "Invalid credentials", variant: "destructive" });
+        useToast().toast({ title: "Error", description: "Invalid credentials", variant: "destructive" });
       }
     } catch (error) {
       console.error("Login error:", error);
-      toast({ title: "Error", description: "Database connection failed", variant: "destructive" });
+      useToast().toast({ title: "Error", description: "Database connection failed", variant: "destructive" });
     }
   };
 
@@ -46,7 +46,6 @@ const Terminal = () => {
         setTerminalOutput(prev => [...prev, `Output: ${result.output}`]);
         // Handle extra actions here
         if (result.extra) {
-          // Add custom logic for extra actions
           console.log("Extra action:", result.extra);
         }
       } else {
@@ -66,46 +65,107 @@ const Terminal = () => {
       </div>
 
       <div className="relative z-10 max-w-4xl mx-auto text-center">
+        {/* Header */}
         <div className="mb-12">
-          <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">NUCLEAR REACTOR</h1>
-          <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">CONTROL SYSTEM</h2>
-          <p className="text-xl text-gray-300 mb-8">Advanced Reactor Management Interface v2.0</p>
+          <h1 className="text-6xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
+            NUCLEAR REACTOR CONTROL SYSTEM
+          </h1>
+          <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
+            ADVANCED REACTOR MANAGEMENT INTERFACE v2.0
+          </h2>
+          <p className="text-xl text-gray-300 mb-8">
+            Real-time monitoring and control of nuclear reactor operations
+          </p>
         </div>
 
+        {/* Main Features */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {/* Feature Cards */}
           <Card className="bg-slate-800/50 border-cyan-500/30 hover:border-cyan-400 transition-all duration-300 hover:scale-105">
             <CardHeader>
-              <Zap className="text-cyan-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-cyan-400">Real-time Monitoring</CardTitle>
+              <CardTitle className="text-cyan-400 flex items-center gap-2">
+                <Zap className="text-cyan-400" size={24} />
+                Real-time Monitoring
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-300">Monitor power output, temperature, pressure, and fuel levels in real-time with advanced sensors.</p>
+              <p className="text-gray-300">
+                Monitor power output, temperature, pressure, and fuel levels in real-time with advanced sensors.
+              </p>
             </CardContent>
           </Card>
-          {/* Add other feature cards here */}
+
+          <Card className="bg-slate-800/50 border-purple-500/30 hover:border-purple-400 transition-all duration-300 hover:scale-105">
+            <CardHeader>
+              <CardTitle className="text-purple-400 flex items-center gap-2">
+                <Shield className="text-purple-400" size={24} />
+                Safety Systems
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-300">
+                Advanced safety protocols with emergency shutdown capabilities and containment monitoring.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-800/50 border-green-500/30 hover:border-green-400 transition-all duration-300 hover:scale-105">
+            <CardHeader>
+              <CardTitle className="text-green-400 flex items-center gap-2">
+                <Settings className="text-green-400" size={24} />
+                Full Control
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-300">
+                Complete control over reactor operations, coolant systems, and power grid synchronization.
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
+        {/* CTA Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-          <Button size="lg" className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105" onClick={() => window.location.href = '/reactor'}>
+          <Button 
+            size="lg" 
+            className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
+            onClick={() => window.location.href = '/reactor'}
+          >
+            <ArrowRight className="mr-2" size={20} />
             ENTER REACTOR CONTROL SYSTEM
-            <ArrowRight className="ml-2" size={20} />
           </Button>
-          <Button size="lg" className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-4 text-lg font-bold border-2 border-green-400/50 hover:border-green-300 transition-all duration-300 hover:scale-105" onClick={() => window.location.href = '/terminal'}>
+          <Button 
+            size="lg" 
+            className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-4 text-lg font-bold border-2 border-green-400/50 hover:border-green-300 transition-all duration-300 hover:scale-105"
+            onClick={() => window.location.href = '/terminal'}
+          >
+            <LucideTerminal className="mr-2" size={20} />
             ACCESS TERMINAL MAINFRAME
-            <LucideTerminal className="ml-2" size={20} />
           </Button>
         </div>
 
+        {/* System Status */}
         <div className="space-y-6">
-          {isLoggedIn ? (
-            <renderTerminalInterface />
-          ) : (
-            <renderLoginPortal />
-          )}
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-2xl font-bold mb-2">System Status</h3>
+              <p className="text-gray-400">All systems nominal</p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
+                ONLINE
+              </Badge>
+              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
+                ONLINE
+              </Badge>
+              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
+                ONLINE
+              </Badge>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-8 text-center text-gray-400 text-sm">
+        {/* Footer */}
+        <div className="text-center mt-8 text-gray-400 text-sm">
           <p>NUCLEAR REACTOR CONTROL SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
           <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
         </div>
@@ -113,84 +173,5 @@ const Terminal = () => {
     </div>
   );
 };
-
-// Login Portal Component
-const renderLoginPortal = () => (
-  <Card className="bg-slate-800/50 border-cyan-500/30">
-    <CardHeader>
-      <CardTitle className="text-cyan-400 flex items-center gap-2">
-        <LucideTerminal className="text-cyan-400" size={24} />
-        MAINFRAME ACCESS PORTAL
-      </CardTitle>
-    </CardHeader>
-    <CardContent>
-      <div className="space-y-6">
-        <div className="text-center">
-          <div className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent mb-4">NUCLEAR REACTOR</div>
-          <div className="text-2xl font-bold bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">CONTROL SYSTEM</div>
-          <p className="text-gray-400 mt-2">AUTHENTICATION REQUIRED</p>
-        </div>
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <Input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} className="bg-slate-800/50 border border-cyan-500/30 text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:ring-cyan-500" required />
-          </div>
-          <div>
-            <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-slate-800/50 border border-cyan-500/30 text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:ring-cyan-500" required />
-          </div>
-          <Button type="submit" className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white">
-            <Key className="mr-2" size={16} />
-            ACCESS MAINFRAME
-          </Button>
-        </form>
-        <div className="text-center text-sm text-gray-500">
-          <p>Available accounts: admin/password123, operator/operator123, guest/guest123</p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
-// Terminal Interface Component
-const renderTerminalInterface = () => (
-  <Card className="bg-slate-800/50 border-green-500/30">
-    <CardHeader className="flex items-center justify-between">
-      <CardTitle className="text-green-400 flex items-center gap-2">
-        <LucideTerminal className="text-green-400" size={20} />
-        MAINFRAME TERMINAL
-      </CardTitle>
-      <div className="flex items-center gap-2">
-        <Badge variant="default" className="text-xs px-2 py-1 bg-green-600 text-white">
-          {isLoggedIn ? "LOGGED IN" : "LOGGED OUT"}
-        </Badge>
-        <Button variant="ghost" size="sm" onClick={() => {
-          setIsLoggedIn(false);
-          setUsername("");
-          setPassword("");
-          setTerminalOutput([]);
-        }} className="text-gray-400 hover:text-white">
-          <X size={16} />
-        </Button>
-      </div>
-    </CardHeader>
-    <CardContent className="h-96 overflow-y-auto bg-slate-900/30 p-4">
-      <div className="text-xs font-mono text-green-400 leading-relaxed">
-        {terminalOutput.map((line, index) => (
-          <div key={index}>{line}</div>
-        ))}
-      </div>
-    </CardContent>
-    <div className="p-4 border-t border-green-500/20">
-      <div className="flex items-center gap-2">
-        <span className="text-green-400 font-mono text-sm">user@reactor:~$</span>
-        <Input value={command} onChange={(e) => setCommand(e.target.value)} onKeyPress={(e) => {
-          if (e.key === "Enter") handleCommand();
-        }} className="bg-transparent border-none text-green-400 placeholder-green-400/50 font-mono text-sm flex-1" placeholder="Enter command" />
-        <Button variant="ghost" onClick={handleCommand} className="text-green-400 hover:text-white">
-          <ArrowRight size={16} />
-        </Button>
-      </div>
-    </div>
-  </Card>
-);
 
 export default Terminal;
