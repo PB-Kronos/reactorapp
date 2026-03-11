@@ -1,356 +1,227 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Terminal as LucideTerminal,
-  ChevronRight,
-  X,
-  CheckCircle,
-  AlertCircle,
-  Info,
-  Zap,
-  Shield,
-  Settings,
-  Power,
-  Droplets,
-  Fuel,
-  Thermometer,
-  Gauge,
-  Grid3X3,
-  ArrowRight  // Added this import
-} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowRight, Terminal, Shield, Key, User, Power, X } from "lucide-react";
 
 const Terminal = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [command, setCommand] = useState("");
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
-  const terminalRef = useRef<HTMLDivElement>(null);
+  const [showLogin, setShowLogin] = useState(true);
+  const toast = useToast();
 
-  // Auto-scroll to bottom when output changes
-  useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+  // Mock user database
+  const users = {
+    "admin": "password123",
+    "operator": "operator123",
+    "guest": "guest123"
+  };
+
+  // Mock Q&A database
+  const qaDatabase = {
+    "status": "System operational. All reactors running at 85% capacity.",
+    "temperature": "Core temperature: 420°C. Within safe limits.",
+    "power": "Current power output: 2.3 GW. Grid synchronized.",
+    "security": "Security level: HIGH. Access restricted to authorized personnel.",
+    "help": "Available commands: status, temperature, power, security, help, logout",
+    "default": "Command not recognized. Type 'help' for available commands."
+  };
+
+  // Handle login
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) {
+      toast.toast({ title: "Error", description: "Please enter both username and password", variant: "destructive" });
+      return;
     }
-  }, [terminalOutput]);
 
-  // Add terminal output with timestamp
-  const addTerminalOutput = (text: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    const styledText = `[${timestamp}] ${text}`;
-    setTerminalOutput(prev => [...prev, styledText]);
+    if (users[username] === password) {
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      setTerminalOutput(prev => [...prev, `> LOGIN SUCCESSFUL. WELCOME, ${username.toUpperCase()}.`]);
+      toast.toast({ title: "Success", description: "Login successful", variant: "success" });
+    } else {
+      toast.toast({ title: "Error", description: "Invalid credentials", variant: "destructive" });
+      setTerminalOutput(prev => [...prev, "> LOGIN FAILED. INVALID CREDENTIALS."]);
+    }
   };
 
   // Handle command execution
   const handleCommand = () => {
     if (!command.trim()) return;
 
-    const cmd = command.trim();
-    addTerminalOutput(`> ${cmd}`);
+    setTerminalOutput(prev => [...prev, `> ${command}`]);
+    const response = qaDatabase[command.toLowerCase()] || qaDatabase.default;
+    setTerminalOutput(prev => [...prev, response]);
 
-    try {
-      const parts = cmd.split(' ');
-      const mainCommand = parts[0].toLowerCase();
-      const args = parts.slice(1);
-
-      // Help command
-      if (mainCommand === "help") {
-        addTerminalOutput("AVAILABLE COMMANDS:");
-        addTerminalOutput("  status     - Show reactor system status");
-        addTerminalOutput("  login user - Login to terminal");
-        addTerminalOutput("  logout     - Logout from terminal");
-        addTerminalOutput("  clear      - Clear terminal screen");
-        addTerminalOutput("  help       - Show this help message");
-        addTerminalOutput("  reactor    - Access reactor control system");
-        addTerminalOutput("  shutdown   - Emergency shutdown procedure");
-        return;
-      }
-
-      // Login command - simple system
-      if (mainCommand === "login" && args[0] === "user") {
-        if (isLoggedIn) {
-          addTerminalOutput("ALREADY LOGGED IN");
-          return;
-        }
-
-        setIsLoggedIn(true);
-        addTerminalOutput("LOGIN SUCCESSFUL");
-        addTerminalOutput("ACCESS GRANTED TO TERMINAL MAINFRAME");
-        return;
-      }
-
-      // Check if user is logged in for protected commands
-      const protectedCommands = ["status", "reactor", "shutdown"];
-      if (protectedCommands.includes(mainCommand) && !isLoggedIn) {
-        addTerminalOutput("ACCESS DENIED: Please login first using 'login user'");
-        return;
-      }
-
-      // Status command
-      if (mainCommand === "status") {
-        addTerminalOutput("REACTOR SYSTEM STATUS:");
-        addTerminalOutput("  Core Temperature: 850°C (NOMINAL)");
-        addTerminalOutput("  Pressure: 15.2 MPa (NOMINAL)");
-        addTerminalOutput("  Power Output: 850 MW (NOMINAL)");
-        addTerminalOutput("  Coolant Flow: 98% (NOMINAL)");
-        addTerminalOutput("  Control Rods: 25% (NOMINAL)");
-        addTerminalOutput("  Safety Systems: ACTIVE");
-        return;
-      }
-
-      // Logout command
-      if (mainCommand === "logout") {
-        if (isLoggedIn) {
-          setIsLoggedIn(false);
-          addTerminalOutput("LOGOUT SUCCESSFUL");
-          addTerminalOutput("SESSION TERMINATED");
-        } else {
-          addTerminalOutput("NOT LOGGED IN");
-        }
-        return;
-      }
-
-      // Clear command
-      if (mainCommand === "clear") {
-        setTerminalOutput([]);
-        return;
-      }
-
-      // Reactor command
-      if (mainCommand === "reactor") {
-        addTerminalOutput("INITIATING REACTOR CONTROL SYSTEM ACCESS...");
-        addTerminalOutput("REDIRECTING TO REACTOR SIMULATOR...");
-        setTimeout(() => {
-          window.location.href = '/reactor';
-        }, 1500);
-        return;
-      }
-
-      // Shutdown command
-      if (mainCommand === "shutdown") {
-        addTerminalOutput("EMERGENCY SHUTDOWN PROCEDURE INITIATED");
-        addTerminalOutput("SCRAM SIGNAL SENT TO REACTOR CONTROL SYSTEM");
-        addTerminalOutput("COOLANT SYSTEMS ACTIVATED");
-        addTerminalOutput("REACTOR POWER DECREASING...");
-        addTerminalOutput("SHUTDOWN COMPLETE");
-        return;
-      }
-
-      // Unknown command
-      addTerminalOutput(`COMMAND NOT FOUND: ${cmd}`);
-      addTerminalOutput("Type 'help' for available commands");
-
-    } catch (error) {
-      console.error("Command error:", error);
-      addTerminalOutput("ERROR: Command execution failed");
+    // Special command handling
+    if (command.toLowerCase() === "logout") {
+      setIsLoggedIn(false);
+      setShowLogin(true);
+      setUsername("");
+      setPassword("");
+      setTerminalOutput([]);
     }
 
     setCommand("");
   };
 
-  // Handle key press for command execution
+  // Handle Enter key in command input
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleCommand();
     }
   };
+
+  // Clear terminal
+  const clearTerminal = () => {
+    setTerminalOutput([]);
+  };
+
+  // Render login portal
+  const renderLoginPortal = () => (
+    <Card className="bg-slate-800/50 border-cyan-500/30">
+      <CardHeader>
+        <CardTitle className="text-cyan-400 flex items-center gap-2">
+          <Terminal className="text-cyan-400" size={24} />
+          MAINFRAME ACCESS PORTAL
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          <div className="text-center">
+            <div className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent mb-4">
+              NUCLEAR REACTOR
+            </div>
+            <div className="text-2xl font-bold bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
+              CONTROL SYSTEM
+            </div>
+            <p className="text-gray-400 mt-2">AUTHENTICATION REQUIRED</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <Input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="bg-slate-800/50 border border-cyan-500/30 text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:ring-cyan-500"
+                required
+              />
+            </div>
+            <div>
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-slate-800/50 border border-cyan-500/30 text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:ring-cyan-500"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white">
+              <Key className="mr-2" size={16} />
+              ACCESS MAINFRAME
+            </Button>
+          </form>
+
+          <div className="text-center text-sm text-gray-500">
+            <p>Available accounts: admin/password123, operator/operator123, guest/guest123</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Render terminal interface
+  const renderTerminalInterface = () => (
+    <Card className="bg-slate-800/50 border-green-500/30">
+      <CardHeader className="flex items-center justify-between">
+        <CardTitle className="text-green-400 flex items-center gap-2">
+          <Terminal className="text-green-400" size={20} />
+          MAINFRAME TERMINAL
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          <Badge variant="default" className="text-xs px-2 py-1 bg-green-600 text-white">
+            {isLoggedIn ? "LOGGED IN" : "LOGGED OUT"}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearTerminal}
+            className="text-gray-400 hover:text-white"
+          >
+            <X size={16} />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="h-96 overflow-y-auto bg-slate-900/30 p-4">
+        <div className="text-xs font-mono text-green-400 leading-relaxed">
+          {terminalOutput.map((line, index) => (
+            <div key={index}>{line}</div>
+          ))}
+        </div>
+      </CardContent>
+      <div className="p-4 border-t border-green-500/20">
+        <div className="flex items-center gap-2">
+          <span className="text-green-400 font-mono text-sm">user@reactor:~$</span>
+          <Input
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            onKeyPress={handleKeyPress}
+            className="bg-transparent border-none text-green-400 placeholder-green-400/50 font-mono text-sm flex-1"
+            placeholder="Enter command"
+          />
+          <Button
+            variant="ghost"
+            onClick={handleCommand}
+            className="text-green-400 hover:text-white"
+          >
+            <ArrowRight size={16} />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
       <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2V6h4V4H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
 
-      <div className="relative z-10 max-w-6xl mx-auto">
+      <div className="relative z-10 max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-            NUCLEAR REACTOR CONTROL SYSTEM
+            NUCLEAR REACTOR
           </h1>
-          <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
-            TERMINAL MAINFRAME v2.0
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
+            CONTROL SYSTEM
           </h2>
-          <p className="text-xl text-gray-300 mb-8">
-            Secure terminal access for reactor control and monitoring
-          </p>
+          <p className="text-gray-400">TERMINAL MAINFRAME INTERFACE</p>
         </div>
 
-        {/* Login Status */}
-        {isLoggedIn && (
-          <div className="mb-6 p-4 bg-green-900/30 border border-green-500/30 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="text-green-400" size={20} />
-                <span className="text-green-400 font-medium">
-                  Logged in as: OPERATOR
-                </span>
-              </div>
-              <Button 
-                variant="outline"
-                size="sm"
-                className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                onClick={() => {
-                  setCommand("logout");
-                  setTimeout(handleCommand, 100);
-                }}
-              >
-                Logout
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Terminal Interface */}
-        <Card className="bg-slate-800/50 border-cyan-500/30">
-          <CardHeader>
-            <CardTitle className="text-cyan-400 flex items-center gap-2">
-              <LucideTerminal className="text-cyan-400" size={24} />
-              Terminal Session
-              {!isLoggedIn && <span className="text-sm text-gray-400">- NOT LOGGED IN</span>}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div 
-              ref={terminalRef}
-              className="bg-black p-4 rounded font-mono text-green-400 h-96 overflow-y-auto whitespace-pre-wrap"
-            >
-              {terminalOutput.map((line, index) => (
-                <div key={index} className="mb-1">
-                  {line}
-                </div>
-              ))}
-              <div className="flex items-center">
-                <span className="text-green-400 mr-2">$</span>
-                <Input
-                  type="text"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Enter command..."
-                  className="bg-transparent border-none text-green-400 placeholder-green-600 focus:outline-none flex-1"
-                  autoFocus
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          <Button 
-            variant="outline"
-            className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
-            onClick={() => {
-              setCommand("status");
-              setTimeout(handleCommand, 100);
-            }}
-          >
-            <Info className="mr-2" size={16} />
-            System Status
-          </Button>
-          <Button 
-            variant="outline"
-            className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
-            onClick={() => {
-              setCommand("reactor");
-              setTimeout(handleCommand, 100);
-            }}
-          >
-            <Settings className="mr-2" size={16} />
-            Reactor Control
-          </Button>
-          <Button 
-            variant="outline"
-            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-            onClick={() => {
-              setCommand("shutdown");
-              setTimeout(handleCommand, 100);
-            }}
-          >
-            <AlertCircle className="mr-2" size={16} />
-            Emergency Shutdown
-          </Button>
+        {/* Terminal Component */}
+        <div className="space-y-6">
+          {showLogin ? (
+            renderLoginPortal()
+          ) : (
+            renderTerminalInterface()
+          )}
         </div>
 
-        {/* Help Section */}
-        <Card className="bg-slate-800/50 border-cyan-500/30 mt-6">
-          <CardHeader>
-            <CardTitle className="text-cyan-400">Quick Help</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="font-semibold text-cyan-300 mb-2">Login:</p>
-                <code className="bg-slate-900 px-2 py-1 rounded text-green-400">
-                  login user
-                </code>
-                <p className="text-gray-400 mt-1 text-xs">
-                  No password required
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold text-cyan-300 mb-2">Other Commands:</p>
-                <ul className="space-y-1 text-gray-300">
-                  <li><code className="bg-slate-900 px-1 rounded text-xs">status</code> - System status</li>
-                  <li><code className="bg-slate-900 px-1 rounded text-xs">reactor</code> - Open reactor control</li>
-                  <li><code className="bg-slate-900 px-1 rounded text-xs">shutdown</code> - Emergency shutdown</li>
-                  <li><code className="bg-slate-900 px-1 rounded text-xs">logout</code> - Logout</li>
-                  <li><code className="bg-slate-900 px-1 rounded text-xs">clear</code> - Clear terminal</li>
-                  <li><code className="bg-slate-900 px-1 rounded text-xs">help</code> - Show help</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Navigation Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12">
-          <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/reactor'}
-          >
-            <ArrowRight className="mr-2" size={20} />
-            ENTER REACTOR CONTROL SYSTEM
-          </Button>
-          <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-4 text-lg font-bold border-2 border-green-400/50 hover:border-green-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/terminal'}
-          >
-            <LucideTerminal className="mr-2" size={20} />
-            ACCESS TERMINAL MAINFRAME
-          </Button>
-        </div>
-
-        {/* System Status */}
-        <div className="space-y-6 mt-12">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-2xl font-bold mb-2">System Status</h3>
-              <p className="text-gray-400">All systems nominal</p>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
-                ONLINE
-              </Badge>
-              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
-                ONLINE
-              </Badge>
-              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
-                ONLINE
-              </Badge>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>NUCLEAR REACTOR CONTROL SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
+        {/* Made with Dyad */}
+        <div className="mt-8 text-center text-gray-400 text-sm">
+          <p>TERMINAL MAINFRAME SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
           <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
         </div>
       </div>
