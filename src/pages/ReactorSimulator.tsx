@@ -17,11 +17,9 @@ import {
   Settings, 
   Grid3X3,
   ArrowLeft,
-  ArrowRight,
-  ArrowDown,
-  ArrowUp,
   Activity,
-  Terminal as LucideTerminal
+  Terminal as LucideTerminal,
+  AlertTriangle
 } from "lucide-react";
 
 // Constants for turbine RPM mapping
@@ -58,31 +56,28 @@ const ReactorSimulator = () => {
 
   // Steam valve value changer (0.2% per second = 0.002 per tick)
   useEffect(() => {
-    // Clear any existing interval first
     if (valveIntervalRef.current) {
       clearInterval(valveIntervalRef.current);
       valveIntervalRef.current = null;
     }
 
-    // Only create new interval if valveDirection is not 0
     if (valveDirection !== 0) {
       const interval = setInterval(() => {
         setValveValue(prev => {
-          const newVal = prev + valveDirection * 0.002; // 0.2% per second
+          const newVal = prev + valveDirection * 0.002;
           return Math.min(Math.max(newVal, 0), 100);
         });
-      }, 10); // 10ms for smooth updates
+      }, 10);
       valveIntervalRef.current = interval;
     }
 
-    // Cleanup function
     return () => {
       if (valveIntervalRef.current) {
         clearInterval(valveIntervalRef.current);
         valveIntervalRef.current = null;
       }
     };
-  }, [valveDirection]); // Only re-run when valveDirection changes
+  }, [valveDirection]);
 
   // Update target turbine speed when valve changes (if reactor is running and not locked)
   useEffect(() => {
@@ -93,31 +88,28 @@ const ReactorSimulator = () => {
 
   // Control rod value changer (1% per second = 0.1 per tick)
   useEffect(() => {
-    // Clear any existing interval first
     if (rodIntervalRef.current) {
       clearInterval(rodIntervalRef.current);
       rodIntervalRef.current = null;
     }
 
-    // Only create new interval if rodDirection is not 0
     if (rodDirection !== 0) {
       const interval = setInterval(() => {
         setRodPercentage(prev => {
           const newVal = prev + rodDirection * 0.1;
           return Math.min(Math.max(newVal, 0), 100);
         });
-      }, 10); // 10ms for smooth updates
+      }, 10);
       rodIntervalRef.current = interval;
     }
 
-    // Cleanup function
     return () => {
       if (rodIntervalRef.current) {
         clearInterval(rodIntervalRef.current);
         rodIntervalRef.current = null;
       }
     };
-  }, [rodDirection]); // Only re-run when rodDirection changes
+  }, [rodDirection]);
 
   // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
@@ -144,36 +136,29 @@ const ReactorSimulator = () => {
     };
   }, [isRunning, targetTurbineSpeed, isLocked]);
 
-  // Reactor physics simulation - now based on valveValue (power output)
+  // Reactor physics simulation
   useEffect(() => {
     if (isRunning) {
       const interval = setInterval(() => {
-        // Calculate online pump count for cooling effect
         const onlinePumpCount = (pump1Online ? 1 : 0) + (pump2Online ? 1 : 0);
         
-        // Temperature increase components
         const baseTempRise = valveValue * 0.01 * (1 - rodPercentage / 100);
         const pressureTempRise = pressure * 0.001;
         const coolingEffect = onlinePumpCount * 0.5;
         const coolantCooling = coolantPumpOn ? (coolantFlow * 0.04) : 0;
         
-        // Net temperature change
         const netTempChange = baseTempRise + pressureTempRise - coolingEffect - coolantCooling;
         
-        // Apply temperature change (max 4500°C)
         setTemperature(prev => Math.max(0, Math.min(prev + netTempChange, 4500)));
         
-        // Pressure decreases when temperature is going down
         if (netTempChange < 0) {
           setPressure(prev => Math.max(1, prev - 0.1));
         } else {
           setPressure(prev => Math.min(200, prev + 0.1));
         }
         
-        // Fuel depletes with power (valveValue)
         setFuelLevel(prev => Math.max(prev - valveValue * 0.001, 0));
         
-        // Grid sync depends on turbine speed matching 3000 RPM ± 3
         const syncMargin = 3;
         const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
         if (Math.abs(actualRPM - SYNC_RPM) <= syncMargin) {
@@ -184,36 +169,7 @@ const ReactorSimulator = () => {
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [isRunning, valveValue, temperature, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure, coolantPumpOn, coolantFlow]);
-
-  // Navigation handlers
-  const handleLeftArrow = () => {
-    if (activePanel === "status") setActivePanel("power-coolant");
-    else if (activePanel === "power-coolant") setActivePanel("power-grid");
-    else if (activePanel === "power-grid") setActivePanel("status");
-    else setActivePanel("status");
-  };
-
-  const handleRightArrow = () => {
-    if (activePanel === "status") setActivePanel("power-grid");
-    else if (activePanel === "power-grid") setActivePanel("power-coolant");
-    else if (activePanel === "power-coolant") setActivePanel("status");
-    else setActivePanel("status");
-  };
-
-  const handleDownArrow = () => {
-    if (activePanel === "status") setActivePanel("control-rods");
-    else if (activePanel === "control-rods") setActivePanel("startup-shutdown");
-    else if (activePanel === "startup-shutdown") setActivePanel("status");
-    else setActivePanel("status");
-  };
-
-  const handleUpArrow = () => {
-    if (activePanel === "startup-shutdown") setActivePanel("control-rods");
-    else if (activePanel === "control-rods") setActivePanel("status");
-    else if (activePanel === "status") setActivePanel("startup-shutdown");
-    else setActivePanel("status");
-  };
+  }, [isRunning, valveValue, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure, coolantPumpOn, coolantFlow]);
 
   // Reactor control actions
   const startReactor = () => {
@@ -237,7 +193,6 @@ const ReactorSimulator = () => {
     }
   };
 
-  // Status indicators
   const getStatusColor = () => {
     if (temperature > 4500) return "destructive";
     if (temperature > 3000) return "warning";
@@ -251,12 +206,10 @@ const ReactorSimulator = () => {
     return "STANDBY";
   };
 
-  // Calculate values
   const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
   const targetRPM = targetTurbineSpeed * TURBINE_RPM_SCALE;
   const syncMargin = 3;
   const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= syncMargin;
-  const syncDeviation = actualRPM - SYNC_RPM;
   const turbineOutputMW = isRunning ? valveValue * 2 * (1 - Math.min((temperature - 3000) / 1500, 0.1)) : 0;
 
   // Valve control handlers
@@ -301,7 +254,6 @@ const ReactorSimulator = () => {
     const needleX = centerX + radius * 0.8 * Math.cos(angle * Math.PI / 180);
     const needleY = centerY + radius * 0.8 * Math.sin(angle * Math.PI / 180);
 
-    // Draw scale marks
     const marks = [];
     for (let rpm = 0; rpm <= 4500; rpm += 500) {
       const markAngle = ((rpm - SYNC_RPM) / (maxRPM - SYNC_RPM) * 90);
@@ -321,7 +273,6 @@ const ReactorSimulator = () => {
       );
     }
 
-    // Draw sync zone
     const syncStartAngle = -3 / (maxRPM - SYNC_RPM) * 90;
     const syncEndAngle = 3 / (maxRPM - SYNC_RPM) * 90;
     return (
@@ -344,120 +295,407 @@ const ReactorSimulator = () => {
     );
   };
 
-  // Render pump status icon
-  const renderPumpIcon = (isOnline: boolean) => (
-    <Droplets size={24} className={isOnline ? "text-blue-400" : "text-gray-500"} />
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
       <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2V6h4V4H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2V6h4V4H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
-      <div className="relative z-10 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-            NUCLEAR REACTOR CONTROL SYSTEM
-          </h1>
-          <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
-            ADVANCED REACTOR MANAGEMENT INTERFACE v2.0
-          </h2>
-          <p className="text-xl text-gray-300 mb-8">
-            Real-time monitoring and control of nuclear reactor operations
-          </p>
-        </div>
-        {/* Main Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <Card className="bg-slate-800/50 border-cyan-500/30 hover:border-cyan-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <CardTitle className="text-cyan-400 flex items-center gap-2">
-                <Zap className="text-cyan-400" size={24} />
-                Real-time Monitoring
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Monitor power output, temperature, pressure, and fuel levels in real-time with advanced sensors.
-              </p>
-            </CardContent>
-          </Card>
 
-          <Card className="bg-slate-800/50 border-purple-500/30 hover:border-purple-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <CardTitle className="text-purple-400 flex items-center gap-2">
-                <Shield className="text-purple-400" size={24} />
-                Safety Systems
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Advanced safety protocols with emergency shutdown capabilities and containment monitoring.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800/50 border-green-500/30 hover:border-green-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <CardTitle className="text-green-400 flex items-center gap-2">
-                <Settings className="text-green-400" size={24} />
-                Full Control
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Complete control over reactor operations, coolant systems, and power grid synchronization.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* CTA Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+      <div className="relative z-10 max-w-7xl mx-auto">
+        {/* Header with Navigation */}
+        <div className="flex justify-between items-center mb-6">
           <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/reactor'}
+            variant="outline"
+            className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+            onClick={() => window.location.href = '/'}
           >
-            <ArrowRight className="mr-2" size={20} />
-            ENTER REACTOR CONTROL SYSTEM
+            <ArrowLeft className="mr-2" size={16} />
+            Back to Home
           </Button>
-          <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-4 text-lg font-bold border-2 border-green-400/50 hover:border-green-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/terminal'}
-          >
-            <LucideTerminal className="mr-2" size={20} />
-            ACCESS TERMINAL MAINFRAME
-          </Button>
-        </div>
+          
+          <div className="text-center">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
+              REACTOR CONTROL SYSTEM
+            </h1>
+            <p className="text-sm text-gray-400">Real-time monitoring and control</p>
+          </div>
 
-        {/* System Status */}
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-2xl font-bold mb-2">System Status</h3>
-              <p className="text-gray-400">All systems nominal</p>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
-                ONLINE
-              </Badge>
-              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
-                ONLINE
-              </Badge>
-              <Badge variant="default" className="text-xs px-2 py-1 bg-gray-900 text-gray-300">
-                ONLINE
-              </Badge>
-            </div>
+          <div className="flex items-center gap-2">
+            <Badge variant={isRunning ? "default" : "secondary"} className={isRunning ? "bg-green-600" : "bg-gray-600"}>
+              {isRunning ? "RUNNING" : "STANDBY"}
+            </Badge>
+            <Badge variant={getStatusColor()}>
+              {getStatusText()}
+            </Badge>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>NUCLEAR REACTOR CONTROL SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
-          <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
+        {/* Main Control Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Column - Status Gauges */}
+          <div className="lg:col-span-1 space-y-4">
+            <Card className="bg-slate-800/50 border-cyan-500/30">
+              <CardHeader>
+                <CardTitle className="text-cyan-400 text-sm flex items-center gap-2">
+                  <Thermometer size={16} />
+                  Core Temperature
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-cyan-300 mb-2">
+                  {temperature.toFixed(0)}°C
+                </div>
+                <Progress 
+                  value={(temperature / 4500) * 100} 
+                  className="h-2"
+                  indicatorClassName={`${
+                    temperature > 4500 ? 'bg-red-500' : 
+                    temperature > 3000 ? 'bg-yellow-500' : 
+                    'bg-cyan-500'
+                  }`}
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>0°C</span>
+                  <span>4500°C</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-purple-500/30">
+              <CardHeader>
+                <CardTitle className="text-purple-400 text-sm flex items-center gap-2">
+                  <Gauge size={16} />
+                  Pressure
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-300 mb-2">
+                  {pressure.toFixed(1)} MPa
+                </div>
+                <Progress 
+                  value={(pressure / 200) * 100} 
+                  className="h-2"
+                  indicatorClassName="bg-purple-500"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>1 MPa</span>
+                  <span>200 MPa</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-green-500/30">
+              <CardHeader>
+                <CardTitle className="text-green-400 text-sm flex items-center gap-2">
+                  <Fuel size={16} />
+                  Fuel Level
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-300 mb-2">
+                  {fuelLevel.toFixed(1)}%
+                </div>
+                <Progress 
+                  value={fuelLevel} 
+                  className="h-2"
+                  indicatorClassName="bg-green-500"
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-yellow-500/30">
+              <CardHeader>
+                <CardTitle className="text-yellow-400 text-sm flex items-center gap-2">
+                  <Zap size={16} />
+                  Power Output
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-300">
+                  {turbineOutputMW.toFixed(1)} MW
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  Grid Sync: {gridSync.toFixed(0)}%
+                </div>
+                <Progress 
+                  value={gridSync} 
+                  className="h-2 mt-2"
+                  indicatorClassName="bg-yellow-500"
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Center Column - Synchronoscope & Main Controls */}
+          <div className="lg:col-span-2 space-y-4">
+            <Card className="bg-slate-800/50 border-cyan-500/30">
+              <CardHeader>
+                <CardTitle className="text-cyan-400 flex items-center justify-between">
+                  <span>Synchronoscope</span>
+                  <Badge variant={isSynchronized ? "default" : "destructive"} className={isSynchronized ? "bg-green-600" : "bg-red-600"}>
+                    {isSynchronized ? "SYNC" : "OUT OF SYNC"}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex justify-center">
+                {renderSynchronoscope()}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-cyan-500/30">
+              <CardHeader>
+                <CardTitle className="text-cyan-400">Steam Input Valve Control</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-400">Valve Position</span>
+                    <span className="text-lg font-bold text-cyan-300">{valveValue.toFixed(1)}%</span>
+                  </div>
+                  <Slider
+                    value={[valveValue]}
+                    onValueChange={(value) => setValveValue(value[0])}
+                    max={100}
+                    min={0}
+                    step={0.1}
+                    className="py-4"
+                    disabled={isLocked}
+                  />
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-cyan-500/30 text-cyan-400"
+                      onMouseDown={() => handleValvePress(-1)}
+                      onMouseUp={handlePausePress}
+                      onMouseLeave={handlePausePress}
+                      disabled={isLocked}
+                    >
+                      Close (-0.2%/s)
+                    </Button>
+                    <Button 
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-cyan-500/30 text-cyan-400"
+                      onMouseDown={() => handleValvePress(1)}
+                      onMouseUp={handlePausePress}
+                      onMouseLeave={handlePausePress}
+                      disabled={isLocked}
+                    >
+                      Open (+0.2%/s)
+                    </Button>
+                  </div>
+                  {isLocked && (
+                    <p className="text-xs text-yellow-400 text-center">
+                      Valve locked at sync speed (66.67%)
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-red-500/30">
+              <CardHeader>
+                <CardTitle className="text-red-400 flex items-center gap-2">
+                  <AlertTriangle size={20} />
+                  Emergency Scram
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Button 
+                  size="lg"
+                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-6 text-xl"
+                  onClick={emergencyShutdown}
+                  disabled={!scramPressed && temperature < 3000}
+                >
+                  SCRAM REACTOR
+                </Button>
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  {!scramPressed && temperature < 3000 
+                    ? "Available only when temperature > 3000°C or after previous scram" 
+                    : "Emergency shutdown - immediately inserts all control rods"}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Control Rods & Pumps */}
+          <div className="lg:col-span-1 space-y-4">
+            <Card className="bg-slate-800/50 border-orange-500/30">
+              <CardHeader>
+                <CardTitle className="text-orange-400">Control Rods</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-400">Insertion</span>
+                    <span className="text-lg font-bold text-orange-300">{rodPercentage.toFixed(0)}%</span>
+                  </div>
+                  <Progress 
+                    value={rodPercentage} 
+                    className="h-3"
+                    indicatorClassName="bg-orange-500"
+                  />
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-orange-500/30 text-orange-400"
+                      onMouseDown={() => handleRodPress(1)}
+                      onMouseUp={handleRodNeutral}
+                      onMouseLeave={handleRodNeutral}
+                    >
+                      Insert (+1%/s)
+                    </Button>
+                    <Button 
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-orange-500/30 text-orange-400"
+                      onMouseDown={() => handleRodPress(-1)}
+                      onMouseUp={handleRodNeutral}
+                      onMouseLeave={handleRodNeutral}
+                    >
+                      Withdraw (-1%/s)
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-blue-500/30">
+              <CardHeader>
+                <CardTitle className="text-blue-400 flex items-center gap-2">
+                  <Droplets size={16} />
+                  Feedwater Pumps
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-400">Pump 1</span>
+                    <Button
+                      size="sm"
+                      variant={pump1Online ? "default" : "outline"}
+                      className={pump1Online ? "bg-blue-600" : "border-blue-500/30 text-blue-400"}
+                      onClick={() => setPump1Online(!pump1Online)}
+                    >
+                      {pump1Online ? "ONLINE" : "OFFLINE"}
+                    </Button>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-400">Pump 2</span>
+                    <Button
+                      size="sm"
+                      variant={pump2Online ? "default" : "outline"}
+                      className={pump2Online ? "bg-blue-600" : "border-blue-500/30 text-blue-400"}
+                      onClick={() => setPump2Online(!pump2Online)}
+                    >
+                      {pump2Online ? "ONLINE" : "OFFLINE"}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-teal-500/30">
+              <CardHeader>
+                <CardTitle className="text-teal-400 flex items-center gap-2">
+                  <Droplets size={16} />
+                  Coolant System
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-400">Pump</span>
+                    <Button
+                      size="sm"
+                      variant={coolantPumpOn ? "default" : "outline"}
+                      className={coolantPumpOn ? "bg-teal-600" : "border-teal-500/30 text-teal-400"}
+                      onClick={() => setCoolantPumpOn(!coolantPumpOn)}
+                    >
+                      {coolantPumpOn ? "ON" : "OFF"}
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-400">Flow Rate</span>
+                      <span className="text-teal-300">{coolantFlow.toFixed(0)}%</span>
+                    </div>
+                    <Slider
+                      value={[coolantFlow]}
+                      onValueChange={(value) => setCoolantFlow(value[0])}
+                      max={100}
+                      min={0}
+                      step={1}
+                      disabled={!coolantPumpOn}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-green-500/30">
+              <CardHeader>
+                <CardTitle className="text-green-400 flex items-center gap-2">
+                  <Power size={16} />
+                  Reactor Control
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Button 
+                    size="lg"
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={startReactor}
+                    disabled={isRunning}
+                  >
+                    START REACTOR
+                  </Button>
+                  <Button 
+                    size="lg"
+                    className="w-full bg-red-600 hover:bg-red-700"
+                    onClick={stopReactor}
+                    disabled={!isRunning}
+                  >
+                    STOP REACTOR
+                  </Button>
+                  <Button 
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-yellow-500/30 text-yellow-400"
+                    onClick={handleSyncPress}
+                    disabled={!isSynchronized}
+                  >
+                    {isLocked ? "UNLOCK SPEED" : "LOCK TO SYNC"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Footer Status Bar */}
+        <div className="mt-6 p-4 bg-slate-800/30 border border-cyan-500/20 rounded-lg">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <span className="text-gray-400">Turbine RPM:</span>
+              <span className="ml-2 font-mono text-cyan-300">{actualRPM.toFixed(0)} / {targetRPM.toFixed(0)}</span>
+            </div>
+            <div>
+              <span className="text-gray-400">Valve Position:</span>
+              <span className="ml-2 font-mono text-cyan-300">{valveValue.toFixed(1)}%</span>
+            </div>
+            <div>
+              <span className="text-gray-400">Control Rods:</span>
+              <span className="ml-2 font-mono text-orange-300">{rodPercentage.toFixed(0)}%</span>
+            </div>
+            <div>
+              <span className="text-gray-400">Coolant Flow:</span>
+              <span className="ml-2 font-mono text-teal-300">{coolantFlow.toFixed(0)}%</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
