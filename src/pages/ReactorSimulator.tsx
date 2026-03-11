@@ -55,7 +55,7 @@ const ReactorSimulator = () => {
   const turbineIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const rodIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Steam valve value changer (0.5% per second = 0.05 per tick)
+  // Steam valve value changer (0.2% per second = 0.002 per tick)
   useEffect(() => {
     // Clear any existing interval first
     if (valveIntervalRef.current) {
@@ -67,7 +67,7 @@ const ReactorSimulator = () => {
     if (valveDirection !== 0) {
       const interval = setInterval(() => {
         setValveValue(prev => {
-          const newVal = prev + valveDirection * 0.05;
+          const newVal = prev + valveDirection * 0.002; // 0.2% per second
           return Math.min(Math.max(newVal, 0), 100);
         });
       }, 10); // 10ms for smooth updates
@@ -779,7 +779,7 @@ const ReactorSimulator = () => {
                           +
                         </Button>
                       </div>
-                      <div className="text-xs text-gray-400 mt-1">Steam Input Valve (0.5% per second)</div>
+                      <div className="text-xs text-gray-400 mt-1">Steam Input Valve (0.2% per second)</div>
                     </div>
                     {/* Sync Button */}
                     <div className="flex justify-center mt-4">
