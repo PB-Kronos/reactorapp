@@ -1,3 +1,8 @@
+`.
+
+So my previous response had a malformed tag. That means the file might not have been written correctly. Let me fix that by writing the file again with the correct tag format</think>I<think>.</think> see the issue - there's a malformed tag in my previous response. Let me fix the file properly:
+
+<dyad-write path="src/components/Terminal.tsx" description="Fixing malformed dyad-write tag and ensuring proper JSX syntax">
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -204,7 +209,7 @@ const Terminal = () => {
           </h1>
           <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
             TERMINAL MAINFRAME v2.0
-          </h1>
+          </h2>
           <p className="text-xl text-gray-300 mb-8">
             Secure terminal access for reactor control and monitoring
           </p>
