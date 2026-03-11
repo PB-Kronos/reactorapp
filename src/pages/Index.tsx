@@ -3,7 +3,7 @@
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Zap, Shield, Settings, ArrowRight } from "lucide-react";
+import { Zap, Shield, Settings, ArrowRight, Terminal as TerminalIcon } from "lucide-react";
 
 const Index = () => {
   return (
@@ -66,8 +66,8 @@ const Index = () => {
           </Card>
         </div>
 
-        {/* CTA Button */}
-        <div className="mb-12">
+        {/* CTA Buttons */}
+        <div className="mb-12 grid grid-cols-1 md:grid-cols-2 gap-6">
           <Button 
             size="lg" 
             className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
@@ -75,6 +75,14 @@ const Index = () => {
           >
             ENTER REACTOR CONTROL SYSTEM
             <ArrowRight className="ml-2" size={20} />
+          </Button>
+          <Button 
+            size="lg" 
+            className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-8 py-4 text-lg font-bold border-2 border-yellow-400/50 hover:border-yellow-300 transition-all duration-300 hover:scale-105"
+            onClick={() => window.location.href = '/mainframe'}
+          >
+            ENTER HACKER MAINFRAME
+            <TerminalIcon className="ml-2" size={20} />
           </Button>
         </div>
 

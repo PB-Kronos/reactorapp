@@ -9,6 +9,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ReactorSimulator from "./pages/ReactorSimulator";
+import Mainframe from "./pages/Mainframe";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/reactor" element={<ReactorSimulator />} />
+          <Route path="/mainframe" element={<Mainframe />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
