@@ -21,7 +21,7 @@ import {
   Thermometer,
   Gauge,
   Grid3X3,
-  ArrowRight
+  ArrowRight  // Added this import
 } from "lucide-react";
 
 const Terminal = () => {
