@@ -10,7 +10,8 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ReactorSimulator from "./pages/ReactorSimulator";
 import Mainframe from "./pages/Mainframe";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from '@vercel/speed-insights/next'
 
 const queryClient = new QueryClient();
 
