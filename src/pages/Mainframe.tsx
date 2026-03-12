@@ -176,7 +176,7 @@ const Mainframe = () => {
       case "SHUTDOWN":
         return <Badge variant="destructive" className="bg-red-600 text-white">✗ {status}</Badge>;
       default:
-        return <Badge variant="default" className="bg-gray-600 text-white">> {status}</Badge>; // Fixed unescaped '>'
+        return <Badge variant="default" className="bg-gray-600 text-white">{status}</Badge>;
     }
   };
 
@@ -200,7 +200,7 @@ const Mainframe = () => {
               )}
             </div>
           ))}
-          <div className="text-cyan-400">> {currentInput}</div> // Fixed unescaped '>'
+          <div className="text-cyan-400">> {currentInput}</div>
         </div>
         <div className="flex gap-2">
           <input
@@ -489,12 +489,12 @@ const Mainframe = () => {
         </div>
       </div>
 
-      <style>
+      <style jsx>{`
         @keyframes pulse {
           0%, 100% { opacity: 0.5; transform: scale(1); }
           50% { opacity: 0.8; transform: scale(1.05); }
         }
-      </style>
+      `}</style>
     </div>
   );
 };
