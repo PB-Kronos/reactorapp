@@ -176,7 +176,7 @@ const Mainframe = () => {
       case "SHUTDOWN":
         return <Badge variant="destructive" className="bg-red-600 text-white">✗ {status}</Badge>;
       default:
-        return <Badge variant="muted" className="bg-gray-600 text-white">{status}</Badge>;
+        return <Badge variant="default" className="bg-gray-600 text-white">{status}</Badge>;
     }
   };
 
@@ -425,17 +425,17 @@ const Mainframe = () => {
         </div>
       </CardContent>
     </Card>
-    );
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
-      {/* Background Grid Pattern */} 
+      {/* Background Grid Pattern */}
       <div className="fixed inset-0 opacity-10">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto">
-        {/* Header */} 
+        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
             HACKER MAINFRAME
@@ -443,7 +443,7 @@ const Mainframe = () => {
           <p className="text-gray-400">Advanced Terminal Interface v2.0</p>
         </div>
 
-        {/* Navigation Arrows */} 
+        {/* Navigation Arrows */}
         <div className="flex justify-between items-center mb-6">
           <button onClick={handleLeftArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
             <ArrowLeft className="text-cyan-400" size={24} />
@@ -463,7 +463,7 @@ const Mainframe = () => {
           </button>
         </div>
 
-        {/* Main Panel Area */} 
+        {/* Main Panel Area */}
         <div className="bg-slate-800/30 backdrop-blur-sm border border-cyan-500/20 rounded-2xl p-6 mb-6">
           {activePanel === "terminal" && renderTerminalPanel()}
           {activePanel === "security" && renderSecurityPanel()}
@@ -472,7 +472,7 @@ const Mainframe = () => {
           {activePanel === "mainframe" && renderMainframePanel()}
         </div>
 
-        {/* Vertical Navigation (Up/Down) */} 
+        {/* Vertical Navigation (Up/Down) */}
         <div className="flex justify-center gap-4">
           <button onClick={handleUpArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
             <ArrowUp className="text-cyan-400" size={24} />
@@ -482,7 +482,7 @@ const Mainframe = () => {
           </button>
         </div>
 
-        {/* Footer */} 
+        {/* Footer */}
         <div className="text-center mt-8 text-gray-400 text-sm">
           <p>MAINFRAME TERMINAL • CLASSIFIED ACCESS • SECURITY LEVEL: ULTRA</p>
           <p className="mt-1">© 2024 Advanced Terminal Systems</p>
@@ -490,17 +490,6 @@ const Mainframe = () => {
       </div>
 
       <style jsx>{`
-        .terminal-output {
-          font-family: 'Courier New', monospace;
-          line-height: 1.4;
-        }
-        .terminal-input {
-          background: transparent;
-          border: none;
-          color: #00ff00;
-          outline: none;
-          font-family: 'Courier New', monospace;
-        }
         @keyframes pulse {
           0%, 100% { opacity: 0.5; transform: scale(1); }
           50% { opacity: 0.8; transform: scale(1.05); }

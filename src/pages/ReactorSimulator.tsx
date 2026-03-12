@@ -504,13 +504,13 @@ const ReactorSimulator = () => {
                     </div>
                     {/* Control buttons */}
                     <div className="flex space-x-4">
-                      <Button onClick={() => handleRodPress(1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`}>
+                      <Button onClick={() => handleRodPress(1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`} >
                         + (Lower)
                       </Button>
-                      <Button onClick={() => handleRodNeutral()} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`}>
+                      <Button onClick={() => handleRodNeutral()} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`} >
                         = (Neutral)
                       </Button>
-                      <Button onClick={() => handleRodPress(-1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`}>
+                      <Button onClick={() => handleRodPress(-1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`} >
                         - (Raise)
                       </Button>
                     </div>
@@ -556,8 +556,7 @@ const ReactorSimulator = () => {
                     </Button>
                     <Button 
                       onClick={emergencyShutdown}
-                      className={`
-                        h-16 text-lg font-bold border-2
+                      className={`h-16 text-lg font-bold border-2
                         ${scramPressed ? 'bg-red-600 hover:bg-red-700 border-red-500/50' : 
                           temperature > 3000 ? 'bg-orange-600 hover:bg-orange-700 border-orange-500/50' : 
                           'bg-gray-600 hover:bg-gray-700 border-gray-500/50'}
@@ -613,10 +612,10 @@ const ReactorSimulator = () => {
                       </Badge>
                     </div>
                     <div className="flex gap-2">
-                      <Button onClick={() => setPump1Online(true)} disabled={pump1Online} className={`flex-1 py-3 font-bold text-base ${pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                      <Button onClick={() => setPump1Online(true)} disabled={pump1Online} className={`flex-1 py-3 font-bold text-base ${pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} >
                         ON
                       </Button>
-                      <Button onClick={() => setPump1Online(false)} disabled={!pump1Online} className={`flex-1 py-3 font-bold text-base ${!pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`}>
+                      <Button onClick={() => setPump1Online(false)} disabled={!pump1Online} className={`flex-1 py-3 font-bold text-base ${!pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`} >
                         OFF
                       </Button>
                     </div>
@@ -633,10 +632,10 @@ const ReactorSimulator = () => {
                       </Badge>
                     </div>
                     <div className="flex gap-2">
-                      <Button onClick={() => setPump2Online(true)} disabled={pump2Online} className={`flex-1 py-3 font-bold text-base ${pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                      <Button onClick={() => setPump2Online(true)} disabled={pump2Online} className={`flex-1 py-3 font-bold text-base ${pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} >
                         ON
                       </Button>
-                      <Button onClick={() => setPump2Online(false)} disabled={!pump2Online} className={`flex-1 py-3 font-bold text-base ${!pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`}>
+                      <Button onClick={() => setPump2Online(false)} disabled={!pump2Online} className={`flex-1 py-3 font-bold text-base ${!pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`} >
                         OFF
                       </Button>
                     </div>
@@ -682,15 +681,13 @@ const ReactorSimulator = () => {
                     <Button 
                       onClick={() => setCoolantPumpOn(true)} 
                       disabled={coolantPumpOn}
-                      className={`flex-1 py-3 font-bold text-base ${coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-                    >
+                      className={`flex-1 py-3 font-bold text-base ${coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}`} >
                       ON
                     </Button>
                     <Button 
                       onClick={() => setCoolantPumpOn(false)} 
                       disabled={!coolantPumpOn}
-                      className={`flex-1 py-3 font-bold text-base ${!coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}`}
-                    >
+                      className={`flex-1 py-3 font-bold text-base ${!coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}`} >
                       OFF
                     </Button>
                   </div>
@@ -769,13 +766,13 @@ const ReactorSimulator = () => {
                         {valveValue.toFixed(1).replace('.', ',')}%
                       </div>
                       <div className="flex space-x-4">
-                        <Button onClick={() => handleValvePress(-1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
+                        <Button onClick={() => handleValvePress(-1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`} >
                           −
                         </Button>
-                        <Button onClick={() => handlePausePress()} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
+                        <Button onClick={() => handlePausePress()} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`} >
                           Pause
                         </Button>
-                        <Button onClick={() => handleValvePress(1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
+                        <Button onClick={() => handleValvePress(1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`} >
                           +
                         </Button>
                       </div>
@@ -783,7 +780,7 @@ const ReactorSimulator = () => {
                     </div>
                     {/* Sync Button */}
                     <div className="flex justify-center mt-4">
-                      <Button onClick={handleSyncPress} disabled={!isSynchronized} className={`px-6 py-3 rounded-md font-bold text-base ${isLocked ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' : isSynchronized ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' : 'bg-slate-800/50 border border-gray-600 text-gray-500'}`}>
+                      <Button onClick={handleSyncPress} disabled={!isSynchronized} className={`px-6 py-3 rounded-md font-bold text-base ${isLocked ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' : isSynchronized ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' : 'bg-slate-800/50 border border-gray-600 text-gray-500'}`} >
                         {isLocked ? 'UNLOCK' : 'SYNC'}
                       </Button>
                     </div>
