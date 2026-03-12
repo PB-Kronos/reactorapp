@@ -13,6 +13,9 @@ interface UseReactorPhysicsProps {
   onPressureChange: (pressure: number | ((prev: number) => number)) => void;
   onFuelLevelChange: (fuel: number | ((prev: number) => number)) => void;
   onGridSyncChange: (sync: number | ((prev: number) => number)) => void;
+  onTurbineSpeedChange: (speed: number | ((prev: number) => number)) => void;
+  targetTurbineSpeed: number;
+  isLocked: boolean;
 }
 
 export const useReactorPhysics = ({
@@ -27,11 +30,19 @@ export const useReactorPhysics = ({
   onTemperatureChange,
   onPressureChange,
   onFuelLevelChange,
-  onGridSyncChange
+  onGridSyncChange,
+  onTurbineSpeedChange,
+  targetTurbineSpeed,
+  isLocked
 }: UseReactorPhysicsProps) => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     if (isRunning) {
       const interval = setInterval(() => {
         // Calculate online pump count for cooling effect
@@ -46,9 +57,10 @@ export const useReactorPhysics = ({
         // Net temperature change
         const netTempChange = baseTempRise + pressureTempRise - coolingEffect - coolantCooling;
         
+        // Update temperature
         onTemperatureChange(prev => Math.max(0, Math.min(prev + netTempChange, 4500)));
         
-        // Pressure decreases when temperature is going down
+        // Pressure changes
         if (netTempChange < 0) {
           onPressureChange(prev => Math.max(1, prev - 0.1));
         } else {
@@ -57,6 +69,23 @@ export const useReactorPhysics = ({
         
         // Fuel depletes with power (valveValue)
         onFuelLevelChange(prev => Math.max(prev - valveValue * 0.001, 0));
+
+        // Update turbine speed
+        onTurbineSpeedChange(prev => {
+          const currentTarget = isLocked ? 66.67 : targetTurbineSpeed;
+          const diff = currentTarget - prev;
+          if (Math.abs(diff) < 0.01) return currentTarget;
+          return prev + diff * 0.025;
+        });
+
+        // Update grid sync
+        onGridSyncChange(prev => {
+          if (isLocked) {
+            return Math.min(prev + 0.5, 100);
+          } else {
+            return Math.max(prev - 0.5, 0);
+          }
+        });
       }, 100);
       
       intervalRef.current = interval;
@@ -68,5 +97,5 @@ export const useReactorPhysics = ({
         intervalRef.current = null;
       }
     };
-  }, [isRunning, valveValue, rodPercentage, pump1Online, pump2Online, pressure, coolantPumpOn, coolantFlow, onTemperatureChange, onPressureChange, onFuelLevelChange, onGridSyncChange]);
+  }, [isRunning, valveValue, rodPercentage, pump1Online, pump2Online, pressure, coolantPumpOn, coolantFlow, targetTurbineSpeed, isLocked, onTemperatureChange, onPressureChange, onFuelLevelChange, onGridSyncChange, onTurbineSpeedChange]);
 };

@@ -17,33 +17,8 @@ export const useTurbineControl = ({
   isLocked,
   onTurbineSpeedChange
 }: UseTurbineControlProps) => {
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    
-    if (isRunning) {
-      const interval = setInterval(() => {
-        onTurbineSpeedChange(prev => {
-          const currentTarget = isLocked ? SYNC_TURBINE_SPEED : targetTurbineSpeed;
-          const diff = currentTarget - prev;
-          if (Math.abs(diff) < 0.01) return currentTarget;
-          return prev + diff * 0.025;
-        });
-      }, 100);
-      intervalRef.current = interval;
-    }
-    
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [isRunning, targetTurbineSpeed, isLocked, onTurbineSpeedChange]);
+  // This hook is now simplified since turbine control is handled in useReactorPhysics
+  // We just need to provide the calculation functions
 
   const actualRPM = (speed: number) => speed * TURBINE_RPM_SCALE;
   const targetRPM = targetTurbineSpeed * TURBINE_RPM_SCALE;

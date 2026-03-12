@@ -43,10 +43,7 @@ const ReactorSimulator = () => {
   const [valveDirection, setValveDirection] = useState(0);
   const [rodDirection, setRodDirection] = useState(0);
 
-  // Refs for interval cleanup
-  const cleanupRef = useRef<(() => void)[]>([]);
-
-  // Physics simulation hook
+  // Unified physics simulation hook
   useReactorPhysics({
     isRunning,
     valveValue,
@@ -59,10 +56,13 @@ const ReactorSimulator = () => {
     onTemperatureChange: setTemperature,
     onPressureChange: setPressure,
     onFuelLevelChange: setFuelLevel,
-    onGridSyncChange: setGridSync
+    onGridSyncChange: setGridSync,
+    onTurbineSpeedChange: setTurbineSpeed,
+    targetTurbineSpeed,
+    isLocked
   });
 
-  // Turbine control hook
+  // Turbine control hook (simplified)
   const { actualRPM, targetRPM, isSynchronized, syncDeviation } = useTurbineControl({
     isRunning,
     targetTurbineSpeed,
@@ -70,7 +70,7 @@ const ReactorSimulator = () => {
     onTurbineSpeedChange: setTurbineSpeed
   });
 
-  // Steam valve control (0.2% per second)
+  // Steam valve control (0.2% per second) - simplified
   useValueControl({
     initialValue: valveValue,
     onChange: setValveValue,
@@ -80,7 +80,7 @@ const ReactorSimulator = () => {
     incrementPerSecond: 0.002
   });
 
-  // Control rod control (1% per second)
+  // Control rod control (1% per second) - simplified
   useValueControl({
     initialValue: rodPercentage,
     onChange: setRodPercentage,
@@ -89,19 +89,6 @@ const ReactorSimulator = () => {
     max: 100,
     incrementPerSecond: 0.1
   });
-
-  // Grid sync calculation
-  useEffect(() => {
-    if (isRunning) {
-      const syncMargin = 3;
-      const currentRPM = actualRPM(turbineSpeed);
-      if (Math.abs(currentRPM - 3000) <= syncMargin) {
-        setGridSync(prev => Math.min(prev + 0.5, 100));
-      } else {
-        setGridSync(prev => Math.max(prev - 0.5, 0));
-      }
-    }
-  }, [actualRPM, turbineSpeed, isRunning]);
 
   // Update target turbine speed when valve changes
   useEffect(() => {
@@ -207,13 +194,6 @@ const ReactorSimulator = () => {
   const handleRodNeutral = () => {
     setRodDirection(0);
   };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cleanupRef.current.forEach(cleanup => cleanup());
-    };
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
