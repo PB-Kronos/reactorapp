@@ -200,7 +200,7 @@ const Mainframe = () => {
               )}
             </div>
           ))}
-          <div className="text-cyan-400">> {currentInput}</div>
+          <div className="text-cyan-400"> {currentInput}</div>
         </div>
         <div className="flex gap-2">
           <input
