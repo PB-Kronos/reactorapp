@@ -112,12 +112,8 @@ const Index = () => {
             </div>
           </CardContent>
         </Card>
-
-        {/* Made with Dyad */}
-        <MadeWithDyad />
       </div>
     </div>
   );
 };
-
 export default Index;
