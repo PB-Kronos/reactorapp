@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowLeft, ArrowRight, ArrowDown, ArrowUp } from "lucide-react";
 
 // Components
@@ -11,8 +11,8 @@ import { PowerGridPanel } from "@/components/PowerGridPanel";
 
 // Hooks
 import { useReactorPhysics } from "@/hooks/useReactorPhysics";
-import { useTurbineControl } from "@/hooks/useTurbineControl";
 import { useValueControl } from "@/hooks/useValueControl";
+import { calculateTurbineData } from "@/hooks/useTurbineControl";
 
 const ReactorSimulator = () => {
   // State
@@ -56,14 +56,6 @@ const ReactorSimulator = () => {
     isLocked
   });
 
-  // Turbine control hook (simplified)
-  const { actualRPM, targetRPM, isSynchronized, syncDeviation } = useTurbineControl({
-    isRunning,
-    targetTurbineSpeed,
-    isLocked,
-    onTurbineSpeedChange: setTurbineSpeed
-  });
-
   // Steam valve control (0.2% per second)
   useValueControl({
     initialValue: valveValue,
@@ -84,6 +76,13 @@ const ReactorSimulator = () => {
     incrementPerSecond: 1
   });
 
+  // Calculate turbine data
+  const { actualRPM, targetRPM, isSynchronized, syncDeviation } = calculateTurbineData(
+    turbineSpeed,
+    targetTurbineSpeed,
+    isLocked
+  );
+
   // Update target turbine speed when valve changes
   useEffect(() => {
     if (isRunning && !isLocked) {
@@ -93,31 +92,39 @@ const ReactorSimulator = () => {
 
   // Navigation handlers
   const handleLeftArrow = () => {
-    if (activePanel === "status") setActivePanel("power-coolant");
-    else if (activePanel === "power-coolant") setActivePanel("power-grid");
-    else if (activePanel === "power-grid") setActivePanel("status");
-    else setActivePanel("status");
+    setActivePanel(prev => {
+      if (prev === "status") return "power-coolant";
+      if (prev === "power-coolant") return "power-grid";
+      if (prev === "power-grid") return "status";
+      return "status";
+    });
   };
 
   const handleRightArrow = () => {
-    if (activePanel === "status") setActivePanel("power-grid");
-    else if (activePanel === "power-grid") setActivePanel("power-coolant");
-    else if (activePanel === "power-coolant") setActivePanel("status");
-    else setActivePanel("status");
+    setActivePanel(prev => {
+      if (prev === "status") return "power-grid";
+      if (prev === "power-grid") return "power-coolant";
+      if (prev === "power-coolant") return "status";
+      return "status";
+    });
   };
 
   const handleDownArrow = () => {
-    if (activePanel === "status") setActivePanel("control-rods");
-    else if (activePanel === "control-rods") setActivePanel("startup-shutdown");
-    else if (activePanel === "startup-shutdown") setActivePanel("status");
-    else setActivePanel("status");
+    setActivePanel(prev => {
+      if (prev === "status") return "control-rods";
+      if (prev === "control-rods") return "startup-shutdown";
+      if (prev === "startup-shutdown") return "status";
+      return "status";
+    });
   };
 
   const handleUpArrow = () => {
-    if (activePanel === "startup-shutdown") setActivePanel("control-rods");
-    else if (activePanel === "control-rods") setActivePanel("status");
-    else if (activePanel === "status") setActivePanel("startup-shutdown");
-    else setActivePanel("status");
+    setActivePanel(prev => {
+      if (prev === "startup-shutdown") return "control-rods";
+      if (prev === "control-rods") return "status";
+      if (prev === "status") return "startup-shutdown";
+      return "status";
+    });
   };
 
   // Reactor control actions
@@ -175,7 +182,7 @@ const ReactorSimulator = () => {
         setTargetTurbineSpeed(valveValue);
       } else {
         setIsLocked(true);
-        setTargetTurbineSpeed(66.67); // SYNC_TURBINE_SPEED
+        setTargetTurbineSpeed(66.67);
       }
     }
   };
@@ -187,6 +194,15 @@ const ReactorSimulator = () => {
 
   const handleRodNeutral = () => {
     setRodDirection(0);
+  };
+
+  // Panel names mapping
+  const panelNames = {
+    status: "STATUS",
+    "control-rods": "CONTROL RODS",
+    "startup-shutdown": "STARTUP/SHUTDOWN",
+    "power-coolant": "POWER & COOLANT",
+    "power-grid": "POWER GRID"
   };
 
   return (
@@ -209,11 +225,7 @@ const ReactorSimulator = () => {
           <div className="text-center">
             <div className="text-sm text-gray-400 mb-1">ACTIVE PANEL</div>
             <div className="text-lg font-bold text-cyan-400 uppercase">
-              {activePanel === "status" && "STATUS"}
-              {activePanel === "control-rods" && "CONTROL RODS"}
-              {activePanel === "startup-shutdown" && "STARTUP/SHUTDOWN"}
-              {activePanel === "power-coolant" && "POWER & COOLANT"}
-              {activePanel === "power-grid" && "POWER GRID"}
+              {panelNames[activePanel as keyof typeof panelNames]}
             </div>
           </div>
           <button onClick={handleRightArrow} className="p-3 bg-slate-800/50 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-all duration-300 hover:scale-110">
@@ -268,7 +280,7 @@ const ReactorSimulator = () => {
           )}
           {activePanel === "power-grid" && (
             <PowerGridPanel
-              actualRPM={actualRPM(turbineSpeed)}
+              actualRPM={actualRPM}
               targetRPM={targetRPM}
               isSynchronized={isSynchronized}
               isLocked={isLocked}
@@ -297,12 +309,6 @@ const ReactorSimulator = () => {
           <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
         </div>
       </div>
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.5; transform: scale(1); }
-          50% { opacity: 0.8; transform: scale(1.05); }
-        }
-      `}</style>
     </div>
   );
 };

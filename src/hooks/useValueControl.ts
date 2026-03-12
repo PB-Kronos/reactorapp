@@ -26,12 +26,13 @@ export const useValueControl = ({
     }
 
     if (direction !== 0) {
+      const increment = direction * incrementPerSecond / 10; // 100ms interval
       const interval = setInterval(() => {
         onChange(prev => {
-          const newVal = prev + direction * incrementPerSecond;
+          const newVal = prev + increment;
           return Math.min(Math.max(newVal, min), max);
         });
-      }, 1000); // Update every second for smoother control
+      }, 100); // Update every 100ms for smoother control
       intervalRef.current = interval;
     }
 
