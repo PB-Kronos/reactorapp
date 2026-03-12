@@ -9,10 +9,10 @@ interface UseReactorPhysicsProps {
   pressure: number;
   coolantPumpOn: boolean;
   coolantFlow: number;
-  onTemperatureChange: (temp: number) => void;
-  onPressureChange: (pressure: number) => void;
-  onFuelLevelChange: (fuel: number) => void;
-  onGridSyncChange: (sync: number) => void;
+  onTemperatureChange: (temp: number | ((prev: number) => number)) => void;
+  onPressureChange: (pressure: number | ((prev: number) => number)) => void;
+  onFuelLevelChange: (fuel: number | ((prev: number) => number)) => void;
+  onGridSyncChange: (sync: number | ((prev: number) => number)) => void;
 }
 
 export const useReactorPhysics = ({

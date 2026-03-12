@@ -1,6 +1,8 @@
+import { useEffect, useRef } from "react";
+
 interface UseValueControlProps {
   initialValue: number;
-  onChange: (value: number) => void;
+  onChange: (value: number | ((prev: number) => number)) => void;
   direction: number;
   min?: number;
   max?: number;

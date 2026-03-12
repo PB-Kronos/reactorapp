@@ -8,7 +8,7 @@ interface UseTurbineControlProps {
   isRunning: boolean;
   targetTurbineSpeed: number;
   isLocked: boolean;
-  onTurbineSpeedChange: (speed: number) => void;
+  onTurbineSpeedChange: (speed: number | ((prev: number) => number)) => void;
 }
 
 export const useTurbineControl = ({

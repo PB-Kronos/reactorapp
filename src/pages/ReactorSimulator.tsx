@@ -94,13 +94,14 @@ const ReactorSimulator = () => {
   useEffect(() => {
     if (isRunning) {
       const syncMargin = 3;
-      if (Math.abs(actualRPM - 3000) <= syncMargin) {
+      const currentRPM = actualRPM(turbineSpeed);
+      if (Math.abs(currentRPM - 3000) <= syncMargin) {
         setGridSync(prev => Math.min(prev + 0.5, 100));
       } else {
         setGridSync(prev => Math.max(prev - 0.5, 0));
       }
     }
-  }, [actualRPM, isRunning]);
+  }, [actualRPM, turbineSpeed, isRunning]);
 
   // Update target turbine speed when valve changes
   useEffect(() => {
@@ -293,7 +294,7 @@ const ReactorSimulator = () => {
           )}
           {activePanel === "power-grid" && (
             <PowerGridPanel
-              actualRPM={actualRPM}
+              actualRPM={actualRPM(turbineSpeed)}
               targetRPM={targetRPM}
               isSynchronized={isSynchronized}
               isLocked={isLocked}
@@ -322,7 +323,7 @@ const ReactorSimulator = () => {
           <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
         </div>
       </div>
-      <style jsx>{`
+      <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 0.5; transform: scale(1); }
           50% { opacity: 0.8; transform: scale(1.05); }
