@@ -81,7 +81,7 @@ const ReactorSimulator = () => {
         valveIntervalRef.current = null;
       }
     };
-  }, [valveDirection]); // Only re-run when valveDirection changes
+  }, [valveDirection]);
 
   // Update target turbine speed when valve changes (if reactor is running and not locked)
   useEffect(() => {
@@ -116,7 +116,7 @@ const ReactorSimulator = () => {
         rodIntervalRef.current = null;
       }
     };
-  }, [rodDirection]); // Only re-run when rodDirection changes
+  }, [rodDirection]);
 
   // Turbine speed adjustment - smooth ramp to target
   useEffect(() => {
@@ -184,6 +184,24 @@ const ReactorSimulator = () => {
       return () => clearInterval(interval);
     }
   }, [isRunning, valveValue, temperature, turbineSpeed, rodPercentage, pump1Online, pump2Online, pressure, coolantPumpOn, coolantFlow]);
+
+  // Comprehensive cleanup to prevent lingering intervals
+  useEffect(() => {
+    return () => {
+      if (valveIntervalRef.current) {
+        clearInterval(valveIntervalRef.current);
+        valveIntervalRef.current = null;
+      }
+      if (turbineIntervalRef.current) {
+        clearInterval(turbineIntervalRef.current);
+        turbineIntervalRef.current = null;
+      }
+      if (rodIntervalRef.current) {
+        clearInterval(rodIntervalRef.current);
+        rodIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Navigation handlers
   const handleLeftArrow = () => {
@@ -354,7 +372,6 @@ const ReactorSimulator = () => {
       <div className="fixed inset-0 opacity-10">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
-
       <div className="relative z-10 max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
@@ -505,13 +522,13 @@ const ReactorSimulator = () => {
                     </div>
                     {/* Control buttons */}
                     <div className="flex space-x-4">
-                      <Button onClick={() => handleRodPress(1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`} >
+                      <Button onClick={() => handleRodPress(1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 1 ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`}>
                         + (Lower)
                       </Button>
-                      <Button onClick={() => handleRodNeutral()} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`} >
+                      <Button onClick={() => handleRodNeutral()} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`}>
                         = (Neutral)
                       </Button>
-                      <Button onClick={() => handleRodPress(-1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`} >
+                      <Button onClick={() => handleRodPress(-1)} className={`px-6 py-3 rounded-md font-medium text-base ${rodDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-green-500/30 hover:bg-slate-900 text-white'}`}>
                         - (Raise)
                       </Button>
                     </div>
@@ -557,7 +574,8 @@ const ReactorSimulator = () => {
                     </Button>
                     <Button 
                       onClick={emergencyShutdown}
-                      className={`h-16 text-lg font-bold border-2
+                      className={`
+                        h-16 text-lg font-bold border-2
                         ${scramPressed ? 'bg-red-600 hover:bg-red-700 border-red-500/50' : 
                           temperature > 3000 ? 'bg-orange-600 hover:bg-orange-700 border-orange-500/50' : 
                           'bg-gray-600 hover:bg-gray-700 border-gray-500/50'}
@@ -613,10 +631,10 @@ const ReactorSimulator = () => {
                       </Badge>
                     </div>
                     <div className="flex gap-2">
-                      <Button onClick={() => setPump1Online(true)} disabled={pump1Online} className={`flex-1 py-3 font-bold text-base ${pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} >
+                      <Button onClick={() => setPump1Online(true)} disabled={pump1Online} className={`flex-1 py-3 font-bold text-base ${pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
                         ON
                       </Button>
-                      <Button onClick={() => setPump1Online(false)} disabled={!pump1Online} className={`flex-1 py-3 font-bold text-base ${!pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`} >
+                      <Button onClick={() => setPump1Online(false)} disabled={!pump1Online} className={`flex-1 py-3 font-bold text-base ${!pump1Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`}>
                         OFF
                       </Button>
                     </div>
@@ -633,10 +651,10 @@ const ReactorSimulator = () => {
                       </Badge>
                     </div>
                     <div className="flex gap-2">
-                      <Button onClick={() => setPump2Online(true)} disabled={pump2Online} className={`flex-1 py-3 font-bold text-base ${pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} >
+                      <Button onClick={() => setPump2Online(true)} disabled={pump2Online} className={`flex-1 py-3 font-bold text-base ${pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
                         ON
                       </Button>
-                      <Button onClick={() => setPump2Online(false)} disabled={!pump2Online} className={`flex-1 py-3 font-bold text-base ${!pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`} >
+                      <Button onClick={() => setPump2Online(false)} disabled={!pump2Online} className={`flex-1 py-3 font-bold text-base ${!pump2Online ? 'bg-gray-600 text-gray-300' : 'bg-gray-700 hover:bg-gray-800 text-white'}`}>
                         OFF
                       </Button>
                     </div>
@@ -682,13 +700,15 @@ const ReactorSimulator = () => {
                     <Button 
                       onClick={() => setCoolantPumpOn(true)} 
                       disabled={coolantPumpOn}
-                      className={`flex-1 py-3 font-bold text-base ${coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}`} >
+                      className={`flex-1 py-3 font-bold text-base ${coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                    >
                       ON
                     </Button>
                     <Button 
                       onClick={() => setCoolantPumpOn(false)} 
                       disabled={!coolantPumpOn}
-                      className={`flex-1 py-3 font-bold text-base ${!coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}`} >
+                      className={`flex-1 py-3 font-bold text-base ${!coolantPumpOn ? 'bg-gray-600 text-gray-300' : 'bg-red-600 hover:bg-red-700 text-white'}`}
+                    >
                       OFF
                     </Button>
                   </div>
@@ -767,13 +787,13 @@ const ReactorSimulator = () => {
                         {valveValue.toFixed(1).replace('.', ',')}%
                       </div>
                       <div className="flex space-x-4">
-                        <Button onClick={() => handleValvePress(-1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`} >
+                        <Button onClick={() => handleValvePress(-1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
                           −
                         </Button>
-                        <Button onClick={() => handlePausePress()} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`} >
+                        <Button onClick={() => handlePausePress()} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
                           Pause
                         </Button>
-                        <Button onClick={() => handleValvePress(1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`} >
+                        <Button onClick={() => handleValvePress(1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
                           +
                         </Button>
                       </div>
@@ -781,7 +801,7 @@ const ReactorSimulator = () => {
                     </div>
                     {/* Sync Button */}
                     <div className="flex justify-center mt-4">
-                      <Button onClick={handleSyncPress} disabled={!isSynchronized} className={`px-6 py-3 rounded-md font-bold text-base ${isLocked ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' : isSynchronized ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' : 'bg-slate-800/50 border border-gray-600 text-gray-500'}`} >
+                      <Button onClick={handleSyncPress} disabled={!isSynchronized} className={`px-6 py-3 rounded-md font-bold text-base ${isLocked ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' : isSynchronized ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' : 'bg-slate-800/50 border border-gray-600 text-gray-500'}`}>
                         {isLocked ? 'UNLOCK' : 'SYNC'}
                       </Button>
                     </div>
@@ -832,13 +852,18 @@ const ReactorSimulator = () => {
             <ArrowDown className="text-cyan-400" size={24} />
           </button>
         </div>
-
         {/* Footer */}
         <div className="text-center mt-8 text-gray-400 text-sm">
           <p>NUCLEAR REACTOR CONTROL SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
           <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
         </div>
       </div>
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50% { opacity: 0.8; transform: scale(1.05); }
+        }
+      `}</style>
     </div>
   );
 };
