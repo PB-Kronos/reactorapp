@@ -31,7 +31,7 @@ export const useValueControl = ({
           const newVal = prev + direction * incrementPerSecond;
           return Math.min(Math.max(newVal, min), max);
         });
-      }, 10);
+      }, 1000); // Update every second for smoother control
       intervalRef.current = interval;
     }
 
@@ -42,6 +42,4 @@ export const useValueControl = ({
       }
     };
   }, [direction, incrementPerSecond, min, max, onChange]);
-
-  return intervalRef;
 };
