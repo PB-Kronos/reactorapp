@@ -276,7 +276,7 @@ const Mainframe = () => {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-purple-400">CURRENT ACCOUNT</span>
-          <Badge variant={isLoggedIn ? "default" : "destructive"} className={isLoggedIn ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+          <Badge variant={isLoggedIn ? "success" : "destructive"} className={isLoggedIn ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
             {isLoggedIn ? accountType.toUpperCase() : "GUEST"}
           </Badge>
         </div>
@@ -394,6 +394,84 @@ const Mainframe = () => {
       if (prev === "security") return "terminal";
       return "terminal";
     });
+  };
+
+  // Reactor control actions
+  const startReactor = () => {
+    setIsRunning(true);
+    setTargetTurbineSpeed(valveValue);
+  };
+
+  const stopReactor = () => {
+    setIsRunning(false);
+    setTargetTurbineSpeed(0);
+  };
+
+  const emergencyShutdown = () => {
+    if (temperature > 3000 || scramPressed) {
+      setIsRunning(false);
+      setTemperature(25);
+      setPressure(1);
+      setTargetTurbineSpeed(0);
+      setGridSync(0);
+      setScramPressed(true);
+    }
+  };
+
+  // Status indicators
+  const getStatusColor = () => {
+    if (temperature > 4500) return "destructive";
+    if (temperature > 3000) return "warning";
+    return "default";
+  };
+
+  const getStatusText = () => {
+    if (temperature > 4500) return "CRITICAL";
+    if (temperature > 3000) return "WARNING";
+    if (isRunning) return "OPERATIONAL";
+    return "STANDBY";
+  };
+
+  // Calculate turbine output
+  const turbineOutputMW = isRunning ? valveValue * 2 * (1 - Math.min((temperature - 3000) / 1500, 0.1)) : 0;
+
+  // Valve control handlers
+  const handleValvePress = (direction: number) => {
+    setValveDirection(direction);
+  };
+
+  const handlePausePress = () => {
+    setValveDirection(0);
+  };
+
+  const handleSyncPress = () => {
+    if (isSynchronized) {
+      if (isLocked) {
+        setIsLocked(false);
+        setTargetTurbineSpeed(valveValue);
+      } else {
+        setIsLocked(true);
+        setTargetTurbineSpeed(66.67);
+      }
+    }
+  };
+
+  // Control rod handlers
+  const handleRodPress = (direction: number) => {
+    setRodDirection(direction);
+  };
+
+  const handleRodNeutral = () => {
+    setRodDirection(0);
+  };
+
+  // Panel names mapping
+  const panelNames = {
+    status: "STATUS",
+    "control-rods": "CONTROL RODS",
+    "startup-shutdown": "STARTUP/SHUTDOWN",
+    "power-coolant": "POWER & COOLANT",
+    "power-grid": "POWER GRID"
   };
 
   return (
