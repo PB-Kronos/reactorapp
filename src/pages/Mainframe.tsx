@@ -1,3 +1,6 @@
+' character, change Button size from xs to sm, and ensure render panel functions are defined before usage.">
+"use client";
+
 import React, { useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Terminal as TerminalIcon, Shield, Network, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +10,171 @@ import { Toast } from "@/components/ui/toast";
 import { showError, showSuccess } from "@/utils/toast";
 
 const Mainframe = () => {
+  // Render functions moved to top to be in scope for JSX usage
+  const renderTerminalPanel = () => (
+    <div className="space-y-4">
+      <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
+        <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
+        <div className="pt-2">
+          <span className="text-xs text-gray-400">></span>
+          <input
+            type="text"
+            value={currentInput}
+            onChange={(e) => setCurrentInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleTerminalInput(currentInput);
+                setCurrentInput("");
+              }
+            }}
+            className="bg-transparent border-none text-green-400 focus:outline-none w-full"
+            placeholder="Enter command..."
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSecurityPanel = () => (
+    <Card className="bg-slate-800/50 border-purple-500/30">
+      <CardHeader>
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <Shield className="text-purple-400" size={20} />
+          SECURITY STATUS
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">FIREWALL</span>
+          <Badge variant="default" className="bg-green-600 text-white">ACTIVE</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">INTRUSION DETECTION</span>
+          <Badge variant="default" className="bg-green-600 text-white">MONITORING</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">ENCRYPTION</span>
+          <Badge variant="default" className="bg-green-600 text-white">AES-256</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">ACCESS LOGS</span>
+          <Badge variant="default" className="bg-green-600 text-white">SECURE</Badge>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const renderNetworkPanel = () => (
+    <Card className="bg-slate-800/50 border-purple-500/30">
+      <CardHeader>
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <Network className="text-purple-400" size={20} />
+          NETWORK STATUS
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">PACKETS IN</span>
+          <span className="text-sm text-gray-400">1.2GB</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">PACKETS OUT</span>
+          <span className="text-sm text-gray-400">856MB</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">BANDWIDTH</span>
+          <span className="text-sm text-gray-400">100Mbps</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">LATENCY</span>
+          <span className="text-sm text-gray-400">12ms</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const renderHacksPanel = () => (
+    <Card className="bg-slate-800/50 border-purple-500/30">
+      <CardHeader>
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <Zap className="text-purple-400" size={20} />
+          HACKING TOOLS
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">PORT SCANNER</span>
+            <Button variant="outline" size="sm">SCAN</Button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">PASSWORD CRACKER</span>
+            <Button variant="outline" size="sm">CRACK</Button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">NETWORK SNIFFER</span>
+            <Button variant="outline" size="sm">SNIF</Button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">EXPLOIT LAUNCHER</span>
+            <Button variant="outline" size="sm">LAUNCH</Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const renderMainframePanel = () => (
+    <Card className="bg-slate-800/50 border-purple-500/30">
+      <CardHeader>
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <TerminalIcon className="text-purple-400" size={20} />
+          MAINFRAME STATUS
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-purple-400">SYSTEM STATUS</span>
+              {renderStatusBadge(systemStatus.status)}
+            </div>
+            <div className="text-xs text-gray-400">
+              Uptime: 42 days
+            </div>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-purple-400">CPU LOAD</span>
+              <Badge variant="default" className="bg-green-600 text-white">23%</Badge>
+            </div>
+            <div className="text-xs text-gray-400">
+              Cores: 8
+            </div>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-purple-400">MEMORY</span>
+              <Badge variant="default" className="bg-green-600 text-white">8GB/16GB</Badge>
+            </div>
+            <div className="text-xs text-gray-400">
+              Usage: 50%
+            </div>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-purple-400">STORAGE</span>
+              <Badge variant="default" className="bg-green-600 text-white">512GB/1TB</Badge>
+            </div>
+            <div className="text-xs text-gray-400">
+              Free: 488GB
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   const [overridePassword, setOverridePassword] = useState("");
   const [isOverriding, setIsOverriding] = useState(false);
   const [overrideAttempts, setOverrideAttempts] = useState(0);
@@ -22,7 +190,6 @@ const Mainframe = () => {
     const commands = {
       "help": [
         "AVAILABLE COMMANDS:",
-        " help - Show this help",
         " status - Show system status",
         " network - Show network info",
         " users - List users",
@@ -56,11 +223,6 @@ const Mainframe = () => {
         " WARNING: SYSTEM COMPROMISED"
       ],
     };
-
-    const response = commands[input.toLowerCase()] || [
-      "COMMAND NOT RECOGNIZED",
-      `Type 'help' for available commands`
-    ];
 
     if (input.toLowerCase() === "override") {
       // Override command needs password
@@ -104,193 +266,6 @@ const Mainframe = () => {
       setTimeout(() => {
         setTerminalHistory(prev => [...prev, ...response]);
       }, 500);
-    };
-
-    // Render mainframe panel
-    const renderMainframePanel = () => (
-      <Card className="bg-slate-800/50 border-purple-500/30">
-        <CardHeader>
-          <CardTitle className="text-purple-400 flex items-center gap-2">
-            <TerminalIcon className="text-purple-400" size={20} />
-            MAINFRAME STATUS
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-purple-400">SYSTEM STATUS</span>
-                {renderStatusBadge(systemStatus.status)}
-              </div>
-              <div className="text-xs text-gray-400">
-                Uptime: 42 days
-              </div>
-            </div>
-            <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-purple-400">CPU LOAD</span>
-                <Badge variant="default" className="bg-green-600 text-white">23%</Badge>
-              </div>
-              <div className="text-xs text-gray-400">
-                Cores: 8
-              </div>
-            </div>
-            <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-purple-400">MEMORY</span>
-                <Badge variant="default" className="bg-green-600 text-white">8GB/16GB</Badge>
-              </div>
-              <div className="text-xs text-gray-400">
-                Usage: 50%
-              </div>
-            </div>
-            <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-purple-400">STORAGE</span>
-                <Badge variant="default" className="bg-green-600 text-white">512GB/1TB</Badge>
-              </div>
-              <div className="text-xs text-gray-400">
-                Free: 488GB
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-
-    // Render terminal panel
-    const renderTerminalPanel = () => (
-      <div className="space-y-4">
-        <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
-          <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
-          <div className="pt-2">
-            <span className="text-xs text-gray-400">></span>
-            <input
-              type="text"
-              value={currentInput}
-              onChange={(e) => setCurrentInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleTerminalInput(currentInput);
-                  setCurrentInput("");
-                }
-              }}
-              className="bg-transparent border-none text-green-400 focus:outline-none w-full"
-              placeholder="Enter command..."
-            />
-          </div>
-        </div>
-      </div>
-    );
-
-    // Render security panel
-    const renderSecurityPanel = () => (
-      <Card className="bg-slate-800/50 border-purple-500/30">
-        <CardHeader>
-          <CardTitle className="text-purple-400 flex items-center gap-2">
-            <Shield className="text-purple-400" size={20} />
-            SECURITY STATUS
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">FIREWALL</span>
-              <Badge variant="default" className="bg-green-600 text-white">ACTIVE</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">INTRUSION DETECTION</span>
-              <Badge variant="default" className="bg-green-600 text-white">MONITORING</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">ENCRYPTION</span>
-              <Badge variant="default" className="bg-green-600 text-white">AES-256</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">ACCESS LOGS</span>
-              <Badge variant="default" className="bg-green-600 text-white">SECURE</Badge>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-
-    // Render network panel
-    const renderNetworkPanel = () => (
-      <Card className="bg-slate-800/50 border-purple-500/30">
-        <CardHeader>
-          <CardTitle className="text-purple-400 flex items-center gap-2">
-            <Network className="text-purple-400" size={20} />
-            NETWORK STATUS
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">PACKETS IN</span>
-              <span className="text-sm text-gray-400">1.2GB</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">PACKETS OUT</span>
-              <span className="text-sm text-gray-400">856MB</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">BANDWIDTH</span>
-              <span className="text-sm text-gray-400">100Mbps</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">LATENCY</span>
-              <span className="text-sm text-gray-400">12ms</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-
-    // Render hacks panel
-    const renderHacksPanel = () => (
-      <Card className="bg-slate-800/50 border-purple-500/30">
-        <CardHeader>
-          <CardTitle className="text-purple-400 flex items-center gap-2">
-            <Zap className="text-purple-400" size={20} />
-            HACKING TOOLS
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">PORT SCANNER</span>
-              <Button variant="outline" size="xs">SCAN</Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">PASSWORD CRACKER</span>
-              <Button variant="outline" size="xs">CRACK</Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">NETWORK SNIFFER</span>
-              <Button variant="outline" size="xs">SNIF</Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-purple-400">EXPLOIT LAUNCHER</span>
-              <Button variant="outline" size="xs">LAUNCH</Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-
-    // Render status badge
-    const renderStatusBadge = (status: string) => {
-      switch (status) {
-        case "ONLINE":
-          return <Badge variant="default" className="bg-green-600 text-white">ONLINE</Badge>;
-        case "OFFLINE":
-          return <Badge variant="destructive" className="bg-red-600 text-white">OFFLINE</Badge>;
-        case "MAINTENANCE":
-          return <Badge variant="secondary" className="bg-yellow-600 text-white">MAINTENANCE</Badge>;
-        default:
-          return <Badge variant="default" className="bg-gray-600 text-white">{status}</Badge>;
-      }
     };
 
     return (
