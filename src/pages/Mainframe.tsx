@@ -1,5 +1,5 @@
 // ... existing imports ...
-  import { Toast } from "@/components/ui/toast";
+  import { toast } from "@/components/ui/toast";
 
   const Mainframe = () => {
     // ... existing state ...
@@ -41,7 +41,7 @@
         if (input === "0289") {
           // Correct password
           setTerminalHistory(prev => [...prev, "> " + input, "ACCESS GRANTED", "  OVERRIDE PROTOCOLS ACTIVATED"]);
-          toast.success("Access Granted");
+          Toast.success("Access Granted");
           setOverrideAttempts(0);
           setIsOverriding(false);
           // Flash background red 5 times
@@ -60,7 +60,7 @@
           setOverrideAttempts(prev => prev + 1);
           if (overrideAttempts >= 2) {
             setTerminalHistory(prev => [...prev, "> " + input, "ACCESS DENIED", "  MAX ATTEMPTS REACHED", "  OVERRIDE CANCELLED"]);
-            toast.error("Access Denied");
+            Toast.error("Access Denied");
             setIsOverriding(false);
           } else {
             setTerminalHistory(prev => [...prev, "> " + input, "ACCESS DENIED", "  INCORRECT PASSWORD", "  ENTER PASSWORD:"]);
