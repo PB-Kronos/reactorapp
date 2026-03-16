@@ -7,11 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { showError, showSuccess } from "@/utils/toast";
 
-type AccountType = "guest" | "user" | "admin";
+type AccountType = "user" | "admin";
 
 const Mainframe = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [accountType, setAccountType] = useState<AccountType>("guest");
+  const [isLoggedIn, setIsLoggedIn] = useState(true); // Auto-login as guest
+  const [accountType, setAccountType] = useState<AccountType>("user"); // Default to user (guest equivalent)
   const [isOverriding, setIsOverriding] = useState(false);
   const [overrideAttempts, setOverrideAttempts] = useState(0);
   const [currentInput, setCurrentInput] = useState("");
@@ -24,11 +24,10 @@ const Mainframe = () => {
   const [activePanel, setActivePanel] = useState("terminal");
   const [loginStep, setLoginStep] = useState<"account" | "password" | null>(null);
 
-  // Account passwords
+  // Account passwords (no guest account)
   const PASSWORDS: Record<AccountType, string> = {
     admin: "0289",
-    user: "1234",
-    guest: ""
+    user: "1234"
   };
 
   // Clear login state on unmount
@@ -50,11 +49,10 @@ const Mainframe = () => {
         " status - Show system status",
         " network - Show network info",
         " users - List users",
-        " login - Login to account",
-        " logout - Logout current account",
-        " guest - Switch to guest account",
-        " user - Switch to user account",
-        " admin - Switch to admin account",
+        " login - Login to account (admin/user)",
+        " logout - Logout to guest account",
+        " admin - Switch to admin account (requires login)",
+        " user - Switch to user account (requires login)",
         " override - Initiate override protocol (admin only)",
         " reactor - Enter reactor control system (user+ only)",
         " reboot - Clear cached reactor data (user+ only)",
@@ -84,16 +82,13 @@ const Mainframe = () => {
       ],
       login: [
         "LOGIN PROMPT:",
-        " Available accounts: admin, user, guest",
+        " Available accounts: admin, user",
         " Enter account name:"
       ],
       logout: [
         "LOGGING OUT...",
-        " Session terminated."
-      ],
-      guest: [
-        "SWITCHING TO GUEST ACCOUNT",
-        " Access restricted to status and network commands"
+        " Session terminated.",
+        " Switched to GUEST account (read-only mode)"
       ],
       user: [
         "SWITCHING TO USER ACCOUNT",
@@ -135,21 +130,15 @@ const Mainframe = () => {
 
     const command = trimmedInput.toLowerCase();
 
-    // Handle login flow
+    // Handle login flow FIRST (before any permission checks)
     if (loginStep === "account") {
       const account = trimmedInput.toLowerCase() as AccountType;
-      if (account === "admin" || account === "user" || account === "guest") {
+      if (account === "admin" || account === "user") {
         setAccountType(account);
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ` Account: ${account.toUpperCase()}`, account === "guest" ? " (No password required)" : " Enter password:"]);
-        if (account === "guest") {
-          setIsLoggedIn(true);
-          setLoginStep(null);
-          showSuccess(`Logged in as ${account}`);
-        } else {
-          setLoginStep("password");
-        }
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ` Account: ${account.toUpperCase()}`, " Enter password:"]);
+        setLoginStep("password");
       } else {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ERROR: Invalid account. Available accounts: admin, user, guest", " Enter account name:"]);
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ERROR: Invalid account. Available accounts: admin, user", " Enter account name:"]);
       }
       return;
     }
@@ -171,26 +160,14 @@ const Mainframe = () => {
     // Handle logout
     if (command === "logout") {
       setIsLoggedIn(false);
-      setAccountType("guest");
+      setAccountType("user"); // Reset to user (guest equivalent)
       setLoginStep(null);
       setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands.logout]);
-      showSuccess("Logged out successfully");
+      showSuccess("Logged out to guest mode");
       return;
     }
 
-    // Handle account switch commands (admin/user/guest)
-    if (command === "admin" || command === "user" || command === "guest") {
-      if (isLoggedIn) {
-        setAccountType(command as AccountType);
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command as keyof typeof commands]]);
-        showSuccess(`Switched to ${command} account`);
-      } else {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "Please login first using 'login' command"]);
-      }
-      return;
-    }
-
-    // Check if user is logged in for other commands
+    // Check if user is logged in for other commands (except help and login)
     if (!isLoggedIn && command !== "help" && command !== "login") {
       setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "Please login first using 'login' command"]);
       return;
@@ -300,7 +277,7 @@ const Mainframe = () => {
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-purple-400">CURRENT ACCOUNT</span>
           <Badge variant={isLoggedIn ? "success" : "destructive"} className={isLoggedIn ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-            {isLoggedIn ? accountType.toUpperCase() : "NOT LOGGED IN"}
+            {isLoggedIn ? accountType.toUpperCase() : "GUEST"}
           </Badge>
         </div>
       </CardContent>
@@ -467,7 +444,7 @@ const Mainframe = () => {
           <button onClick={handleUpArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
             <ArrowUp className="text-cyan-400" size={24} />
           </button>
-          <button onClick={handleDownArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-purple-500/20 transition-all duration-300 hover:scale-110">
+          <button onClick={handleDownArrow} className="p-3 bg-slate-800/50 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-all duration-300 hover:scale-110">
             <ArrowDown className="text-cyan-400" size={24} />
           </button>
         </div>
