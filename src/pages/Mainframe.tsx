@@ -1,3 +1,4 @@
+' character, change Button size from xs to sm, and ensure render panel functions are defined before usage.">
 "use client";
 
 import React, { useState } from "react";
@@ -367,7 +368,7 @@ const Mainframe = () => {
       if (prev === "security") return "network";
       if (prev === "network") return "hacks";
       if (prev === "hacks") return "mainframe";
-      if (prev === "mainframe") return "terminal">
+      if (prev === "mainframe") return "terminal">;
       return "terminal";
     });
   };
@@ -378,7 +379,7 @@ const Mainframe = () => {
       if (prev === "mainframe") return "hacks";
       if (prev === "hacks") return "network";
       if (prev === "network") return "security";
-      if (prev === "security") return "terminal">
+      if (prev === "security") return "terminal">;
       return "terminal";
     });
   };
