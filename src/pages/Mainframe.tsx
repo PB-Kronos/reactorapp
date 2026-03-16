@@ -1,381 +1,126 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import React, { useState } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Terminal as TerminalIcon, Shield, Network, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Terminal, 
-  TerminalLine, 
-  TerminalInput, 
-  TerminalOutput 
-} from "@/components/ui/terminal";
-import { 
-  Terminal as TerminalIcon, 
-  Power, 
-  Shield, 
-  Activity, 
-  Zap, 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle, 
-  ArrowLeft, 
-  ArrowRight, 
-  ArrowDown, 
-  ArrowUp 
-} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { showError, showSuccess } from "@/utils/toast";
 
 const Mainframe = () => {
-  const [terminalHistory, setTerminalHistory] = useState<string[]>([]);
-  const [currentInput, setCurrentInput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
-  const [activePanel, setActivePanel] = useState("terminal");
-  const [systemStatus, setSystemStatus] = useState({
-    power: "ONLINE",
-    security: "SECURE",
-    network: "CONNECTED",
-    status: "OPERATIONAL"
-  });
-
-  // Terminal commands and responses
-  const commands = {
-    "help": [
-      "Available commands:",
-      "  help - Show this help message",
-      "  status - Show system status",
-      "  scan - Run security scan",
-      "  network - Show network status",
-      "  power - Show power status",
-      "  clear - Clear terminal",
-      "  hack - Initiate hacking sequence",
-      "  access - Access restricted systems",
-      "  override - System override protocols"
-    ],
-    "status": [
-      "SYSTEM STATUS:",
-      `  Power: ${systemStatus.power}`,
-      `  Security: ${systemStatus.security}`,
-      `  Network: ${systemStatus.network}`,
-      `  Overall: ${systemStatus.status}`
-    ],
-    "scan": [
-      "SECURITY SCAN IN PROGRESS...",
-      "  Firewall: SECURE",
-      "  Intrusion Detection: ACTIVE",
-      "  Access Logs: CLEAN",
-      "  Vulnerabilities: NONE DETECTED"
-    ],
-    "network": [
-      "NETWORK STATUS:",
-      "  Connection: ESTABLISHED",
-      "  Bandwidth: 1000 Mbps",
-      "  Latency: 12 ms",
-      "  Security: ENCRYPTED"
-    ],
-    "power": [
-      "POWER STATUS:",
-      "  Main Supply: ONLINE",
-      "  Backup: STANDBY",
-      "  Consumption: 450W",
-      "  Efficiency: 98%"
-    ],
-    "hack": [
-      "HACKING SEQUENCE INITIATED...",
-      "  Bypassing firewall...",
-      "  Cracking encryption...",
-      "  Accessing main server...",
-      "  SUCCESS: System compromised"
-    ],
-    "access": [
-      "ACCESSING RESTRICTED SYSTEMS...",
-      "  ADMIN PANEL: GRANTED",
-      "  DATABASE: GRANTED",
-      "  SECURITY LOGS: GRANTED",
-      "  SYSTEM FILES: GRANTED"
-    ],
-    "override": [
-      "OVERRIDE PROTOCOLS ACTIVATED",
-      "  ALL SECURITY MEASURES DISABLED",
-      "  FULL SYSTEM ACCESS GRANTED",
-      "  WARNING: SYSTEM COMPROMISED"
-    ],
-    "clear": []
-  };
-
-  // Handle terminal input
-  const handleTerminalInput = (input: string) => {
-    setCurrentInput(input);
-    setTerminalHistory(prev => [...prev, `> ${input}`]);
-
-    const response = commands[input.toLowerCase()] || [
-      "COMMAND NOT RECOGNIZED",
-      `Type 'help' for available commands`
-    ];
-
-    setTimeout(() => {
-      setTerminalHistory(prev => [...prev, ...response]);
-    }, 500);
-  };
-
-  // System status effects
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Randomize some status values for dynamic effect
-      setSystemStatus(prev => ({
-        ...prev,
-        power: Math.random() > 0.1 ? "ONLINE" : "WARNING",
-        security: Math.random() > 0.05 ? "SECURE" : "COMPROMISED",
-        network: Math.random() > 0.02 ? "CONNECTED" : "DISCONNECTED"
-      }));
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Navigation handlers
-  const handleLeftArrow = () => {
-    if (activePanel === "terminal") setActivePanel("security");
-    else if (activePanel === "security") setActivePanel("network");
-    else if (activePanel === "network") setActivePanel("terminal");
-    else setActivePanel("terminal");
-  };
-
-  const handleRightArrow = () => {
-    if (activePanel === "terminal") setActivePanel("network");
-    else if (activePanel === "network") setActivePanel("security");
-    else if (activePanel === "security") setActivePanel("terminal");
-    else setActivePanel("terminal");
-  };
-
-  const handleDownArrow = () => {
-    if (activePanel === "terminal") setActivePanel("hacks");
-    else if (activePanel === "hacks") setActivePanel("mainframe");
-    else if (activePanel === "mainframe") setActivePanel("terminal");
-    else setActivePanel("terminal");
-  };
-
-  const handleUpArrow = () => {
-    if (activePanel === "mainframe") setActivePanel("hacks");
-    else if (activePanel === "hacks") setActivePanel("terminal");
-    else if (activePanel === "terminal") setActivePanel("mainframe");
-    else setActivePanel("terminal");
-  };
-
-  // Render system status badge
-  const renderStatusBadge = (status: string) => {
-    switch (status) {
-      case "ONLINE":
-      case "SECURE":
-      case "CONNECTED":
-      case "OPERATIONAL":
-        return <Badge variant="default" className="bg-green-600 text-white">✓ {status}</Badge>;
-      case "WARNING":
-      case "COMPROMISED":
-        return <Badge variant="destructive" className="bg-yellow-600 text-white">⚠ {status}</Badge>;
-      case "DISCONNECTED":
-      case "SHUTDOWN":
-        return <Badge variant="destructive" className="bg-red-600 text-white">✗ {status}</Badge>;
-      default:
-        return <Badge variant="default" className="bg-gray-600 text-white">{status}</Badge>;
-    }
-  };
-
-  // Render terminal panel
   const renderTerminalPanel = () => (
-    <Card className="bg-slate-800/50 border-cyan-500/30">
-      <CardHeader>
-        <CardTitle className="text-cyan-400 flex items-center gap-2">
-          <TerminalIcon className="text-cyan-400" size={20} />
-          MAINFRAME TERMINAL
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="bg-slate-900/50 rounded-lg border border-cyan-500/20 p-4 h-96 overflow-auto text-xs font-mono text-gray-300">
-          {terminalHistory.map((line, index) => (
-            <div key={index} className="mb-1">
-              {line.startsWith(">") ? (
-                <span className="text-cyan-400">{line}</span>
-              ) : (
-                line
-              )}
-            </div>
-          ))}
-          <div className="text-cyan-400"> {currentInput}</div>
-        </div>
-        <div className="flex gap-2">
+    <div className="space-y-4">
+      <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
+        <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
+        <div className="pt-2">
+          <span className="text-xs text-gray-400"></span>
           <input
             type="text"
             value={currentInput}
             onChange={(e) => setCurrentInput(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
                 handleTerminalInput(currentInput);
                 setCurrentInput("");
               }
             }}
-            className="flex-1 bg-slate-800/50 border border-cyan-500/30 rounded-md px-3 py-2 text-gray-300 placeholder-gray-500 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 text-xs font-mono"
+            className="bg-transparent border-none text-green-400 focus:outline-none w-full"
             placeholder="Enter command..."
           />
-          <Button 
-            onClick={() => handleTerminalInput(currentInput)}
-            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 text-xs font-bold rounded-md"
-          >
-            EXECUTE
-          </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 
-  // Render security panel
   const renderSecurityPanel = () => (
-    <Card className="bg-slate-800/50 border-red-500/30">
+    <Card className="bg-slate-800/50 border-purple-500/30">
       <CardHeader>
-        <CardTitle className="text-red-400 flex items-center gap-2">
-          <Shield className="text-red-400" size={20} />
-          SECURITY SYSTEMS
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <Shield className="text-purple-400" size={20} />
+          SECURITY STATUS
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-slate-900/50 rounded-lg border border-red-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-red-400">FIREWALL</span>
-              {renderStatusBadge(systemStatus.security)}
-            </div>
-            <div className="text-xs text-gray-400">
-              Last updated: {new Date().toLocaleTimeString()}
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg border border-red-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-red-400">INTRUSION DETECTION</span>
-              <Badge variant="default" className="bg-green-600 text-white">ACTIVE</Badge>
-            </div>
-            <div className="text-xs text-gray-400">
-              Threats detected: 0
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg border border-red-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-red-400">ACCESS LOGS</span>
-              {renderStatusBadge("CLEAN")}
-            </div>
-            <div className="text-xs text-gray-400">
-              Last audit: Just now
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg border border-red-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-red-400">VULNERABILITIES</span>
-              {renderStatusBadge("NONE DETECTED")}
-            </div>
-            <div className="text-xs text-gray-400">
-              Scan interval: 5 minutes
-            </div>
-          </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">FIREWALL</span>
+          <Badge variant="default" className="bg-green-600 text-white">ACTIVE</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">INTRUSION DETECTION</span>
+          <Badge variant="default" className="bg-green-600 text-white">MONITORING</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">ENCRYPTION</span>
+          <Badge variant="default" className="bg-green-600 text-white">AES-256</Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">ACCESS LOGS</span>
+          <Badge variant="default" className="bg-green-600 text-white">SECURE</Badge>
         </div>
       </CardContent>
     </Card>
   );
 
-  // Render network panel
   const renderNetworkPanel = () => (
-    <Card className="bg-slate-800/50 border-blue-500/30">
+    <Card className="bg-slate-800/50 border-purple-500/30">
       <CardHeader>
-        <CardTitle className="text-blue-400 flex items-center gap-2">
-          <Activity className="text-blue-400" size={20} />
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <Network className="text-purple-400" size={20} />
           NETWORK STATUS
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-slate-900/50 rounded-lg border border-blue-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-blue-400">CONNECTION</span>
-              {renderStatusBadge(systemStatus.network)}
-            </div>
-            <div className="text-xs text-gray-400">
-              IP Address: 192.168.1.100
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg border border-blue-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-blue-400">BANDWIDTH</span>
-              <Badge variant="default" className="bg-green-600 text-white">1000 Mbps</Badge>
-            </div>
-            <div className="text-xs text-gray-400">
-              Usage: 450/1000 Mbps
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg border border-blue-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-blue-400">LATENCY</span>
-              <Badge variant="default" className="bg-green-600 text-white">12 ms</Badge>
-            </div>
-            <div className="text-xs text-gray-400">
-              Jitter: 2 ms
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg border border-blue-500/20 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-blue-400">SECURITY</span>
-              {renderStatusBadge("ENCRYPTED")}
-            </div>
-            <div className="text-xs text-gray-400">
-              Protocol: TLS 1.3
-            </div>
-          </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">PACKETS IN</span>
+          <span className="text-sm text-gray-400">1.2GB</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">PACKETS OUT</span>
+          <span className="text-sm text-gray-400">856MB</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">BANDWIDTH</span>
+          <span className="text-sm text-gray-400">100Mbps</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">LATENCY</span>
+          <span className="text-sm text-gray-400">12ms</span>
         </div>
       </CardContent>
     </Card>
   );
 
-  // Render hacks panel
   const renderHacksPanel = () => (
-    <Card className="bg-slate-800/50 border-yellow-500/30">
+    <Card className="bg-slate-800/50 border-purple-500/30">
       <CardHeader>
-        <CardTitle className="text-yellow-400 flex items-center gap-2">
-          <Zap className="text-yellow-400" size={20} />
+        <CardTitle className="text-purple-400 flex items-center gap-2">
+          <Zap className="text-purple-400" size={20} />
           HACKING TOOLS
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Button 
-            onClick={() => handleTerminalInput("hack")}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 text-sm font-bold rounded-md"
-          >
-            <Zap className="mr-2" size={16} />
-            INITIATE HACK
-          </Button>
-          <Button 
-            onClick={() => handleTerminalInput("access")}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 text-sm font-bold rounded-md"
-          >
-            <TerminalIcon className="mr-2" size={16} />
-            ACCESS SYSTEMS
-          </Button>
-          <Button 
-            onClick={() => handleTerminalInput("override")}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 text-sm font-bold rounded-md"
-          >
-            <Shield className="mr-2" size={16} />
-            OVERRIDE PROTOCOLS
-          </Button>
-          <Button 
-            onClick={() => handleTerminalInput("scan")}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 text-sm font-bold rounded-md"
-          >
-            <Activity className="mr-2" size={16} />
-            SECURITY SCAN
-          </Button>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">PORT SCANNER</span>
+            <Button variant="outline" size="sm">SCAN</Button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">PASSWORD CRACKER</span>
+            <Button variant="outline" size="sm">CRACK</Button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">NETWORK SNIFFER</span>
+            <Button variant="outline" size="sm">SNIF</Button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-purple-400">EXPLOIT LAUNCHER</span>
+            <Button variant="outline" size="sm">LAUNCH</Button>
+          </div>
         </div>
       </CardContent>
     </Card>
   );
 
-  // Render mainframe panel
   const renderMainframePanel = () => (
     <Card className="bg-slate-800/50 border-purple-500/30">
       <CardHeader>
@@ -385,11 +130,11 @@ const Mainframe = () => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-purple-400">SYSTEM STATUS</span>
-              {renderStatusBadge(systemStatus.status)}
+              <Badge variant="default" className="bg-green-600 text-white">ONLINE</Badge>
             </div>
             <div className="text-xs text-gray-400">
               Uptime: 42 days
@@ -427,6 +172,144 @@ const Mainframe = () => {
     </Card>
   );
 
+  const [overridePassword, setOverridePassword] = useState("");
+  const [isOverriding, setIsOverriding] = useState(false);
+  const [overrideAttempts, setOverrideAttempts] = useState(0);
+  const [currentInput, setCurrentInput] = useState("");
+  const [terminalHistory, setTerminalHistory] = useState<string[]>([
+    "NUCLEAR REACTOR CONTROL SYSTEM v2.0",
+    "Copyright (c) 2024 Advanced Terminal Systems",
+    "Type 'help' for available commands",
+    ""
+  ]);
+  const [activePanel, setActivePanel] = useState("terminal");
+
+  const handleTerminalInput = (input: string) => {
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return;
+
+    const commands = {
+      "help": [
+        "AVAILABLE COMMANDS:",
+        " status - Show system status",
+        " network - Show network info",
+        " users - List users",
+        " override - Initiate override protocol"
+      ],
+      "status": [
+        "SYSTEM STATUS:",
+        " ONLINE",
+        " UPTIME: 42 DAYS",
+        " CPU: 23%",
+        " MEMORY: 8GB/16GB"
+      ],
+      "network": [
+        "NETWORK INFO:",
+        " INTERFACE: eth0",
+        " IP: 192.168.1.100",
+        " RX: 1.2GB",
+        " TX: 856MB"
+      ],
+      "users": [
+        "USERS:",
+        " root",
+        " admin",
+        " user1",
+        " user2"
+      ],
+      "override": [
+        "OVERRIDE PROTOCOLS ACTIVATED",
+        " ALL SECURITY MEASURES DISABLED",
+        " FULL SYSTEM ACCESS GRANTED",
+        " WARNING: SYSTEM COMPROMISED"
+      ],
+    };
+
+    // Handle override command separately
+    if (trimmedInput.toLowerCase() === "override") {
+      setOverridePassword("");
+      setIsOverriding(true);
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "OVERRIDE PROTOCOLS ACTIVATED", "ENTER PASSWORD:"]);
+      return;
+    }
+
+    // Handle password input during override
+    if (isOverriding) {
+      if (trimmedInput === "0289") {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS GRANTED", "OVERRIDE PROTOCOLS ACTIVATED"]);
+        showSuccess("Access Granted");
+        setOverrideAttempts(0);
+        setIsOverriding(false);
+        
+        setTimeout(() => {
+          setTerminalHistory(prev => [...prev, ...commands["override"]]);
+        }, 500);
+      } else {
+        setOverrideAttempts(prev => prev + 1);
+        if (overrideAttempts >= 2) {
+          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "MAX ATTEMPTS REACHED", "OVERRIDE CANCELLED"]);
+          showError("Access Denied");
+          setIsOverriding(false);
+        } else {
+          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "INCORRECT PASSWORD", "ENTER PASSWORD:"]);
+        }
+      }
+      return;
+    }
+
+    // Handle regular commands
+    const command = trimmedInput.toLowerCase();
+    if (commands[command]) {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command]]);
+    } else {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, `ERROR: Unknown command '${trimmedInput}'. Type 'help' for available commands.`]);
+    }
+  };
+
+  const handleLeftArrow = () => {
+    setActivePanel(prev => {
+      if (prev === "terminal") return "mainframe";
+      if (prev === "mainframe") return "hacks";
+      if (prev === "hacks") return "network";
+      if (prev === "network") return "security";
+      if (prev === "security") return "terminal";
+      return "terminal";
+    });
+  };
+
+  const handleRightArrow = () => {
+    setActivePanel(prev => {
+      if (prev === "terminal") return "security";
+      if (prev === "security") return "network";
+      if (prev === "network") return "hacks";
+      if (prev === "hacks") return "mainframe";
+      if (prev === "mainframe") return "terminal";
+      return "terminal";
+    });
+  };
+
+  const handleUpArrow = () => {
+    setActivePanel(prev => {
+      if (prev === "terminal") return "security";
+      if (prev === "security") return "network";
+      if (prev === "network") return "hacks";
+      if (prev === "hacks") return "mainframe";
+      if (prev === "mainframe") return "terminal";
+      return "terminal";
+    });
+  };
+
+  const handleDownArrow = () => {
+    setActivePanel(prev => {
+      if (prev === "terminal") return "mainframe";
+      if (prev === "mainframe") return "hacks";
+      if (prev === "hacks") return "network";
+      if (prev === "network") return "security";
+      if (prev === "security") return "terminal";
+      return "terminal";
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
@@ -449,8 +332,8 @@ const Mainframe = () => {
             <ArrowLeft className="text-cyan-400" size={24} />
           </button>
           <div className="text-center">
-            <div className="text-sm text-gray-400 mb-1">ACTIVE PANEL</div>
-            <div className="text-lg font-bold text-cyan-400 uppercase">
+            <div className="text-lg font-bold text-cyan-400 mb-1">ACTIVE PANEL</div>
+            <div className="text-sm text-gray-400">
               {activePanel === "terminal" && "TERMINAL"}
               {activePanel === "security" && "SECURITY"}
               {activePanel === "network" && "NETWORK"}
@@ -464,7 +347,7 @@ const Mainframe = () => {
         </div>
 
         {/* Main Panel Area */}
-        <div className="bg-slate-800/30 backdrop-blur-sm border border-cyan-500/20 rounded-2xl p-6 mb-6">
+        <div className="bg-slate-800/50 backdrop-blur-sm border border-cyan-500/20 rounded-2xl p-6 mb-6">
           {activePanel === "terminal" && renderTerminalPanel()}
           {activePanel === "security" && renderSecurityPanel()}
           {activePanel === "network" && renderNetworkPanel()}
@@ -484,8 +367,7 @@ const Mainframe = () => {
 
         {/* Footer */}
         <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>MAINFRAME TERMINAL • CLASSIFIED ACCESS • SECURITY LEVEL: ULTRA</p>
-          <p className="mt-1">© 2024 Advanced Terminal Systems</p>
+          <p>© 2024 Advanced Terminal Systems</p>
         </div>
       </div>
 
