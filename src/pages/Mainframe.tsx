@@ -137,7 +137,7 @@ const Mainframe = () => {
           <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-purple-400">SYSTEM STATUS</span>
-              {renderStatusBadge(systemStatus.status)}
+              <Badge variant="default" className="bg-green-600 text-white">ONLINE</Badge>
             </div>
             <div className="text-xs text-gray-400">
               Uptime: 42 days
@@ -264,7 +264,7 @@ const Mainframe = () => {
       }
 
       setTimeout(() => {
-        setTerminalHistory(prev => [...prev, ...response]);
+        setTerminalHistory(prev => [...prev, ...commands["override"]]);
       }, 500);
     };
 
@@ -368,7 +368,7 @@ const Mainframe = () => {
       if (prev === "security") return "network";
       if (prev === "network") return "hacks";
       if (prev === "hacks") return "mainframe";
-      if (prev === "mainframe") return "terminal";
+      if (prev === "mainframe") return "terminal">
       return "terminal";
     });
   };
@@ -379,7 +379,7 @@ const Mainframe = () => {
       if (prev === "mainframe") return "hacks";
       if (prev === "hacks") return "network";
       if (prev === "network") return "security";
-      if (prev === "security") return "terminal";
+      if (prev === "security") return "terminal">
       return "terminal";
     });
   };
