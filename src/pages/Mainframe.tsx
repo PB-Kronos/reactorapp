@@ -472,36 +472,6 @@ const Mainframe = () => {
             <TerminalIcon className="ml-2" size={20} />
           </Button>
         </div>
-
-        {/* System Status */}
-        <Card className="bg-slate-800/50 border-cyan-500/30 mb-8">
-          <CardHeader>
-            <CardTitle className="text-cyan-400 flex items-center gap-2">
-              <Zap className="text-cyan-400" size={20} />
-              System Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold mb-1">OPERATIONAL</div>
-                <div className="text-sm text-gray-400">Reactor Core</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold mb-1">NOMINAL</div>
-                <div className="text-sm text-gray-400">Coolant System</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold mb-1">SYNCHRONIZED</div>
-                <div className="text-sm text-gray-400">Power Grid</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold mb-1">SECURE</div>
-                <div className="text-sm text-gray-400">Containment</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
