@@ -1,3 +1,4 @@
+' characters and ensuring all code paths return strings.">
 "use client";
 
 import React, { useState } from "react";
@@ -15,7 +16,7 @@ const Mainframe = () => {
       <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
         <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
         <div className="pt-2">
-          <span className="text-xs text-gray-400"></span>
+          <span className="text-xs text-gray-400">></span>
           <input
             type="text"
             value={currentInput}
@@ -367,8 +368,8 @@ const Mainframe = () => {
       if (prev === "security") return "network";
       if (prev === "network") return "hacks";
       if (prev === "hacks") return "mainframe";
-      if (prev === "mainframe") return "terminal">
-      //return "terminal";
+      if (prev === "mainframe") return "terminal";
+      return "terminal";
     });
   };
 
@@ -378,8 +379,8 @@ const Mainframe = () => {
       if (prev === "mainframe") return "hacks";
       if (prev === "hacks") return "network";
       if (prev === "network") return "security";
-      if (prev === "security") return "terminal">
-      //return "terminal";
+      if (prev === "security") return "terminal";
+      return "terminal";
     });
   };
 
