@@ -368,7 +368,7 @@ const Mainframe = () => {
       if (prev === "network") return "hacks";
       if (prev === "hacks") return "mainframe";
       if (prev === "mainframe") return "terminal">;
-      return "terminal";
+      //return "terminal";
     });
   };
 
@@ -379,7 +379,7 @@ const Mainframe = () => {
       if (prev === "hacks") return "network";
       if (prev === "network") return "security";
       if (prev === "security") return "terminal">;
-      return "terminal";
+      //return "terminal";
     });
   };
 
