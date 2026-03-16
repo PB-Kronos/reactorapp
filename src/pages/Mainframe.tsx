@@ -1,4 +1,3 @@
-' character, change Button size from xs to sm, and ensure render panel functions are defined before usage.'
 "use client";
 
 import React, { useState } from "react";
