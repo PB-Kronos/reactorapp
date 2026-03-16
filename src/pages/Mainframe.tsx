@@ -80,7 +80,7 @@ const Mainframe = () => {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-purple-400">BANDWIDTH</span>
-          <span className="text-sm text-gray-400">100Mbps</span>
+          <span className="text-sm text-gray-400">150Mbps</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-purple-400">LATENCY</span>
@@ -177,7 +177,7 @@ const Mainframe = () => {
       "network": [
         "NETWORK INFO:",
         " INTERFACE: eth0",
-        " IP: 192.168.1.100",
+        " IP: 192.168.2.16",
         " RX: 1.2GB",
         " TX: 856MB"
       ],
@@ -185,14 +185,13 @@ const Mainframe = () => {
         "USERS:",
         " root",
         " admin",
-        " user1",
-        " user2"
+        " guest"
       ],
       "override": [
         "OVERRIDE PROTOCOLS ACTIVATED",
-        " ALL SECURITY MEASURES DISABLED",
-        " FULL SYSTEM ACCESS GRANTED",
-        " WARNING: SYSTEM COMPROMISED"
+        " WELCOME--------------ADMIN",
+        " FULL-SYSTEM-ACCESS-GRANTED",
+        " WARNING:-SYSTEM COMPROMISED"
       ],
     };
 
@@ -332,7 +331,7 @@ const Mainframe = () => {
 
         {/* Footer */}
         <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>© 2024 Advanced Terminal Systems</p>
+          <p>A Gooseworks Site</p>
         </div>
       </div>
 
