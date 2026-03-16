@@ -90,36 +90,7 @@ const Mainframe = () => {
     </Card>
   );
 
-  const renderHacksPanel = () => (
-    <Card className="bg-slate-800/50 border-purple-500/30">
-      <CardHeader>
-        <CardTitle className="text-purple-400 flex items-center gap-2">
-          <Zap className="text-purple-400" size={20} />
-          HACKING TOOLS
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-purple-400">PORT SCANNER</span>
-            <Button variant="outline" size="sm">SCAN</Button>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-purple-400">PASSWORD CRACKER</span>
-            <Button variant="outline" size="sm">CRACK</Button>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-purple-400">NETWORK SNIFFER</span>
-            <Button variant="outline" size="sm">SNIF</Button>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-purple-400">EXPLOIT LAUNCHER</span>
-            <Button variant="outline" size="sm">LAUNCH</Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  // Removed renderHacksPanel function - HACKING TOOLS panel deleted
 
   const renderMainframePanel = () => (
     <Card className="bg-slate-800/50 border-purple-500/30">
@@ -240,7 +211,7 @@ const Mainframe = () => {
         showSuccess("Access Granted");
         setOverrideAttempts(0);
         setIsOverriding(false);
-        
+
         setTimeout(() => {
           setTerminalHistory(prev => [...prev, ...commands["override"]]);
         }, 500);
@@ -269,8 +240,7 @@ const Mainframe = () => {
   const handleLeftArrow = () => {
     setActivePanel(prev => {
       if (prev === "terminal") return "mainframe";
-      if (prev === "mainframe") return "hacks";
-      if (prev === "hacks") return "network";
+      if (prev === "mainframe") return "network";
       if (prev === "network") return "security";
       if (prev === "security") return "terminal";
       return "terminal";
@@ -281,8 +251,7 @@ const Mainframe = () => {
     setActivePanel(prev => {
       if (prev === "terminal") return "security";
       if (prev === "security") return "network";
-      if (prev === "network") return "hacks";
-      if (prev === "hacks") return "mainframe";
+      if (prev === "network") return "mainframe";
       if (prev === "mainframe") return "terminal";
       return "terminal";
     });
@@ -292,8 +261,7 @@ const Mainframe = () => {
     setActivePanel(prev => {
       if (prev === "terminal") return "security";
       if (prev === "security") return "network";
-      if (prev === "network") return "hacks";
-      if (prev === "hacks") return "mainframe";
+      if (prev === "network") return "mainframe";
       if (prev === "mainframe") return "terminal";
       return "terminal";
     });
@@ -302,8 +270,7 @@ const Mainframe = () => {
   const handleDownArrow = () => {
     setActivePanel(prev => {
       if (prev === "terminal") return "mainframe";
-      if (prev === "mainframe") return "hacks";
-      if (prev === "hacks") return "network";
+      if (prev === "mainframe") return "network";
       if (prev === "network") return "security";
       if (prev === "security") return "terminal";
       return "terminal";
@@ -337,7 +304,6 @@ const Mainframe = () => {
               {activePanel === "terminal" && "TERMINAL"}
               {activePanel === "security" && "SECURITY"}
               {activePanel === "network" && "NETWORK"}
-              {activePanel === "hacks" && "HACKING TOOLS"}
               {activePanel === "mainframe" && "MAINFRAME"}
             </div>
           </div>
@@ -351,7 +317,6 @@ const Mainframe = () => {
           {activePanel === "terminal" && renderTerminalPanel()}
           {activePanel === "security" && renderSecurityPanel()}
           {activePanel === "network" && renderNetworkPanel()}
-          {activePanel === "hacks" && renderHacksPanel()}
           {activePanel === "mainframe" && renderMainframePanel()}
         </div>
 
