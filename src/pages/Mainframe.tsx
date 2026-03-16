@@ -8,13 +8,133 @@ import { Button } from "@/components/ui/button";
 import { showError, showSuccess } from "@/utils/toast";
 
 const Mainframe = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [overridePassword, setOverridePassword] = useState("");
+  const [isOverriding, setIsOverriding] = useState(false);
+  const [overrideAttempts, setOverrideAttempts] = useState(0);
+  const [currentInput, setCurrentInput] = useState("");
+  const [terminalHistory, setTerminalHistory] = useState<string[]>([
+    "NUCLEAR REACTOR CONTROL SYSTEM v2.0",
+    "Copyright (c) 2024 Advanced Terminal Systems",
+    "Type 'help' for available commands",
+    ""
+  ]);
+  const [activePanel, setActivePanel] = useState("terminal");
+
+  const handleTerminalInput = (input: string) => {
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return;
+
+    const commands = {
+      help: [
+        "AVAILABLE COMMANDS:",
+        " status - Show system status",
+        " network - Show network info",
+        " users - List users",
+        " login - Login to admin account",
+        " override - Initiate override protocol"
+      ],
+      status: [
+        "SYSTEM STATUS:",
+        " ONLINE",
+        " UPTIME: 42 DAYS",
+        " CPU: 23%",
+        " MEMORY: 8GB/16GB"
+      ],
+      network: [
+        "NETWORK INFO:",
+        " INTERFACE: eth0",
+        " IP: 192.168.1.100",
+        " RX: 1.2GB",
+        " TX: 856MB"
+      ],
+      users: [
+        "USERS:",
+        " root",
+        " admin",
+        " user1",
+        " user2"
+      ],
+      login: [
+        "LOGIN PROMPT:",
+        " Username: admin",
+        " Password: [hidden]",
+        " Enter password to login:"
+      ],
+      override: [
+        "OVERRIDE PROTOCOLS ACTIVATED",
+        " ALL SECURITY MEASURES DISABLED",
+        " FULL SYSTEM ACCESS GRANTED",
+        " WARNING: SYSTEM COMPROMISED"
+      ],
+    };
+
+    if (trimmedInput.toLowerCase() === "login") {
+      if (isLoggedIn) {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ALREADY LOGGED IN"]);
+      } else {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN PROMPT:", " Username: admin", " Password: [hidden]", " Enter password to login:"]);
+        return;
+      }
+    }
+
+    if (isOverriding) {
+      if (trimmedInput === "0289") {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS GRANTED", "OVERRIDE PROTOCOLS ACTIVATED"]);
+        showSuccess("Access Granted");
+        setOverrideAttempts(0);
+        setIsOverriding(false);
+        setTimeout(() => {
+          setTerminalHistory(prev => [...prev, ...commands.override]);
+        }, 500);
+      } else {
+        setOverrideAttempts(prev => prev + 1);
+        if (overrideAttempts >= 2) {
+          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "MAX ATTEMPTS REACHED", "OVERRIDE CANCELLED"]);
+          showError("Access Denied");
+          setIsOverriding(false);
+        } else {
+          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "INCORRECT PASSWORD", "ENTER PASSWORD:"]);
+        }
+      }
+      return;
+    }
+
+    // Handle login password input
+    if (!isLoggedIn && terminalHistory[terminalHistory.length - 1] === " Enter password to login:") {
+      if (trimmedInput === "0289") {
+        setIsLoggedIn(true);
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN SUCCESSFUL", "Welcome, admin!"]);
+        showSuccess("Login Successful");
+      } else {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN FAILED", "Incorrect password"]);
+        showError("Login Failed");
+      }
+      return;
+    }
+
+    // Check if user is logged in for other commands
+    if (!isLoggedIn && trimmedInput.toLowerCase() !== "login" && trimmedInput.toLowerCase() !== "help") {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "Please login first using 'login' command"]);
+      return;
+    }
+
+    const command = trimmedInput.toLowerCase();
+    if (commands[command]) {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command]]);
+    } else {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, `ERROR: Unknown command '${trimmedInput}'. Type 'help' for available commands.`]);
+    }
+  };
+
   const renderTerminalPanel = () => (
     <div className="space-y-4">
       <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
         <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
         <div className="pt-2">
           <span className="text-xs text-gray-400"></span>
-          <input            type="text"
+          <input
+            type="text"
             value={currentInput}
             onChange={(e) => setCurrentInput(e.target.value)}
             onKeyDown={(e) => {
@@ -56,6 +176,12 @@ const Mainframe = () => {
           <span className="text-sm font-bold text-purple-400">ACCESS LOGS</span>
           <Badge variant="default" className="bg-green-600 text-white">SECURE</Badge>
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-purple-400">LOGIN STATUS</span>
+          <Badge variant={isLoggedIn ? "default" : "destructive"} className={isLoggedIn ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+            {isLoggedIn ? "LOGGED IN" : "NOT LOGGED IN"}
+          </Badge>
+        </div>
       </CardContent>
     </Card>
   );
@@ -94,7 +220,8 @@ const Mainframe = () => {
       <CardHeader>
         <CardTitle className="text-purple-400 flex items-center gap-2">
           <TerminalIcon className="text-purple-400" size={20} />
-          MAINFRAME STATUS        </CardTitle>
+          MAINFRAME STATUS
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -130,96 +257,6 @@ const Mainframe = () => {
       </CardContent>
     </Card>
   );
-
-  const [overridePassword, setOverridePassword] = useState("");
-  const [isOverriding, setIsOverriding] = useState(false);
-  const [overrideAttempts, setOverrideAttempts] = useState(0);
-  const [currentInput, setCurrentInput] = useState("");
-  const [terminalHistory, setTerminalHistory] = useState<string[]>([
-    "NUCLEAR REACTOR CONTROL SYSTEM v2.0",
-    "Copyright (c) 2024 Advanced Terminal Systems",
-    "Type 'help' for available commands",
-    ""
-  ]);
-  const [activePanel, setActivePanel] = useState("terminal");
-
-  const handleTerminalInput = (input: string) => {
-    const trimmedInput = input.trim();
-    if (!trimmedInput) return;
-
-    const commands = {
-      help: [
-        "AVAILABLE COMMANDS:",
-        " status - Show system status",
-        " network - Show network info",
-        " users - List users",
-        " override - Initiate override protocol"
-      ],
-      status: [
-        "SYSTEM STATUS:",
-        " ONLINE",
-        " UPTIME: 42 DAYS",
-        " CPU: 23%",
-        " MEMORY: 8GB/16GB"
-      ],
-      network: [
-        "NETWORK INFO:",
-        " INTERFACE: eth0",
-        " IP: 192.168.1.100",
-        " RX: 1.2GB",
-        " TX: 856MB"
-      ],
-      users: [
-        "USERS:",
-        " root",
-        " admin",
-        " user1",
-        " user2"
-      ],
-      override: [
-        "OVERRIDE PROTOCOLS ACTIVATED",
-        " ALL SECURITY MEASURES DISABLED",
-        " FULL SYSTEM ACCESS GRANTED",
-        " WARNING: SYSTEM COMPROMISED"
-      ],
-    };
-
-    if (trimmedInput.toLowerCase() === "override") {
-      setOverridePassword("");
-      setIsOverriding(true);
-      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "OVERRIDE PROTOCOLS ACTIVATED", "ENTER PASSWORD:"]);
-      return;
-    }
-
-    if (isOverriding) {
-      if (trimmedInput === "0289") {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS GRANTED", "OVERRIDE PROTOCOLS ACTIVATED"]);
-        showSuccess("Access Granted");
-        setOverrideAttempts(0);
-        setIsOverriding(false);
-        setTimeout(() => {
-          setTerminalHistory(prev => [...prev, ...commands.override]);
-        }, 500);
-      } else {
-        setOverrideAttempts(prev => prev + 1);
-        if (overrideAttempts >= 2) {
-          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "MAX ATTEMPTS REACHED", "OVERRIDE CANCELLED"]);
-          showError("Access Denied");
-          setIsOverriding(false);
-        } else {
-          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "INCORRECT PASSWORD", "ENTER PASSWORD:"]);
-        }
-      }
-      return;
-    }
-
-    const command = trimmedInput.toLowerCase();
-    if (commands[command]) {
-      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command]]);
-    } else {
-      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, `ERROR: Unknown command '${trimmedInput}'. Type 'help' for available commands.`]);
-    }
-  };
 
   const handleLeftArrow = () => {
     setActivePanel(prev => {
