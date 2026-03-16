@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Terminal as TerminalIcon, Shield, Network, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { showError, showSuccess } from "@/utils/toast";
 
+type AccountType = "guest" | "user" | "admin";
+
 const Mainframe = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [overridePassword, setOverridePassword] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("guest");
   const [isOverriding, setIsOverriding] = useState(false);
   const [overrideAttempts, setOverrideAttempts] = useState(0);
   const [currentInput, setCurrentInput] = useState("");
@@ -20,6 +22,23 @@ const Mainframe = () => {
     ""
   ]);
   const [activePanel, setActivePanel] = useState("terminal");
+  const [loginStep, setLoginStep] = useState<"account" | "password" | null>(null);
+
+  // Account passwords
+  const PASSWORDS: Record<AccountType, string> = {
+    admin: "0289",
+    user: "1234",
+    guest: ""
+  };
+
+  // Clear login state on unmount
+  useEffect(() => {
+    return () => {
+      localStorage.removeItem("mainframe_temperature");
+      localStorage.removeItem("mainframe_pressure");
+      localStorage.removeItem("mainframe_fuelLevel");
+    };
+  }, []);
 
   const handleTerminalInput = (input: string) => {
     const trimmedInput = input.trim();
@@ -31,8 +50,16 @@ const Mainframe = () => {
         " status - Show system status",
         " network - Show network info",
         " users - List users",
-        " login - Login to admin account",
-        " override - Initiate override protocol"
+        " login - Login to account",
+        " logout - Logout current account",
+        " guest - Switch to guest account",
+        " user - Switch to user account",
+        " admin - Switch to admin account",
+        " override - Initiate override protocol (admin only)",
+        " reactor - Enter reactor control system (user+ only)",
+        " reboot - Clear cached reactor data (user+ only)",
+        " shutdown - Shutdown reactor (user+ only)",
+        " scram - Emergency shutdown (user+ only, requires conditions)"
       ],
       status: [
         "SYSTEM STATUS:",
@@ -57,9 +84,24 @@ const Mainframe = () => {
       ],
       login: [
         "LOGIN PROMPT:",
-        " Username: admin",
-        " Password: [hidden]",
-        " Enter password to login:"
+        " Available accounts: admin, user, guest",
+        " Enter account name:"
+      ],
+      logout: [
+        "LOGGING OUT...",
+        " Session terminated."
+      ],
+      guest: [
+        "SWITCHING TO GUEST ACCOUNT",
+        " Access restricted to status and network commands"
+      ],
+      user: [
+        "SWITCHING TO USER ACCOUNT",
+        " Access granted to reactor entry, reboot, shutdown, and scram"
+      ],
+      admin: [
+        "SWITCHING TO ADMIN ACCOUNT",
+        " Full system access granted"
       ],
       override: [
         "OVERRIDE PROTOCOLS ACTIVATED",
@@ -67,61 +109,138 @@ const Mainframe = () => {
         " FULL SYSTEM ACCESS GRANTED",
         " WARNING: SYSTEM COMPROMISED"
       ],
+      reactor: [
+        "INITIATING REACTOR CONTROL INTERFACE...",
+        " Redirecting to /reactor"
+      ],
+      reboot: [
+        "REBOOT PROTOCOL INITIATED...",
+        " Clearing cached reactor data...",
+        " Cache cleared successfully.",
+        " System ready."
+      ],
+      shutdown: [
+        "SHUTDOWN PROTOCOL INITIATED...",
+        " Stopping reactor systems...",
+        " Reactor shutdown complete.",
+        " System entering standby mode."
+      ],
+      scram: [
+        "SCRAM PROTOCOL INITIATED...",
+        " EMERGENCY SHUTDOWN TRIGGERED",
+        " All control rods inserted at maximum speed",
+        " Reactor scrammed successfully"
+      ]
     };
 
-    if (trimmedInput.toLowerCase() === "login") {
-      if (isLoggedIn) {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ALREADY LOGGED IN"]);
-      } else {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN PROMPT:", " Username: admin", " Password: [hidden]", " Enter password to login:"]);
-        return;
-      }
-    }
+    const command = trimmedInput.toLowerCase();
 
-    if (isOverriding) {
-      if (trimmedInput === "0289") {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS GRANTED", "OVERRIDE PROTOCOLS ACTIVATED"]);
-        showSuccess("Access Granted");
-        setOverrideAttempts(0);
-        setIsOverriding(false);
-        setTimeout(() => {
-          setTerminalHistory(prev => [...prev, ...commands.override]);
-        }, 500);
-      } else {
-        setOverrideAttempts(prev => prev + 1);
-        if (overrideAttempts >= 2) {
-          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "MAX ATTEMPTS REACHED", "OVERRIDE CANCELLED"]);
-          showError("Access Denied");
-          setIsOverriding(false);
+    // Handle login flow
+    if (loginStep === "account") {
+      const account = trimmedInput.toLowerCase() as AccountType;
+      if (account === "admin" || account === "user" || account === "guest") {
+        setAccountType(account);
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ` Account: ${account.toUpperCase()}`, account === "guest" ? " (No password required)" : " Enter password:"]);
+        if (account === "guest") {
+          setIsLoggedIn(true);
+          setLoginStep(null);
+          showSuccess(`Logged in as ${account}`);
         } else {
-          setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "INCORRECT PASSWORD", "ENTER PASSWORD:"]);
+          setLoginStep("password");
         }
+      } else {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ERROR: Invalid account. Available accounts: admin, user, guest", " Enter account name:"]);
       }
       return;
     }
 
-    // Handle login password input
-    if (!isLoggedIn && terminalHistory[terminalHistory.length - 1] === " Enter password to login:") {
-      if (trimmedInput === "0289") {
+    if (loginStep === "password") {
+      const expectedPassword = PASSWORDS[accountType];
+      if (trimmedInput === expectedPassword) {
         setIsLoggedIn(true);
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN SUCCESSFUL", "Welcome, admin!"]);
-        showSuccess("Login Successful");
+        setLoginStep(null);
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN SUCCESSFUL", `Welcome, ${accountType.toUpperCase()}!`]);
+        showSuccess(`Logged in as ${accountType}`);
       } else {
-        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN FAILED", "Incorrect password"]);
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "LOGIN FAILED", "Incorrect password", " Enter password:"]);
         showError("Login Failed");
       }
       return;
     }
 
+    // Handle logout
+    if (command === "logout") {
+      setIsLoggedIn(false);
+      setAccountType("guest");
+      setLoginStep(null);
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands.logout]);
+      showSuccess("Logged out successfully");
+      return;
+    }
+
+    // Handle account switch commands (admin/user/guest)
+    if (command === "admin" || command === "user" || command === "guest") {
+      if (isLoggedIn) {
+        setAccountType(command as AccountType);
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command as keyof typeof commands]]);
+        showSuccess(`Switched to ${command} account`);
+      } else {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "Please login first using 'login' command"]);
+      }
+      return;
+    }
+
     // Check if user is logged in for other commands
-    if (!isLoggedIn && trimmedInput.toLowerCase() !== "login" && trimmedInput.toLowerCase() !== "help") {
+    if (!isLoggedIn && command !== "help" && command !== "login") {
       setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "Please login first using 'login' command"]);
       return;
     }
 
-    const command = trimmedInput.toLowerCase();
+    // Permission-based command access
+    const canAccessAdmin = accountType === "admin";
+    const canAccessUser = accountType === "user" || accountType === "admin";
+
+    // Admin-only commands
+    if (command === "override" && !canAccessAdmin) {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "This command requires admin privileges"]);
+      showError("Insufficient permissions");
+      return;
+    }
+
+    // User+ commands
+    if ((command === "reactor" || command === "reboot" || command === "shutdown" || command === "scram") && !canAccessUser) {
+      setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS DENIED", "This command requires user or admin privileges"]);
+      showError("Insufficient permissions");
+      return;
+    }
+
+    // Handle scram requirements (only if temperature > 3000 or already pressed)
+    if (command === "scram") {
+      const storedTemp = parseFloat(localStorage.getItem("mainframe_temperature") || "0");
+      if (storedTemp <= 3000 && !localStorage.getItem("scram_pressed")) {
+        setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "SCRAM REQUIREMENTS NOT MET", " Temperature must exceed 3000°C or scram must be activated", " Condition not satisfied."]);
+        showError("Scram requirements not met");
+        return;
+      }
+    }
+
+    // Execute command
     if (commands[command]) {
       setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command]]);
+      
+      // Special command actions
+      if (command === "reboot") {
+        localStorage.removeItem("mainframe_temperature");
+        localStorage.removeItem("mainframe_pressure");
+        localStorage.removeItem("mainframe_fuelLevel");
+        localStorage.removeItem("scram_pressed");
+      }
+      
+      if (command === "reactor") {
+        setTimeout(() => {
+          window.location.href = "/reactor";
+        }, 1000);
+      }
     } else {
       setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, `ERROR: Unknown command '${trimmedInput}'. Type 'help' for available commands.`]);
     }
@@ -130,9 +249,10 @@ const Mainframe = () => {
   const renderTerminalPanel = () => (
     <div className="space-y-4">
       <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
-        <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
-        <div className="pt-2">
-          <span className="text-xs text-gray-400"></span>
+        <pre className="text-sm font-mono text-green-400 whitespace-pre-wrap break-words">{terminalHistory.join("\n")}</pre>
+        <div className="pt-2 flex items-center">
+          <span className="text-green-400 mr-2">{isLoggedIn ? `[${accountType.toUpperCase()}]` : "[GUEST]"}</span>
+          <span className="text-cyan-400">$</span>
           <input
             type="text"
             value={currentInput}
@@ -143,8 +263,9 @@ const Mainframe = () => {
                 setCurrentInput("");
               }
             }}
-            className="bg-transparent border-none text-green-400 focus:outline-none w-full"
-            placeholder="Enter command..."
+            className="bg-transparent border-none text-green-400 focus:outline-none flex-1 ml-2"
+            placeholder={loginStep ? "Enter value..." : "Enter command..."}
+            autoFocus
           />
         </div>
       </div>
@@ -177,9 +298,9 @@ const Mainframe = () => {
           <Badge variant="default" className="bg-green-600 text-white">SECURE</Badge>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-purple-400">LOGIN STATUS</span>
-          <Badge variant={isLoggedIn ? "default" : "destructive"} className={isLoggedIn ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-            {isLoggedIn ? "LOGGED IN" : "NOT LOGGED IN"}
+          <span className="text-sm font-bold text-purple-400">CURRENT ACCOUNT</span>
+          <Badge variant={isLoggedIn ? "success" : "destructive"} className={isLoggedIn ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+            {isLoggedIn ? accountType.toUpperCase() : "NOT LOGGED IN"}
           </Badge>
         </div>
       </CardContent>
@@ -346,7 +467,7 @@ const Mainframe = () => {
           <button onClick={handleUpArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
             <ArrowUp className="text-cyan-400" size={24} />
           </button>
-          <button onClick={handleDownArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
+          <button onClick={handleDownArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-purple-500/20 transition-all duration-300 hover:scale-110">
             <ArrowDown className="text-cyan-400" size={24} />
           </button>
         </div>
