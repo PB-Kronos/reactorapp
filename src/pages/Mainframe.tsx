@@ -1,5 +1,5 @@
 // ... existing imports ...
-  import { toast } from "@/components/ui/toast";
+  import { Toast } from "@/components/ui/toast";
 
   const Mainframe = () => {
     // ... existing state ...
