@@ -238,17 +238,7 @@ const Mainframe = () => {
         showSuccess("Access Granted");
         setOverrideAttempts(0);
         setIsOverriding(false);
-        // Flash background red 5 times
-        let flashCount = 0;
-        const flashInterval = setInterval(() => {
-          if (flashCount < 10) {
-            document.body.style.backgroundColor = flashCount % 2 === 0 ? "rgba(255, 0, 0, 0.5)" : "transparent";
-            flashCount++;
-          } else {
-            clearInterval(flashInterval);
-            document.body.style.backgroundColor = "";
-          }
-        }, 200);
+        // Removed flashing background to save resources
       } else {
         // Incorrect password
         setOverrideAttempts(prev => prev + 1);
