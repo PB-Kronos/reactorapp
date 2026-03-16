@@ -395,5 +395,5 @@ const Mainframe = () => {
       return "terminal";
     });
   };
-
+};
 export default Mainframe;
