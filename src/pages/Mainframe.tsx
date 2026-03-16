@@ -1,4 +1,4 @@
-' character, change Button size from xs to sm, and ensure render panel functions are defined before usage.'>
+' character, change Button size from xs to sm, and ensure render panel functions are defined before usage.">
 "use client";
 
 import React, { useState } from "react";
@@ -16,7 +16,7 @@ const Mainframe = () => {
       <div className="h-[300px] overflow-y-auto bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
         <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
         <div className="pt-2">
-          <span className="text-xs text-gray-400">></span>
+          <span className="text-xs text-gray-400"></span>
           <input
             type="text"
             value={currentInput}
