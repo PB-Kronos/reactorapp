@@ -414,94 +414,48 @@ const Mainframe = () => {
           </h2>
         </div>
 
-        {/* Main Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <Card className="bg-slate-800/50 border-cyan-500/30 hover:border-cyan-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <Zap className="text-cyan-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-cyan-400">Real-time Monitoring</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Monitor power output, temperature, pressure, and fuel levels in real-time with advanced sensors.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800/50 border-purple-500/30 hover:border-purple-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <Shield className="text-purple-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-purple-400">Safety Systems</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Advanced safety protocols with emergency shutdown capabilities and containment monitoring.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800/50 border-green-500/30 hover:border-green-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <Settings className="text-green-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-green-400">Full Control</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Complete control over reactor operations, coolant systems, and power grid synchronization.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* CTA Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-          <Button
-            size="lg"
-            className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/reactor'}
-          >
-            ENTER REACTOR CONTROL SYSTEM
-            <ArrowRight className="ml-2" size={20} />
-          </Button>
-          <Button
-            size="lg"
-            className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-8 py-4 text-lg font-bold border-2 border-yellow-400/50 hover:border-yellow-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/mainframe'}
-          >
-            ENTER HACKER MAINFRAME
-            <TerminalIcon className="ml-2" size={20} />
-          </Button>
-        </div>
-
-        {/* System Status */}
-        <Card className="bg-slate-800/50 border-cyan-500/30 mb-8">
-          <CardHeader>
-            <CardTitle className="text-cyan-400 flex items-center gap-2">
-              <Zap className="text-cyan-400" size={20} />
-              System Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold mb-1">OPERATIONAL</div>
-                <div className="text-sm text-gray-400">Reactor Core</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold mb-1">NOMINAL</div>
-                <div className="text-sm text-gray-400">Coolant System</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold mb-1">SYNCHRONIZED</div>
-                <div className="text-sm text-gray-400">Power Grid</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold mb-1">SECURE</div>
-                <div className="text-sm text-gray-400">Containment</div>
-              </div>
+        {/* Navigation Arrows */}
+        <div className="flex justify-between items-center mb-6">
+          <button onClick={handleLeftArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
+            <ArrowLeft className="text-cyan-400" size={24} />
+          </button>
+          <div className="text-center">
+            <div className="text-sm text-gray-400 mb-1">ACTIVE PANEL</div>
+            <div className="text-lg font-bold text-cyan-400 uppercase">
+              {activePanel === "terminal" && "TERMINAL"}
+              {activePanel === "security" && "SECURITY"}
+              {activePanel === "network" && "NETWORK"}
+              {activePanel === "mainframe" && "MAINFRAME"}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <button onClick={handleRightArrow} className="p-3 bg-slate-800/50 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-all duration-300 hover:scale-110">
+            <ArrowRight className="text-purple-400" size={24} />
+          </button>
+        </div>
+
+        {/* Main Panel Area */}
+        <div className="bg-slate-800/30 backdrop-blur-sm border border-cyan-500/20 rounded-2xl p-6 mb-6">
+          {activePanel === "terminal" && renderTerminalPanel()}
+          {activePanel === "security" && renderSecurityPanel()}
+          {activePanel === "network" && renderNetworkPanel()}
+          {activePanel === "mainframe" && renderMainframePanel()}
+        </div>
+
+        {/* Vertical Navigation (Up/Down) */}
+        <div className="flex justify-center gap-4">
+          <button onClick={handleUpArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
+            <ArrowUp className="text-cyan-400" size={24} />
+          </button>
+          <button onClick={handleDownArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
+            <ArrowDown className="text-cyan-400" size={24} />
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-8 text-gray-400 text-sm">
+          <p>NUCLEAR REACTOR CONTROL SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
+          <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
+        </div>
       </div>
     </div>
   );
