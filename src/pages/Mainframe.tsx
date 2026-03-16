@@ -14,8 +14,7 @@ const Mainframe = () => {
         <pre className="text-sm font-mono text-green-400">{terminalHistory.join("\n")}</pre>
         <div className="pt-2">
           <span className="text-xs text-gray-400"></span>
-          <input
-            type="text"
+          <input            type="text"
             value={currentInput}
             onChange={(e) => setCurrentInput(e.target.value)}
             onKeyDown={(e) => {
@@ -80,7 +79,7 @@ const Mainframe = () => {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-purple-400">BANDWIDTH</span>
-          <span className="text-sm text-gray-400">150Mbps</span>
+          <span className="text-sm text-gray-400">100Mbps</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-purple-400">LATENCY</span>
@@ -90,15 +89,12 @@ const Mainframe = () => {
     </Card>
   );
 
-  // Removed renderHacksPanel function - HACKING TOOLS panel deleted
-
   const renderMainframePanel = () => (
     <Card className="bg-slate-800/50 border-purple-500/30">
       <CardHeader>
         <CardTitle className="text-purple-400 flex items-center gap-2">
           <TerminalIcon className="text-purple-400" size={20} />
-          MAINFRAME STATUS
-        </CardTitle>
+          MAINFRAME STATUS        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -107,36 +103,28 @@ const Mainframe = () => {
               <span className="text-sm font-bold text-purple-400">SYSTEM STATUS</span>
               <Badge variant="default" className="bg-green-600 text-white">ONLINE</Badge>
             </div>
-            <div className="text-xs text-gray-400">
-              Uptime: 42 days
-            </div>
+            <div className="text-xs text-gray-400">Uptime: 42 days</div>
           </div>
           <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-purple-400">CPU LOAD</span>
               <Badge variant="default" className="bg-green-600 text-white">23%</Badge>
             </div>
-            <div className="text-xs text-gray-400">
-              Cores: 8
-            </div>
+            <div className="text-xs text-gray-400">Cores: 8</div>
           </div>
           <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-purple-400">MEMORY</span>
               <Badge variant="default" className="bg-green-600 text-white">8GB/16GB</Badge>
             </div>
-            <div className="text-xs text-gray-400">
-              Usage: 50%
-            </div>
+            <div className="text-xs text-gray-400">Usage: 50%</div>
           </div>
           <div className="bg-slate-900/50 rounded-lg border border-purple-500/20 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-purple-400">STORAGE</span>
               <Badge variant="default" className="bg-green-600 text-white">512GB/1TB</Badge>
             </div>
-            <div className="text-xs text-gray-400">
-              Free: 488GB
-            </div>
+            <div className="text-xs text-gray-400">Free: 488GB</div>
           </div>
         </div>
       </CardContent>
@@ -160,42 +148,42 @@ const Mainframe = () => {
     if (!trimmedInput) return;
 
     const commands = {
-      "help": [
+      help: [
         "AVAILABLE COMMANDS:",
         " status - Show system status",
         " network - Show network info",
         " users - List users",
         " override - Initiate override protocol"
       ],
-      "status": [
+      status: [
         "SYSTEM STATUS:",
         " ONLINE",
         " UPTIME: 42 DAYS",
         " CPU: 23%",
         " MEMORY: 8GB/16GB"
       ],
-      "network": [
+      network: [
         "NETWORK INFO:",
         " INTERFACE: eth0",
-        " IP: 192.168.2.16",
+        " IP: 192.168.1.100",
         " RX: 1.2GB",
         " TX: 856MB"
       ],
-      "users": [
+      users: [
         "USERS:",
         " root",
         " admin",
-        " guest"
+        " user1",
+        " user2"
       ],
-      "override": [
+      override: [
         "OVERRIDE PROTOCOLS ACTIVATED",
-        " WELCOME--------------ADMIN",
-        " FULL-SYSTEM-ACCESS-GRANTED",
-        " WARNING:-SYSTEM COMPROMISED"
+        " ALL SECURITY MEASURES DISABLED",
+        " FULL SYSTEM ACCESS GRANTED",
+        " WARNING: SYSTEM COMPROMISED"
       ],
     };
 
-    // Handle override command separately
     if (trimmedInput.toLowerCase() === "override") {
       setOverridePassword("");
       setIsOverriding(true);
@@ -203,16 +191,14 @@ const Mainframe = () => {
       return;
     }
 
-    // Handle password input during override
     if (isOverriding) {
       if (trimmedInput === "0289") {
         setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, "ACCESS GRANTED", "OVERRIDE PROTOCOLS ACTIVATED"]);
         showSuccess("Access Granted");
         setOverrideAttempts(0);
         setIsOverriding(false);
-
         setTimeout(() => {
-          setTerminalHistory(prev => [...prev, ...commands["override"]]);
+          setTerminalHistory(prev => [...prev, ...commands.override]);
         }, 500);
       } else {
         setOverrideAttempts(prev => prev + 1);
@@ -227,7 +213,6 @@ const Mainframe = () => {
       return;
     }
 
-    // Handle regular commands
     const command = trimmedInput.toLowerCase();
     if (commands[command]) {
       setTerminalHistory(prev => [...prev, `> ${trimmedInput}`, ...commands[command]]);
@@ -238,10 +223,10 @@ const Mainframe = () => {
 
   const handleLeftArrow = () => {
     setActivePanel(prev => {
-      if (prev === "terminal") return "mainframe";
-      if (prev === "mainframe") return "network";
-      if (prev === "network") return "security";
-      if (prev === "security") return "terminal";
+      if (prev === "terminal") return "security";
+      if (prev === "security") return "network";
+      if (prev === "network") return "mainframe";
+      if (prev === "mainframe") return "terminal";
       return "terminal";
     });
   };
@@ -280,7 +265,7 @@ const Mainframe = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
       {/* Background Grid Pattern */}
       <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto">
@@ -331,7 +316,7 @@ const Mainframe = () => {
 
         {/* Footer */}
         <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>A Gooseworks Site</p>
+          <p>© 2024 Advanced Terminal Systems</p>
         </div>
       </div>
 

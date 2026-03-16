@@ -1,17 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import { QueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ReactorSimulator from "./pages/ReactorSimulator";
 import Mainframe from "./pages/Mainframe";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from '@vercel/speed-insights/next'
 
 const queryClient = new QueryClient();
 
