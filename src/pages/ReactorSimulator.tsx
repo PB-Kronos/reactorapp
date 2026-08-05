@@ -1,22 +1,23 @@
-"use client";
-import React, { useState, useEffect } from "react";
-import { ArrowLeft, ArrowRight, ArrowDown, ArrowUp } from "lucide-react";
-
-// Components
+import { useEffect, useMemo, useState } from "react";
+import { Activity, ArrowLeft, ArrowRight, ArrowDown, ArrowUp, BellRing, RotateCcw, ShieldAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ReactorStatusPanel } from "@/components/ReactorStatusPanel";
 import { ControlRodsPanel } from "@/components/ControlRodsPanel";
 import { StartupShutdownPanel } from "@/components/StartupShutdownPanel";
 import { PowerCoolantPanel } from "@/components/PowerCoolantPanel";
 import { PowerGridPanel } from "@/components/PowerGridPanel";
-
-// Hooks
 import { useReactorPhysics } from "@/hooks/useReactorPhysics";
 import { useValueControl } from "@/hooks/useValueControl";
 import { calculateTurbineData } from "@/hooks/useTurbineControl";
 
+type Panel = "status" | "control-rods" | "startup-shutdown" | "power-coolant" | "power-grid";
+const STORAGE_KEY = "rbwr-simulator-state-v3";
+const panels: Panel[] = ["status", "control-rods", "startup-shutdown", "power-coolant", "power-grid"];
+const panelNames: Record<Panel, string> = { status: "Status", "control-rods": "Control rods", "startup-shutdown": "Reactor control", "power-coolant": "Cooling", "power-grid": "Generator" };
+
 const ReactorSimulator = () => {
-  // State
-  const [activePanel, setActivePanel] = useState("status");
+  const [activePanel, setActivePanel] = useState<Panel>("status");
   const [temperature, setTemperature] = useState(25);
   const [pressure, setPressure] = useState(1);
   const [fuelLevel, setFuelLevel] = useState(100);
@@ -26,291 +27,84 @@ const ReactorSimulator = () => {
   const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
   const [coolantFlow, setCoolantFlow] = useState(50);
   const [coolantPumpOn, setCoolantPumpOn] = useState(false);
-  const [rodPercentage, setRodPercentage] = useState(0);
+  const [rodPercentage, setRodPercentage] = useState(100);
   const [pump1Online, setPump1Online] = useState(false);
   const [pump2Online, setPump2Online] = useState(false);
-  const [valveValue, setValveValue] = useState(50);
+  const [valveValue, setValveValue] = useState(0);
   const [scramPressed, setScramPressed] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-
-  // Control directions
   const [valveDirection, setValveDirection] = useState(0);
   const [rodDirection, setRodDirection] = useState(0);
+  const [lastEvent, setLastEvent] = useState("System initialized — reactor in cold shutdown.");
 
-  // Unified physics simulation hook
-  useReactorPhysics({
-    isRunning,
-    valveValue,
-    rodPercentage,
-    pump1Online,
-    pump2Online,
-    pressure,
-    coolantPumpOn,
-    coolantFlow,
-    onTemperatureChange: setTemperature,
-    onPressureChange: setPressure,
-    onFuelLevelChange: setFuelLevel,
-    onGridSyncChange: setGridSync,
-    onTurbineSpeedChange: setTurbineSpeed,
-    targetTurbineSpeed,
-    isLocked
-  });
-
-  // Steam valve control (0.2% per second)
-  useValueControl({
-    initialValue: valveValue,
-    onChange: setValveValue,
-    direction: valveDirection,
-    min: 0,
-    max: 100,
-    incrementPerSecond: 0.2
-  });
-
-  // Control rod control (1% per second)
-  useValueControl({
-    initialValue: rodPercentage,
-    onChange: setRodPercentage,
-    direction: rodDirection,
-    min: 0,
-    max: 100,
-    incrementPerSecond: 1
-  });
-
-  // Calculate turbine data
-  const { actualRPM, targetRPM, isSynchronized, syncDeviation } = calculateTurbineData(
-    turbineSpeed,
-    targetTurbineSpeed,
-    isLocked
-  );
-
-  // Update target turbine speed when valve changes
   useEffect(() => {
-    if (isRunning && !isLocked) {
-      setTargetTurbineSpeed(valveValue);
-    }
-  }, [valveValue, isRunning, isLocked]);
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const state = JSON.parse(saved);
+      setTemperature(state.temperature ?? 25); setPressure(state.pressure ?? 1); setFuelLevel(state.fuelLevel ?? 100);
+      setCoolantFlow(state.coolantFlow ?? 50); setRodPercentage(state.rodPercentage ?? 100); setValveValue(state.valveValue ?? 0);
+      setPump1Online(Boolean(state.pump1Online)); setPump2Online(Boolean(state.pump2Online)); setCoolantPumpOn(Boolean(state.coolantPumpOn));
+      setLastEvent("Previous control-room configuration restored.");
+    } catch { localStorage.removeItem(STORAGE_KEY); }
+  }, []);
 
-  // Navigation handlers
-  const handleLeftArrow = () => {
-    setActivePanel(prev => {
-      if (prev === "status") return "power-coolant";
-      if (prev === "power-coolant") return "power-grid";
-      if (prev === "power-grid") return "status";
-      return "status";
-    });
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ temperature, pressure, fuelLevel, coolantFlow, rodPercentage, valveValue, pump1Online, pump2Online, coolantPumpOn }));
+  }, [temperature, pressure, fuelLevel, coolantFlow, rodPercentage, valveValue, pump1Online, pump2Online, coolantPumpOn]);
+
+  const scram = (automatic = false) => {
+    setIsRunning(false); setIsLocked(false); setTargetTurbineSpeed(0); setValveDirection(0); setRodDirection(0);
+    setRodPercentage(100); setValveValue(0); setScramPressed(true); setGridSync(0);
+    setLastEvent(automatic ? "AUTOMATIC SCRAM — unsafe core condition detected." : "Manual SCRAM completed — rods fully inserted.");
   };
 
-  const handleRightArrow = () => {
-    setActivePanel(prev => {
-      if (prev === "status") return "power-grid";
-      if (prev === "power-grid") return "power-coolant";
-      if (prev === "power-coolant") return "status";
-      return "status";
-    });
-  };
+  useReactorPhysics({ isRunning, valveValue, rodPercentage, pump1Online, pump2Online, coolantPumpOn, coolantFlow, isLocked, targetTurbineSpeed, onTemperatureChange: setTemperature, onPressureChange: setPressure, onFuelLevelChange: setFuelLevel, onGridSyncChange: setGridSync, onTurbineSpeedChange: setTurbineSpeed, onAutomaticScram: () => scram(true) });
+  useValueControl({ initialValue: valveValue, onChange: setValveValue, direction: valveDirection, incrementPerSecond: 3 });
+  useValueControl({ initialValue: rodPercentage, onChange: setRodPercentage, direction: rodDirection, incrementPerSecond: 12 });
 
-  const handleDownArrow = () => {
-    setActivePanel(prev => {
-      if (prev === "status") return "control-rods";
-      if (prev === "control-rods") return "startup-shutdown";
-      if (prev === "startup-shutdown") return "status";
-      return "status";
-    });
-  };
+  useEffect(() => { if (isRunning && !isLocked) setTargetTurbineSpeed(valveValue); }, [valveValue, isRunning, isLocked]);
 
-  const handleUpArrow = () => {
-    setActivePanel(prev => {
-      if (prev === "startup-shutdown") return "control-rods";
-      if (prev === "control-rods") return "status";
-      if (prev === "status") return "startup-shutdown";
-      return "status";
-    });
-  };
+  const { actualRPM, targetRPM, isSynchronized } = calculateTurbineData(turbineSpeed, targetTurbineSpeed, isLocked);
+  const alarms = useMemo(() => [
+    temperature > 900 && { label: "CORE TEMPERATURE HIGH", level: "red" },
+    pressure > 25 && { label: "REACTOR PRESSURE HIGH", level: "amber" },
+    isRunning && !coolantPumpOn && !pump1Online && !pump2Online && { label: "NO ACTIVE COOLING", level: "red" },
+    fuelLevel < 15 && { label: "FUEL RESERVE LOW", level: "amber" },
+  ].filter(Boolean) as { label: string; level: string }[], [temperature, pressure, isRunning, coolantPumpOn, pump1Online, pump2Online, fuelLevel]);
+  const turbineOutputMW = isRunning ? Math.max(0, valveValue * 1.8 * ((100 - rodPercentage) / 100)) : 0;
+  const status = alarms.some(alarm => alarm.level === "red") ? "ALARM" : isRunning ? "OPERATIONAL" : scramPressed ? "SCRAMMED" : "STANDBY";
 
-  // Reactor control actions
   const startReactor = () => {
-    setIsRunning(true);
-    setTargetTurbineSpeed(valveValue);
+    if (fuelLevel <= 0) { setLastEvent("START INHIBITED — fuel reserve depleted."); return; }
+    setScramPressed(false); setIsRunning(true); setTargetTurbineSpeed(valveValue); setLastEvent("Reactor criticality sequence started.");
   };
+  const stopReactor = () => { setIsRunning(false); setIsLocked(false); setTargetTurbineSpeed(0); setLastEvent("Normal reactor shutdown initiated."); };
+  const resetSimulation = () => { localStorage.removeItem(STORAGE_KEY); setTemperature(25); setPressure(1); setFuelLevel(100); setIsRunning(false); setGridSync(0); setTurbineSpeed(0); setTargetTurbineSpeed(0); setCoolantFlow(50); setCoolantPumpOn(false); setRodPercentage(100); setPump1Online(false); setPump2Online(false); setValveValue(0); setScramPressed(false); setIsLocked(false); setLastEvent("Simulator reset to cold shutdown."); };
+  const movePanel = (amount: number) => setActivePanel(panels[(panels.indexOf(activePanel) + amount + panels.length) % panels.length]);
 
-  const stopReactor = () => {
-    setIsRunning(false);
-    setTargetTurbineSpeed(0);
-  };
-
-  const emergencyShutdown = () => {
-    if (temperature > 3000 || scramPressed) {
-      setIsRunning(false);
-      setTemperature(25);
-      setPressure(1);
-      setTargetTurbineSpeed(0);
-      setGridSync(0);
-      setScramPressed(true);
-    }
-  };
-
-  // Status indicators
-  const getStatusColor = () => {
-    if (temperature > 4500) return "destructive";
-    if (temperature > 3000) return "warning";
-    return "default";
-  };
-
-  const getStatusText = () => {
-    if (temperature > 4500) return "CRITICAL";
-    if (temperature > 3000) return "WARNING";
-    if (isRunning) return "OPERATIONAL";
-    return "STANDBY";
-  };
-
-  // Calculate turbine output
-  const turbineOutputMW = isRunning ? valveValue * 2 * (1 - Math.min((temperature - 3000) / 1500, 0.1)) : 0;
-
-  // Valve control handlers
-  const handleValvePress = (direction: number) => {
-    setValveDirection(direction);
-  };
-
-  const handlePausePress = () => {
-    setValveDirection(0);
-  };
-
-  const handleSyncPress = () => {
-    if (isSynchronized) {
-      if (isLocked) {
-        setIsLocked(false);
-        setTargetTurbineSpeed(valveValue);
-      } else {
-        setIsLocked(true);
-        setTargetTurbineSpeed(66.67);
-      }
-    }
-  };
-
-  // Control rod handlers
-  const handleRodPress = (direction: number) => {
-    setRodDirection(direction);
-  };
-
-  const handleRodNeutral = () => {
-    setRodDirection(0);
-  };
-
-  // Panel names mapping
-  const panelNames = {
-    status: "STATUS",
-    "control-rods": "CONTROL RODS",
-    "startup-shutdown": "STARTUP/SHUTDOWN",
-    "power-coolant": "POWER & COOLANT",
-    "power-grid": "POWER GRID"
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
-      {/* Background Grid Pattern */}
-      <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
+  return <div className="min-h-screen bg-[#07111d] text-slate-100 selection:bg-cyan-300/30">
+    <div className="fixed inset-0 pointer-events-none opacity-20 [background-image:linear-gradient(rgba(34,211,238,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,.08)_1px,transparent_1px)] [background-size:36px_36px]" />
+    <main className="relative mx-auto max-w-7xl p-4 md:p-7">
+      <header className="mb-5 flex flex-col gap-4 border-b border-cyan-500/20 pb-5 md:flex-row md:items-end md:justify-between">
+        <div><p className="text-xs font-bold tracking-[.3em] text-cyan-400">RBWR // WEB SIMULATOR</p><h1 className="mt-1 text-2xl font-bold tracking-tight md:text-4xl">Boiling Water Reactor Control Room</h1><p className="mt-1 text-sm text-slate-400">Game-inspired simulation · training interface</p></div>
+        <div className="flex items-center gap-2"><Badge className={status === "ALARM" ? "bg-red-600" : status === "OPERATIONAL" ? "bg-emerald-600" : "bg-slate-600"}>{status}</Badge><Button variant="outline" size="sm" onClick={resetSimulation} className="border-slate-600 bg-slate-900/60"><RotateCcw size={15} className="mr-2" />Reset</Button></div>
+      </header>
+      <section className="mb-5 grid gap-3 md:grid-cols-[1fr_auto]">
+        <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${alarms.length ? "border-red-500/50 bg-red-950/40 text-red-200" : "border-cyan-500/20 bg-slate-900/70 text-slate-300"}`}><BellRing size={18} className={alarms.length ? "text-red-400" : "text-cyan-400"}/><span>{alarms.length ? alarms.map(a => a.label).join(" · ") : lastEvent}</span></div>
+        <div className="flex gap-2"><Button size="sm" variant="outline" className="border-slate-600 bg-slate-900/70" onClick={() => setActivePanel("startup-shutdown")}>Controls</Button><Button size="sm" onClick={() => scram()} className="bg-red-700 hover:bg-red-600"><ShieldAlert size={15} className="mr-2"/>SCRAM</Button></div>
+      </section>
+      <nav className="mb-5 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/80 p-2">{panels.map(panel => <Button key={panel} variant={activePanel === panel ? "default" : "ghost"} size="sm" onClick={() => setActivePanel(panel)} className={activePanel === panel ? "bg-cyan-600 hover:bg-cyan-500 whitespace-nowrap" : "text-slate-300 whitespace-nowrap"}>{panelNames[panel]}</Button>)}</nav>
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/75 p-4 shadow-2xl shadow-cyan-950/20 md:p-6">
+        {activePanel === "status" && <ReactorStatusPanel temperature={temperature} pressure={pressure} fuelLevel={fuelLevel} gridSync={gridSync} turbineOutputMW={turbineOutputMW} valveValue={valveValue} isRunning={isRunning} getStatusColor={() => status === "ALARM" ? "destructive" : "default"} getStatusText={() => status} />}
+        {activePanel === "control-rods" && <ControlRodsPanel rodPercentage={rodPercentage} rodDirection={rodDirection} onRodPress={setRodDirection} onRodNeutral={() => setRodDirection(0)} />}
+        {activePanel === "startup-shutdown" && <StartupShutdownPanel isRunning={isRunning} temperature={temperature} scramPressed={scramPressed} onStartReactor={startReactor} onStopReactor={stopReactor} onEmergencyShutdown={() => scram()} />}
+        {activePanel === "power-coolant" && <PowerCoolantPanel pump1Online={pump1Online} pump2Online={pump2Online} coolantPumpOn={coolantPumpOn} coolantFlow={coolantFlow} pressure={pressure} onPump1Change={setPump1Online} onPump2Change={setPump2Online} onCoolantPumpChange={setCoolantPumpOn} onCoolantFlowChange={setCoolantFlow} />}
+        {activePanel === "power-grid" && <PowerGridPanel actualRPM={actualRPM} targetRPM={targetRPM} isSynchronized={isSynchronized} isLocked={isLocked} valveValue={valveValue} valveDirection={valveDirection} turbineOutputMW={turbineOutputMW} turbineSpeed={turbineSpeed} onValvePress={setValveDirection} onPausePress={() => setValveDirection(0)} onSyncPress={() => { if (isSynchronized) { setIsLocked(!isLocked); setLastEvent(isLocked ? "Generator breaker opened." : "Generator synchronized to grid."); } }} />}
       </div>
-      <div className="relative z-10 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">NUCLEAR REACTOR CONTROL SYSTEM</h1>
-          <p className="text-gray-400">Advanced Reactor Management Interface v2.0</p>
-        </div>
-        {/* Navigation Arrows */}
-        <div className="flex justify-between items-center mb-6">
-          <button onClick={handleLeftArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
-            <ArrowLeft className="text-cyan-400" size={24} />
-          </button>
-          <div className="text-center">
-            <div className="text-sm text-gray-400 mb-1">ACTIVE PANEL</div>
-            <div className="text-lg font-bold text-cyan-400 uppercase">
-              {panelNames[activePanel as keyof typeof panelNames]}
-            </div>
-          </div>
-          <button onClick={handleRightArrow} className="p-3 bg-slate-800/50 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-all duration-300 hover:scale-110">
-            <ArrowRight className="text-purple-400" size={24} />
-          </button>
-        </div>
-        {/* Main Panel Area */}
-        <div className="bg-slate-800/30 backdrop-blur-sm border border-cyan-500/20 rounded-2xl p-6 mb-6">
-          {activePanel === "status" && (
-            <ReactorStatusPanel
-              temperature={temperature}
-              pressure={pressure}
-              fuelLevel={fuelLevel}
-              gridSync={gridSync}
-              turbineOutputMW={turbineOutputMW}
-              valveValue={valveValue}
-              isRunning={isRunning}
-              getStatusColor={getStatusColor}
-              getStatusText={getStatusText}
-            />
-          )}
-          {activePanel === "control-rods" && (
-            <ControlRodsPanel
-              rodPercentage={rodPercentage}
-              rodDirection={rodDirection}
-              onRodPress={handleRodPress}
-              onRodNeutral={handleRodNeutral}
-            />
-          )}
-          {activePanel === "startup-shutdown" && (
-            <StartupShutdownPanel
-              isRunning={isRunning}
-              temperature={temperature}
-              scramPressed={scramPressed}
-              onStartReactor={startReactor}
-              onStopReactor={stopReactor}
-              onEmergencyShutdown={emergencyShutdown}
-            />
-          )}
-          {activePanel === "power-coolant" && (
-            <PowerCoolantPanel
-              pump1Online={pump1Online}
-              pump2Online={pump2Online}
-              coolantPumpOn={coolantPumpOn}
-              coolantFlow={coolantFlow}
-              pressure={pressure}
-              onPump1Change={setPump1Online}
-              onPump2Change={setPump2Online}
-              onCoolantPumpChange={setCoolantPumpOn}
-              onCoolantFlowChange={setCoolantFlow}
-            />
-          )}
-          {activePanel === "power-grid" && (
-            <PowerGridPanel
-              actualRPM={actualRPM}
-              targetRPM={targetRPM}
-              isSynchronized={isSynchronized}
-              isLocked={isLocked}
-              valveValue={valveValue}
-              valveDirection={valveDirection}
-              turbineOutputMW={turbineOutputMW}
-              turbineSpeed={turbineSpeed}
-              onValvePress={handleValvePress}
-              onPausePress={handlePausePress}
-              onSyncPress={handleSyncPress}
-            />
-          )}
-        </div>
-        {/* Vertical Navigation (Up/Down) */}
-        <div className="flex justify-center gap-4">
-          <button onClick={handleUpArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
-            <ArrowUp className="text-cyan-400" size={24} />
-          </button>
-          <button onClick={handleDownArrow} className="p-3 bg-slate-800/50 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-all duration-300 hover:scale-110">
-            <ArrowDown className="text-cyan-400" size={24} />
-          </button>
-        </div>
-        {/* Footer */}
-        <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>NUCLEAR REACTOR CONTROL SYSTEM • CLASS 1 LICENSED • SAFETY PROTOCOLS ACTIVE</p>
-          <p className="mt-1">© 2024 Advanced Reactor Management Systems</p>
-        </div>
-      </div>
-    </div>
-  );
+      <div className="mt-5 flex items-center justify-between text-xs text-slate-500"><span><Activity className="mr-1 inline h-3 w-3 text-emerald-400"/>Simulation clock: 4 Hz</span><div className="flex gap-3"><button onClick={() => movePanel(-1)} aria-label="Previous panel"><ArrowLeft size={17}/></button><button onClick={() => movePanel(1)} aria-label="Next panel"><ArrowRight size={17}/></button><ArrowUp size={17}/><ArrowDown size={17}/></div></div>
+    </main>
+  </div>;
 };
 
 export default ReactorSimulator;

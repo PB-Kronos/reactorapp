@@ -6,103 +6,61 @@ interface UseReactorPhysicsProps {
   rodPercentage: number;
   pump1Online: boolean;
   pump2Online: boolean;
-  pressure: number;
   coolantPumpOn: boolean;
   coolantFlow: number;
-  onTemperatureChange: (temp: number | ((prev: number) => number)) => void;
-  onPressureChange: (pressure: number | ((prev: number) => number)) => void;
-  onFuelLevelChange: (fuel: number | ((prev: number) => number)) => void;
-  onGridSyncChange: (sync: number | ((prev: number) => number)) => void;
-  onTurbineSpeedChange: (speed: number | ((prev: number) => number)) => void;
-  targetTurbineSpeed: number;
   isLocked: boolean;
+  targetTurbineSpeed: number;
+  onTemperatureChange: (value: number | ((previous: number) => number)) => void;
+  onPressureChange: (value: number | ((previous: number) => number)) => void;
+  onFuelLevelChange: (value: number | ((previous: number) => number)) => void;
+  onGridSyncChange: (value: number | ((previous: number) => number)) => void;
+  onTurbineSpeedChange: (value: number | ((previous: number) => number)) => void;
+  onAutomaticScram: () => void;
 }
 
-export const useReactorPhysics = ({
-  isRunning,
-  valveValue,
-  rodPercentage,
-  pump1Online,
-  pump2Online,
-  pressure,
-  coolantPumpOn,
-  coolantFlow,
-  onTemperatureChange,
-  onPressureChange,
-  onFuelLevelChange,
-  onGridSyncChange,
-  onTurbineSpeedChange,
-  targetTurbineSpeed,
-  isLocked
-}: UseReactorPhysicsProps) => {
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), maximum);
+
+/** A bounded, low-frequency game simulation. It deliberately uses a single 4 Hz clock. */
+export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
+  const current = useRef(props);
+  current.current = props;
+  const scramLatched = useRef(false);
 
   useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    if (isRunning) {
-      const interval = setInterval(() => {
-        // Calculate online pump count for cooling effect
-        const onlinePumpCount = (pump1Online ? 1 : 0) + (pump2Online ? 1 : 0);
-        
-        // Temperature calculations
-        const baseTempRise = valveValue * 0.01 * (1 - rodPercentage / 100);
-        const pressureTempRise = pressure * 0.001;
-        const coolingEffect = onlinePumpCount * 0.5;
-        const coolantCooling = coolantPumpOn ? (coolantFlow * 0.04) : 0;
-        const netTempChange = baseTempRise + pressureTempRise - coolingEffect - coolantCooling;
-        
-        // Update temperature
-        onTemperatureChange(prev => Math.max(0, Math.min(prev + netTempChange, 4500)));
-        
-        // Pressure changes
-        const pressureChange = netTempChange < 0 ? -0.1 : 0.1;
-        onPressureChange(prev => Math.max(1, Math.min(prev + pressureChange, 200)));
-        
-        // Fuel depletion
-        onFuelLevelChange(prev => Math.max(prev - valveValue * 0.001, 0));
-
-        // Turbine speed
-        onTurbineSpeedChange(prev => {
-          const currentTarget = isLocked ? 66.67 : targetTurbineSpeed;
-          const diff = currentTarget - prev;
-          return Math.abs(diff) < 0.01 ? currentTarget : prev + diff * 0.025;
-        });
-
-        // Grid sync
-        onGridSyncChange(prev => {
-          const syncChange = isLocked ? 0.5 : -0.5;
-          return Math.max(0, Math.min(prev + syncChange, 100));
-        });
-      }, 100);
-      
-      intervalRef.current = interval;
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+    const clock = window.setInterval(() => {
+      const state = current.current;
+      if (!state.isRunning) {
+        scramLatched.current = false;
+        return;
       }
-    };
-  }, [
-    isRunning,
-    valveValue,
-    rodPercentage,
-    pump1Online,
-    pump2Online,
-    pressure,
-    coolantPumpOn,
-    coolantFlow,
-    targetTurbineSpeed,
-    isLocked,
-    onTemperatureChange,
-    onPressureChange,
-    onFuelLevelChange,
-    onGridSyncChange,
-    onTurbineSpeedChange
-  ]);
+
+      const pumps = Number(state.pump1Online) + Number(state.pump2Online);
+      const reactivity = (100 - state.rodPercentage) / 100;
+      const coolant = (state.coolantPumpOn ? state.coolantFlow * 0.065 : 0) + pumps * 0.45;
+      const heat = 3.1 * reactivity;
+      const temperatureDelta = (heat - coolant) * 0.25;
+
+      state.onTemperatureChange(previous => {
+        const next = clamp(previous + temperatureDelta, 20, 1800);
+        const insufficientCooling = next > 850 && coolant < 1.2;
+        if ((next >= 1200 || insufficientCooling) && !scramLatched.current) {
+          scramLatched.current = true;
+          state.onAutomaticScram();
+        }
+        return next;
+      });
+      state.onPressureChange(previous => {
+        const target = 1 + (state.valveValue / 100) * 3 + Math.max(0, heat * 2.4 - coolant * 0.5);
+        return clamp(previous + (target - previous) * 0.06, 1, 120);
+      });
+      state.onFuelLevelChange(previous => clamp(previous - (0.0015 + reactivity * 0.004) * 0.25, 0, 100));
+      state.onTurbineSpeedChange(previous => {
+        const target = state.isLocked ? 66.67 : state.targetTurbineSpeed;
+        return previous + (target - previous) * 0.08;
+      });
+      state.onGridSyncChange(previous => clamp(previous + (state.isLocked ? 2.5 : -1.2), 0, 100));
+    }, 250);
+
+    return () => window.clearInterval(clock);
+  }, []);
 };
