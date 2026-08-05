@@ -1,7 +1,7 @@
 import React from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Synchronoscope } from "./Synchronoscope";
+import { SpringButton, SpringLever } from "@/components/HardwareControls";
 
 interface PowerGridPanelProps {
   actualRPM: number;
@@ -76,23 +76,11 @@ export const PowerGridPanel: React.FC<PowerGridPanelProps> = ({
               <div className="text-2xl font-bold bg-slate-800/50 p-3 rounded-lg w-32 text-center border border-cyan-500/30">
                 {valveValue.toFixed(1).replace('.', ',')}%
               </div>
-              <div className="flex space-x-4">
-                <Button onClick={() => onValvePress(-1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === -1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
-                  −
-                </Button>
-                <Button onClick={onPausePress} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 0 ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
-                  Pause
-                </Button>
-                <Button onClick={() => onValvePress(1)} className={`px-4 py-2 rounded-md font-medium text-base ${valveDirection === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800/50 border border-cyan-500/30 hover:bg-slate-900 text-white'}`}>
-                  +
-                </Button>
-              </div>
-              <div className="text-xs text-gray-400 mt-1">Steam Input Valve (0.2% per second)</div>
+              <SpringLever label="STEAM ADMISSION" negativeLabel="CLOSE" positiveLabel="OPEN" direction={valveDirection} onDirectionChange={direction => direction === 0 ? onPausePress() : onValvePress(direction)} />
+              <div className="text-xs text-gray-400 mt-1">Steam input valve — hold lever to move</div>
             </div>
             <div className="flex justify-center mt-4">
-              <Button onClick={onSyncPress} disabled={!isSynchronized} className={`px-6 py-3 rounded-md font-bold text-base ${isLocked ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/50' : isSynchronized ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50' : 'bg-slate-800/50 border border-gray-600 text-gray-500'}`}>
-                {isLocked ? 'UNLOCK' : 'SYNC'}
-              </Button>
+              <SpringButton onClick={onSyncPress} disabled={!isSynchronized} label={isLocked ? "OPEN BREAKER" : "CLOSE BREAKER"} />
             </div>
             <div className="mt-4 p-4 bg-slate-900/50 rounded-lg border border-green-500/30">
               <h3 className="text-green-400 font-bold mb-2">Turbine Status</h3>
