@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 interface UseReactorPhysicsProps {
   isRunning: boolean;
+  temperature: number;
   valveValue: number;
   rodPercentage: number;
   pump1Online: boolean;
@@ -40,15 +41,13 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
       const heat = 3.1 * reactivity;
       const temperatureDelta = (heat - coolant) * 0.25;
 
-      state.onTemperatureChange(previous => {
-        const next = clamp(previous + temperatureDelta, 20, 1800);
-        const insufficientCooling = next > 850 && coolant < 1.2;
-        if ((next >= 1200 || insufficientCooling) && !scramLatched.current) {
-          scramLatched.current = true;
-          state.onAutomaticScram();
-        }
-        return next;
-      });
+      const nextTemperature = clamp(state.temperature + temperatureDelta, 20, 1800);
+      const insufficientCooling = nextTemperature > 850 && coolant < 1.2;
+      if ((nextTemperature >= 1200 || insufficientCooling) && !scramLatched.current) {
+        scramLatched.current = true;
+        state.onAutomaticScram();
+      }
+      state.onTemperatureChange(nextTemperature);
       state.onPressureChange(previous => {
         const target = 1 + (state.valveValue / 100) * 3 + Math.max(0, heat * 2.4 - coolant * 0.5);
         return clamp(previous + (target - previous) * 0.06, 1, 120);

@@ -59,7 +59,7 @@ const ReactorSimulator = () => {
     setLastEvent(automatic ? "AUTOMATIC SCRAM — unsafe core condition detected." : "Manual SCRAM completed — rods fully inserted.");
   };
 
-  useReactorPhysics({ isRunning, valveValue, rodPercentage, pump1Online, pump2Online, coolantPumpOn, coolantFlow, isLocked, targetTurbineSpeed, onTemperatureChange: setTemperature, onPressureChange: setPressure, onFuelLevelChange: setFuelLevel, onGridSyncChange: setGridSync, onTurbineSpeedChange: setTurbineSpeed, onAutomaticScram: () => scram(true) });
+  useReactorPhysics({ isRunning, temperature, valveValue, rodPercentage, pump1Online, pump2Online, coolantPumpOn, coolantFlow, isLocked, targetTurbineSpeed, onTemperatureChange: setTemperature, onPressureChange: setPressure, onFuelLevelChange: setFuelLevel, onGridSyncChange: setGridSync, onTurbineSpeedChange: setTurbineSpeed, onAutomaticScram: () => scram(true) });
   useValueControl({ initialValue: valveValue, onChange: setValveValue, direction: valveDirection, incrementPerSecond: 3 });
   useValueControl({ initialValue: rodPercentage, onChange: setRodPercentage, direction: rodDirection, incrementPerSecond: 12 });
 
