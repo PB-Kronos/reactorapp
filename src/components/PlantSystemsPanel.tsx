@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
-import { MaintainedSwitch } from "@/components/HardwareControls";
 
 export type ProcessPanel = "condenser" | "feedwater" | "mcc" | "rps";
 
@@ -26,7 +25,7 @@ interface PlantSystemsPanelProps {
   onResetTrips: () => void;
 }
 
-const Toggle = ({ active, onChange, label }: { active: boolean; onChange: (value: boolean) => void; label: string }) => <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-950/40 p-3"><span className="font-medium">{label}</span><MaintainedSwitch label="CONTROL" on={active} onChange={onChange}/></div>;
+const Toggle = ({ active, onChange, label }: { active: boolean; onChange: (value: boolean) => void; label: string }) => <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-950/40 p-3"><span className="font-medium">{label}</span><div className="flex gap-2"><Button size="sm" disabled={active} onClick={() => onChange(true)} className="bg-emerald-700 hover:bg-emerald-600">ON</Button><Button size="sm" disabled={!active} variant="secondary" onClick={() => onChange(false)}>OFF</Button></div></div>;
 const Meter = ({ label, value, suffix }: { label: string; value: number; suffix: string }) => <div><div className="mb-1 flex justify-between text-sm"><span className="text-slate-400">{label}</span><strong>{value.toFixed(1)}{suffix}</strong></div><Progress value={Math.max(0, Math.min(value, 100))} className="bg-slate-700" /></div>;
 
 export const PlantSystemsPanel = (props: PlantSystemsPanelProps) => {
