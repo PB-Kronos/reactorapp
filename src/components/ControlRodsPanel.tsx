@@ -1,53 +1,18 @@
-import React from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ModeSelector, SpringLever } from "@/components/HardwareControls";
+import { AUTO_ROD_RATES, AutoSpeed, ControlRod, cycleLimit, ReactorMode, RodSelectionScope } from "@/lib/rodProgram";
 import { Zap } from "lucide-react";
-import { SpringLever } from "@/components/HardwareControls";
 
-interface ControlRodsPanelProps {
-  rodPercentage: number;
-  rodDirection: number;
-  onRodPress: (direction: number) => void;
-  onRodNeutral: () => void;
-}
+interface Props { rods: ControlRod[]; selectedRodId: string; mode: ReactorMode; iprCycle: number; aprm: number; srmCount: number; direction: number; autoEnabled: boolean; autoTarget: number; autoSpeed: AutoSpeed; autoMessage: string; nextRodId?: string; selectionScope: RodSelectionScope; reactorPeriod: number; onSelectRod: (id: string) => void; onModeChange: (mode: ReactorMode) => void; onDirectionChange: (direction: number) => void; onAdvanceCycle: () => void; onAutoEnabledChange: (enabled: boolean) => void; onAutoTargetChange: (target: number) => void; onAutoSpeedChange: (speed: AutoSpeed) => void; onSelectionScopeChange: (scope: RodSelectionScope) => void; }
 
-export const ControlRodsPanel: React.FC<ControlRodsPanelProps> = ({
-  rodPercentage,
-  rodDirection,
-  onRodPress,
-  onRodNeutral
-}) => {
-  return (
-    <div className="space-y-6">
-      <Card className="bg-slate-800/50 border-green-500/30">
-        <CardHeader>
-          <CardTitle className="text-green-400 flex items-center gap-2">
-            <Zap className="text-green-400" size={24} />
-            Control Rods Position
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex flex-col items-center space-y-4">
-            <div className="text-4xl font-bold bg-slate-800/50 p-4 rounded-lg w-32 text-center border border-green-500/30">
-              {rodPercentage.toFixed(1)}%
-            </div>
-            <SpringLever label="CONTROL ROD DRIVE" negativeLabel="RAISE" positiveLabel="LOWER" direction={rodDirection} onDirectionChange={(direction) => direction === 0 ? onRodNeutral() : onRodPress(direction)} />
-            <div className="w-full max-w-md">
-              <div className="flex justify-between text-xs text-gray-400 mb-1">
-                <span>Raised (0%)</span>
-                <span>Inserted (100%)</span>
-              </div>
-              <div className="h-8 bg-slate-900/50 rounded-lg border border-green-500/30 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 transition-all duration-300 rounded-lg" style={{ width: `${rodPercentage}%` }} />
-              </div>
-            </div>
-            <div className="text-sm text-gray-400 text-center max-w-md">
-              Controls insertion depth (0-100%). Higher percentage reduces temperature rise from power. At 100%, power-based temperature rise is fully suppressed. Pressure still affects temperature.
-              <br /><br />
-              Hold the spring-return lever to move rods at 12%/sec. Releasing it returns to neutral immediately.
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+export const ControlRodsPanel = (props: Props) => {
+  const selected = props.rods.find(rod => rod.id === props.selectedRodId) ?? props.rods[0];
+  const average = props.rods.reduce((sum, rod) => sum + rod.position, 0) / props.rods.length;
+  const limit = cycleLimit(props.mode, props.iprCycle);
+  return <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
+    <Card className="border-emerald-500/30 bg-slate-900/70"><CardHeader><CardTitle className="flex gap-2 text-emerald-300"><Zap />Control Rod Map</CardTitle></CardHeader><CardContent><div className="mb-4 flex items-center justify-between"><div><span className="text-xs text-slate-400">SELECTED</span><div className="text-2xl font-black">{selected.id} <span className="text-sm font-normal text-slate-400">{selected.position.toFixed(1)}% inserted</span></div></div><Badge className={props.mode === "SD" ? "bg-red-700" : "bg-amber-500 text-slate-950"}>{props.mode}</Badge></div><div className="mx-auto max-w-lg rounded-[42%] border-8 border-slate-700 bg-gradient-to-br from-slate-700 via-slate-900 to-slate-950 p-10 shadow-inner"><div className="grid grid-cols-6 gap-2 rounded-lg border border-slate-600 bg-slate-950 p-3">{props.rods.map(rod => { const withdrawn = 100 - rod.position; const active = rod.id === props.selectedRodId; const next = rod.id === props.nextRodId; return <button key={rod.id} onClick={() => props.onSelectRod(rod.id)} className={`aspect-square rounded border text-[10px] font-black ${active ? "border-white ring-2 ring-cyan-400" : next ? "animate-pulse border-amber-200 ring-2 ring-amber-400" : "border-slate-700"}`} style={{ backgroundColor: `hsl(${120 - withdrawn * 1.15} 70% ${18 + withdrawn * .18}%)` }}>{rod.id}</button>; })}</div></div><div className="mt-4 grid grid-cols-4 gap-2 text-sm"><div className="rounded bg-slate-950 p-3"><small>ROD TEMP</small><br/>{selected.temperature.toFixed(0)}°C</div><div className="rounded bg-slate-950 p-3"><small>GROUP</small><br/>{selected.group}</div><div className="rounded bg-slate-950 p-3"><small>AVG POS</small><br/>{average.toFixed(2)}%</div><div className="rounded bg-slate-950 p-3"><small>PERIOD</small><br/>{props.reactorPeriod >= 999 ? "∞" : `${props.reactorPeriod.toFixed(1)} s`}</div></div></CardContent></Card>
+    <div className="space-y-6"><Card className="border-amber-500/30 bg-slate-900/70"><CardHeader><CardTitle className="text-amber-200">Startup / Rod Drive</CardTitle></CardHeader><CardContent className="space-y-4"><ModeSelector value={props.mode} onChange={props.onModeChange}/><div className="grid grid-cols-3 gap-2 rounded bg-slate-950 p-3 text-sm"><div><small>SRM</small><br/>{props.srmCount.toFixed(0)} CPS</div><div><small>APRM</small><br/>{props.aprm.toFixed(3)}%</div><div><small>BLOCK</small><br/>{limit.toFixed(0)}% INS.</div></div><div className="rounded border border-slate-700 p-3"><div className="flex justify-between text-xs"><span>{props.mode === "SRM" ? "SRM CYCLE 1 / 1" : `IPR CYCLE ${props.iprCycle} / 3`}</span><span>{props.mode === "SRM" ? "5% withdrawal" : "5% per cycle"}</span></div><button onClick={props.onAdvanceCycle} disabled={props.mode !== "IPR" || props.iprCycle >= 3} className="mt-3 w-full rounded border border-amber-500/60 bg-amber-500/20 py-2 text-xs font-bold text-amber-200 disabled:opacity-40">ADVANCE IPR CYCLE</button></div><div className="grid grid-cols-3 gap-2">{(["rod", "group", "all"] as RodSelectionScope[]).map(scope => <button key={scope} onClick={() => props.onSelectionScopeChange(scope)} className={`rounded border py-2 text-xs font-bold ${scope === props.selectionScope ? "border-cyan-300 bg-cyan-500 text-slate-950" : "border-slate-600 bg-slate-950"}`}>{scope.toUpperCase()}</button>)}</div><SpringLever label={`${props.selectionScope.toUpperCase()} DRIVE`} negativeLabel="WITHDRAW" positiveLabel="INSERT" direction={props.direction} onDirectionChange={props.onDirectionChange}/></CardContent></Card>
+      <Card className="border-cyan-500/30 bg-slate-900/70"><CardHeader><CardTitle className="text-cyan-200">Auto APRM</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex justify-between"><span>Target</span><input className="w-20 rounded bg-slate-950 px-2 text-right" type="number" min="0" max="100" step="0.1" value={props.autoTarget} onChange={event => props.onAutoTargetChange(Number(event.target.value))}/><span>%</span></div><div className="grid grid-cols-3 gap-2">{(["slow", "medium", "fast"] as AutoSpeed[]).map(speed => <button key={speed} onClick={() => props.onAutoSpeedChange(speed)} className={`rounded border py-2 text-xs ${props.autoSpeed === speed ? "border-cyan-300 bg-cyan-500 text-slate-950" : "border-slate-600 bg-slate-950"}`}>{speed.toUpperCase()}<small className="block">{AUTO_ROD_RATES[speed]}%/s</small></button>)}</div><button onClick={() => props.onAutoEnabledChange(!props.autoEnabled)} className={`w-full rounded border py-3 text-sm font-black ${props.autoEnabled ? "border-emerald-200 bg-emerald-500 text-slate-950" : "border-slate-600 bg-slate-950"}`}>{props.autoEnabled ? "AUTO ENGAGED" : "ENGAGE AUTO"}</button><p className="rounded bg-slate-950 p-3 text-xs text-slate-400">{props.autoMessage}</p></CardContent></Card></div>
+  </div>;
 };

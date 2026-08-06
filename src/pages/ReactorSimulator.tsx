@@ -1,156 +1,92 @@
-import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowLeft, ArrowRight, ArrowDown, ArrowUp, BellRing, RotateCcw, ShieldAlert } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, BellRing, RotateCcw, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ReactorStatusPanel } from "@/components/ReactorStatusPanel";
 import { ControlRodsPanel } from "@/components/ControlRodsPanel";
 import { StartupShutdownPanel } from "@/components/StartupShutdownPanel";
 import { PowerCoolantPanel } from "@/components/PowerCoolantPanel";
 import { PowerGridPanel } from "@/components/PowerGridPanel";
 import { PlantSystemsPanel, ProcessPanel } from "@/components/PlantSystemsPanel";
+import { ElectricalPanel } from "@/components/ElectricalPanel";
 import { useReactorPhysics } from "@/hooks/useReactorPhysics";
-import { useValueControl } from "@/hooks/useValueControl";
 import { calculateTurbineData } from "@/hooks/useTurbineControl";
+import { AutoSpeed, ControlRod, createInitialRods, cycleLimit, getAprm, isCycleComplete, nextWithdrawableRod, ReactorMode, RodSelectionScope, WITHDRAWAL_RATES } from "@/lib/rodProgram";
 
-type Panel = "status" | "control-rods" | "startup-shutdown" | "power-coolant" | "power-grid" | ProcessPanel;
-const STORAGE_KEY = "rbwr-simulator-state-v3";
-const panels: Panel[] = ["status", "startup-shutdown", "control-rods", "power-coolant", "mcc", "feedwater", "condenser", "power-grid", "rps"];
-const panelNames: Record<Panel, string> = { status: "Overview", "control-rods": "Control rods", "startup-shutdown": "Reactor", "power-coolant": "CRD cooling", mcc: "MCC / ECCS", feedwater: "DA / feedwater", condenser: "Condenser / SJAE", "power-grid": "Turbine / grid", rps: "RPS" };
-const emptyTrips = { "REACTOR LEVEL": false, "MANUAL TRIP": false, "LOOP TRIP": false, "CORE TEMPERATURE": false, "RPV PRESSURE": false, "CONDENSER VACUUM": false, "DA LEVEL": false };
+type Panel = "status" | "control-rods" | "startup-shutdown" | "power-coolant" | "power-grid" | "electrical" | ProcessPanel;
+const panels: Panel[] = ["status", "startup-shutdown", "control-rods", "mcc", "power-coolant", "feedwater", "condenser", "power-grid", "electrical", "rps"];
+const names: Record<Panel, string> = { status: "Overview", "startup-shutdown": "Reactor", "control-rods": "Control rods", mcc: "MCC", "power-coolant": "CRD cooling", feedwater: "DA / feedwater", condenser: "Condenser", "power-grid": "Turbine", electrical: "Electrical", rps: "RPS" };
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const STORAGE = "rbwr-u2-sim-v4";
 
-const ReactorSimulator = () => {
-  const [activePanel, setActivePanel] = useState<Panel>("status");
-  const [temperature, setTemperature] = useState(25);
-  const [pressure, setPressure] = useState(1);
-  const [fuelLevel, setFuelLevel] = useState(100);
-  const [isRunning, setIsRunning] = useState(false);
-  const [gridSync, setGridSync] = useState(0);
-  const [turbineSpeed, setTurbineSpeed] = useState(0);
-  const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
-  const [coolantFlow, setCoolantFlow] = useState(50);
-  const [coolantPumpOn, setCoolantPumpOn] = useState(false);
-  const [rodPercentage, setRodPercentage] = useState(100);
-  const [pump1Online, setPump1Online] = useState(false);
-  const [pump2Online, setPump2Online] = useState(false);
-  const [valveValue, setValveValue] = useState(0);
-  const [scramPressed, setScramPressed] = useState(false);
-  const [isLocked, setIsLocked] = useState(false);
-  const [valveDirection, setValveDirection] = useState(0);
-  const [rodDirection, setRodDirection] = useState(0);
-  const [lastEvent, setLastEvent] = useState("System initialized — reactor in cold shutdown.");
-  const [condenserVacuum, setCondenserVacuum] = useState(0);
-  const [condenserPumpOn, setCondenserPumpOn] = useState(false);
-  const [sjaeOn, setSjaeOn] = useState(false);
-  const [deaeratorLevel, setDeaeratorLevel] = useState(75);
-  const [feedwaterDemand, setFeedwaterDemand] = useState(35);
-  const [mccLevel, setMccLevel] = useState(100);
-  const [mccPumpOn, setMccPumpOn] = useState(false);
-  const [rpsTrips, setRpsTrips] = useState<Record<string, boolean>>(emptyTrips);
+export default function ReactorSimulator() {
+  const [active, setActive] = useState<Panel>("status");
+  const [temperature, setTemperature] = useState(25); const [pressure, setPressure] = useState(1); const [fuelLevel, setFuelLevel] = useState(100); const [isRunning, setIsRunning] = useState(false);
+  const [gridSync, setGridSync] = useState(0); const [turbineSpeed, setTurbineSpeed] = useState(0); const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0); const [valveValue, setValveValue] = useState(0); const [valveDirection, setValveDirection] = useState(0); const [isLocked, setIsLocked] = useState(false);
+  const [pump1Online, setPump1Online] = useState(false); const [pump2Online, setPump2Online] = useState(false); const [coolantPumpOn, setCoolantPumpOn] = useState(false); const [coolantFlow, setCoolantFlow] = useState(50);
+  const [rods, setRods] = useState<ControlRod[]>(createInitialRods); const [selectedRodId, setSelectedRodId] = useState("A1"); const [mode, setMode] = useState<ReactorMode>("SD"); const [iprCycle, setIprCycle] = useState(1); const [rodDirection, setRodDirection] = useState(0); const [selectionScope, setSelectionScope] = useState<RodSelectionScope>("rod"); const [reactorPeriod, setReactorPeriod] = useState(999); const [previousAprm, setPreviousAprm] = useState(0);
+  const [autoEnabled, setAutoEnabled] = useState(false); const [autoTarget, setAutoTarget] = useState(1); const [autoSpeed, setAutoSpeed] = useState<AutoSpeed>("medium"); const [autoMessage, setAutoMessage] = useState("Auto APRM is standing by.");
+  const [reactorLevel, setReactorLevel] = useState(0); const [hotwellLevel, setHotwellLevel] = useState(0); const [deaeratorLevel, setDeaeratorLevel] = useState(0); const [condensateFlow, setCondensateFlow] = useState(30); const [feedwaterFlow, setFeedwaterFlow] = useState(30);
+  const [condenserVacuum, setCondenserVacuum] = useState(0); const [condenserPumpOn, setCondenserPumpOn] = useState(false); const [sjaeOn, setSjaeOn] = useState(false); const [mccLevel, setMccLevel] = useState(100); const [mccPumpOn, setMccPumpOn] = useState(false); const [scramPressed, setScramPressed] = useState(false); const [rpsTrips, setRpsTrips] = useState<Record<string, boolean>>({ "REACTOR LEVEL": false, "MANUAL TRIP": false, "LOOP TRIP": false, "CORE TEMPERATURE": false, "RPV PRESSURE": false, "CONDENSER VACUUM": false, "DA LEVEL": false, "LOW REACTOR PERIOD": false }); const [event, setEvent] = useState("Cold shutdown — select SRM to begin startup.");
+  const [startupBusA, setStartupBusA] = useState(false); const [turbineBusB, setTurbineBusB] = useState(false); const [safetyBusS, setSafetyBusS] = useState(false); const [rolldownProtection, setRolldownProtection] = useState(true);
+  const previousSync = useRef(false);
+
+  const averageInsertion = useMemo(() => rods.reduce((sum, rod) => sum + rod.position, 0) / rods.length, [rods]);
+  const aprm = useMemo(() => getAprm(rods), [rods]);
+  const srmCount = 10 + aprm * 50000;
+  const nextRod = useMemo(() => nextWithdrawableRod(rods, mode, iprCycle), [rods, mode, iprCycle]);
+  const steamFlow = isRunning ? clamp(aprm * 9 + valveValue * 0.05, 0, 100) : 0;
+  const turbineOutputMW = isRunning ? aprm * 10 * (condenserVacuum / 100) : 0;
+
+  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem(STORAGE) || "null"); if (saved?.rods?.length === 36) { setRods(saved.rods); setSelectedRodId(saved.selectedRodId || "A1"); setMode(saved.mode || "SD"); setIprCycle(saved.iprCycle || 1); setAutoTarget(saved.autoTarget || 1); setAutoSpeed(saved.autoSpeed || "medium"); setReactorLevel(saved.reactorLevel || 0); setHotwellLevel(saved.hotwellLevel || 0); setDeaeratorLevel(saved.deaeratorLevel || 0); } } catch { localStorage.removeItem(STORAGE); } }, []);
+  useEffect(() => { localStorage.setItem(STORAGE, JSON.stringify({ rods, selectedRodId, mode, iprCycle, autoTarget, autoSpeed, reactorLevel, hotwellLevel, deaeratorLevel })); }, [rods, selectedRodId, mode, iprCycle, autoTarget, autoSpeed, reactorLevel, hotwellLevel, deaeratorLevel]);
+
+  const scram = (manual = false) => { setRods(previous => previous.map(rod => ({ ...rod, position: 100 }))); setMode("SD"); setAutoEnabled(false); setRodDirection(0); setIsRunning(false); setIsLocked(false); setTargetTurbineSpeed(0); setValveValue(0); setScramPressed(true); setGridSync(0); if (manual) setRpsTrips(previous => ({ ...previous, "MANUAL TRIP": true })); setEvent(manual ? "Manual SCRAM — all rods inserted." : "Automatic SCRAM — protective trip active."); };
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const state = JSON.parse(saved);
-      setTemperature(state.temperature ?? 25); setPressure(state.pressure ?? 1); setFuelLevel(state.fuelLevel ?? 100);
-      setCoolantFlow(state.coolantFlow ?? 50); setRodPercentage(state.rodPercentage ?? 100); setValveValue(state.valveValue ?? 0);
-      setPump1Online(Boolean(state.pump1Online)); setPump2Online(Boolean(state.pump2Online)); setCoolantPumpOn(Boolean(state.coolantPumpOn));
-      setCondenserVacuum(state.condenserVacuum ?? 0); setCondenserPumpOn(Boolean(state.condenserPumpOn)); setSjaeOn(Boolean(state.sjaeOn));
-      setDeaeratorLevel(state.deaeratorLevel ?? 75); setFeedwaterDemand(state.feedwaterDemand ?? 35); setMccLevel(state.mccLevel ?? 100); setMccPumpOn(Boolean(state.mccPumpOn));
-      setLastEvent("Previous control-room configuration restored.");
-    } catch { localStorage.removeItem(STORAGE_KEY); }
-  }, []);
+    const tick = window.setInterval(() => {
+      setRods(previous => {
+        let candidate = selectedRodId;
+        let direction = rodDirection;
+        if (mode === "SD") return previous.map(rod => ({ ...rod, position: clamp(rod.position + 8, 0, 100) }));
+        if (autoEnabled) {
+          if (mode === "SD") { setMode("SRM"); setAutoMessage("AUTO SELECTED SRM MODE."); return previous; }
+          if (mode === "SRM" && isCycleComplete(previous, "SRM", 1)) { setMode("IPR"); setIprCycle(1); setAutoMessage("AUTO SELECTED IPR CYCLE 1."); return previous; }
+          if (mode === "IPR" && isCycleComplete(previous, "IPR", iprCycle)) { if (iprCycle < 3) { setIprCycle(value => value + 1); setAutoMessage(`AUTO ADVANCED TO IPR CYCLE ${iprCycle + 1}.`); } else { setMode("RUN"); setAutoMessage("AUTO SELECTED RUN MODE."); } return previous; }
+          const difference = autoTarget - getAprm(previous);
+          if (Math.abs(difference) < 0.03) { setAutoMessage("Target held — monitoring APRM."); return previous; }
+          direction = difference > 0 ? -1 : 1;
+          candidate = direction < 0 ? nextWithdrawableRod(previous, mode, iprCycle)?.id || "" : previous.filter(rod => rod.position < 99.5)[0]?.id || "";
+          if (!candidate) { setAutoMessage("AUTO PAUSED — no eligible rod in current mode/range."); return previous; }
+          setAutoMessage(`AUTO ${direction < 0 ? "WITHDRAWING" : "INSERTING"} ${candidate} at ${autoSpeed.toUpperCase()} rate.`);
+        }
+        if (!direction || !candidate) return previous;
+        const rod = previous.find(item => item.id === candidate); if (!rod) return previous;
+        const limit = cycleLimit(mode, iprCycle);
+        if (direction < 0 && rod.position <= limit) { if (!autoEnabled) setAutoMessage("GROUP BLOCK — current startup cycle limit reached."); return previous; }
+        const speed = autoEnabled ? ({ slow: .5, medium: 1, fast: 2 }[autoSpeed]) : (mode === "RUN" ? WITHDRAWAL_RATES.run : WITHDRAWAL_RATES.startup);
+        const targets = autoEnabled ? [candidate] : selectionScope === "all" ? previous.map(item => item.id) : selectionScope === "group" ? previous.filter(item => item.group === rod.group).map(item => item.id) : [candidate];
+        return previous.map(item => targets.includes(item.id) ? { ...item, position: clamp(item.position + (direction < 0 ? -speed * .25 : speed * .25), direction < 0 ? limit : 0, 100), temperature: clamp(item.temperature + (direction < 0 ? .1 : -.05), 20, 900) } : item);
+      });
+    }, 250);
+    return () => window.clearInterval(tick);
+  }, [selectedRodId, rodDirection, mode, autoEnabled, autoTarget, autoSpeed, iprCycle, selectionScope]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ temperature, pressure, fuelLevel, coolantFlow, rodPercentage, valveValue, pump1Online, pump2Online, coolantPumpOn, condenserVacuum, condenserPumpOn, sjaeOn, deaeratorLevel, feedwaterDemand, mccLevel, mccPumpOn }));
-  }, [temperature, pressure, fuelLevel, coolantFlow, rodPercentage, valveValue, pump1Online, pump2Online, coolantPumpOn, condenserVacuum, condenserPumpOn, sjaeOn, deaeratorLevel, feedwaterDemand, mccLevel, mccPumpOn]);
+  useEffect(() => { const delta = aprm - previousAprm; setReactorPeriod(delta > .0001 ? clamp(30 / (delta * 4), 5, 999) : 999); setPreviousAprm(aprm); }, [aprm, previousAprm]);
 
-  useEffect(() => {
-    const clock = window.setInterval(() => {
-      const vacuumTarget = (condenserPumpOn ? 55 : 0) + (sjaeOn ? 42 : 0);
-      setCondenserVacuum(previous => Math.max(0, Math.min(99, previous + (vacuumTarget - previous) * 0.12)));
-      setDeaeratorLevel(previous => Math.max(0, Math.min(100, previous + ((pump1Online || pump2Online) ? 0.35 : 0) - (isRunning ? feedwaterDemand * 0.012 : 0))));
-      setMccLevel(previous => Math.max(0, previous - (isRunning && mccPumpOn ? 0.08 : 0)));
-    }, 1000);
-    return () => window.clearInterval(clock);
-  }, [condenserPumpOn, sjaeOn, pump1Online, pump2Online, isRunning, feedwaterDemand, mccPumpOn]);
+  useEffect(() => { const tick = window.setInterval(() => { const vacuumTarget = (condenserPumpOn ? 55 : 0) + (sjaeOn ? 42 : 0); setCondenserVacuum(value => clamp(value + (vacuumTarget - value) * .12, 0, 99)); const condensate = condensateFlow / 100 * 1.4; const feedwater = (pump1Online || pump2Online) ? feedwaterFlow / 100 * 1.4 : 0; setReactorLevel(value => clamp(value + (feedwater - steamFlow / 100 * 1.4), -5, 5)); setHotwellLevel(value => clamp(value + (steamFlow / 100 * 1.4 - condensate), -5, 5)); setDeaeratorLevel(value => clamp(value + (condensate - feedwater), -5, 5)); setMccLevel(value => clamp(value - (isRunning && mccPumpOn ? .08 : 0), 0, 100)); }, 1000); return () => window.clearInterval(tick); }, [condenserPumpOn, sjaeOn, condensateFlow, feedwaterFlow, pump1Online, pump2Online, steamFlow, isRunning, mccPumpOn]);
 
-  useEffect(() => {
-    const active = {
-      "REACTOR LEVEL": deaeratorLevel < 10,
-      "MANUAL TRIP": false,
-      "LOOP TRIP": mccLevel < 15 || (temperature > 800 && !mccPumpOn),
-      "CORE TEMPERATURE": temperature >= 900,
-      "RPV PRESSURE": pressure >= 30,
-      "CONDENSER VACUUM": isRunning && valveValue > 15 && condenserVacuum < 55,
-      "DA LEVEL": deaeratorLevel < 10,
-    };
-    if (Object.values(active).some(Boolean)) {
-      setRpsTrips(previous => Object.fromEntries(Object.keys(previous).map(key => [key, previous[key] || active[key]])));
-      if (isRunning) scram(true);
-    }
-  }, [temperature, pressure, condenserVacuum, deaeratorLevel, mccLevel, mccPumpOn, isRunning, valveValue]);
+  useEffect(() => { const active = { "REACTOR LEVEL": reactorLevel < -2 || reactorLevel > 2, "MANUAL TRIP": false, "LOOP TRIP": mccLevel < 15, "CORE TEMPERATURE": temperature > 900, "RPV PRESSURE": pressure > 30, "CONDENSER VACUUM": isRunning && valveValue > 15 && condenserVacuum < 55, "DA LEVEL": deaeratorLevel < -2, "LOW REACTOR PERIOD": reactorPeriod < 20 }; if (Object.values(active).some(Boolean)) { setRpsTrips(previous => Object.fromEntries(Object.keys({ ...previous, ...active }).map(key => [key, previous[key] || active[key]]))); if (isRunning) scram(); } }, [reactorLevel, deaeratorLevel, mccLevel, temperature, pressure, condenserVacuum, isRunning, valveValue, reactorPeriod]);
 
-  const scram = (automatic = false) => {
-    setIsRunning(false); setIsLocked(false); setTargetTurbineSpeed(0); setValveDirection(0); setRodDirection(0);
-    setRodPercentage(100); setValveValue(0); setScramPressed(true); setGridSync(0);
-    setLastEvent(automatic ? "AUTOMATIC SCRAM — unsafe core condition detected." : "Manual SCRAM completed — rods fully inserted.");
-  };
-
-  useReactorPhysics({ isRunning, temperature, valveValue, rodPercentage, pump1Online, pump2Online, coolantPumpOn, coolantFlow, isLocked, targetTurbineSpeed, onTemperatureChange: setTemperature, onPressureChange: setPressure, onFuelLevelChange: setFuelLevel, onGridSyncChange: setGridSync, onTurbineSpeedChange: setTurbineSpeed, onAutomaticScram: () => scram(true) });
-  useValueControl({ initialValue: valveValue, onChange: setValveValue, direction: valveDirection, incrementPerSecond: 3 });
-  useValueControl({ initialValue: rodPercentage, onChange: setRodPercentage, direction: rodDirection, incrementPerSecond: 12 });
-
-  useEffect(() => { if (isRunning && !isLocked) setTargetTurbineSpeed(valveValue); }, [valveValue, isRunning, isLocked]);
-
+  useReactorPhysics({ isRunning, temperature, valveValue, rodPercentage: averageInsertion, pump1Online, pump2Online, coolantPumpOn, coolantFlow, isLocked, targetTurbineSpeed, onTemperatureChange: setTemperature, onPressureChange: setPressure, onFuelLevelChange: setFuelLevel, onGridSyncChange: setGridSync, onTurbineSpeedChange: setTurbineSpeed, onAutomaticScram: () => scram() });
+  useEffect(() => { if (isRunning && !isLocked) setTargetTurbineSpeed(valveValue); }, [isRunning, isLocked, valveValue]);
   const { actualRPM, targetRPM, isSynchronized } = calculateTurbineData(turbineSpeed, targetTurbineSpeed, isLocked);
-  const alarms = useMemo(() => [
-    temperature > 900 && { label: "CORE TEMPERATURE HIGH", level: "red" },
-    pressure > 25 && { label: "REACTOR PRESSURE HIGH", level: "amber" },
-    isRunning && !coolantPumpOn && !pump1Online && !pump2Online && { label: "NO ACTIVE COOLING", level: "red" },
-    fuelLevel < 15 && { label: "FUEL RESERVE LOW", level: "amber" },
-    Object.values(rpsTrips).some(Boolean) && { label: "RPS TRIP NODE LATCHED", level: "red" },
-  ].filter(Boolean) as { label: string; level: string }[], [temperature, pressure, isRunning, coolantPumpOn, pump1Online, pump2Online, fuelLevel, rpsTrips]);
-  const turbineOutputMW = isRunning ? Math.max(0, valveValue * 1.8 * ((100 - rodPercentage) / 100) * Math.max(0.2, condenserVacuum / 97)) : 0;
-  const status = alarms.some(alarm => alarm.level === "red") ? "ALARM" : isRunning ? "OPERATIONAL" : scramPressed ? "SCRAMMED" : "STANDBY";
-
-  const startReactor = () => {
-    if (Object.values(rpsTrips).some(Boolean)) { setLastEvent("START INHIBITED — reset active RPS trip nodes first."); return; }
-    if (fuelLevel <= 0) { setLastEvent("START INHIBITED — fuel reserve depleted."); return; }
-    setScramPressed(false); setIsRunning(true); setTargetTurbineSpeed(valveValue); setLastEvent("Reactor criticality sequence started.");
-  };
-  const stopReactor = () => { setIsRunning(false); setIsLocked(false); setTargetTurbineSpeed(0); setLastEvent("Normal reactor shutdown initiated."); };
-  const resetSimulation = () => { localStorage.removeItem(STORAGE_KEY); setTemperature(25); setPressure(1); setFuelLevel(100); setIsRunning(false); setGridSync(0); setTurbineSpeed(0); setTargetTurbineSpeed(0); setCoolantFlow(50); setCoolantPumpOn(false); setRodPercentage(100); setPump1Online(false); setPump2Online(false); setValveValue(0); setScramPressed(false); setIsLocked(false); setCondenserVacuum(0); setCondenserPumpOn(false); setSjaeOn(false); setDeaeratorLevel(75); setFeedwaterDemand(35); setMccLevel(100); setMccPumpOn(false); setRpsTrips(emptyTrips); setLastEvent("Simulator reset to cold shutdown."); };
-  const resetTrips = () => {
-    const unsafe = temperature >= 900 || pressure >= 30 || deaeratorLevel < 10 || mccLevel < 15 || (isRunning && condenserVacuum < 55);
-    if (unsafe) { setLastEvent("RPS RESET REJECTED — one or more live trip conditions remain unsafe."); return; }
-    setRpsTrips(emptyTrips); setScramPressed(false); setLastEvent("RPS reset accepted — all trip nodes clear.");
-  };
-  const movePanel = (amount: number) => setActivePanel(panels[(panels.indexOf(activePanel) + amount + panels.length) % panels.length]);
-
-  return <div className="min-h-screen bg-[#07111d] text-slate-100 selection:bg-cyan-300/30">
-    <div className="fixed inset-0 pointer-events-none opacity-20 [background-image:linear-gradient(rgba(34,211,238,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,.08)_1px,transparent_1px)] [background-size:36px_36px]" />
-    <main className="relative mx-auto max-w-7xl p-4 md:p-7">
-      <header className="mb-5 flex flex-col gap-4 border-b border-cyan-500/20 pb-5 md:flex-row md:items-end md:justify-between">
-        <div><p className="text-xs font-bold tracking-[.3em] text-cyan-400">RBWR // WEB SIMULATOR</p><h1 className="mt-1 text-2xl font-bold tracking-tight md:text-4xl">Boiling Water Reactor Control Room</h1><p className="mt-1 text-sm text-slate-400">Game-inspired simulation · training interface</p></div>
-        <div className="flex items-center gap-2"><Badge className={status === "ALARM" ? "bg-red-600" : status === "OPERATIONAL" ? "bg-emerald-600" : "bg-slate-600"}>{status}</Badge><Button variant="outline" size="sm" onClick={resetSimulation} className="border-slate-600 bg-slate-900/60"><RotateCcw size={15} className="mr-2" />Reset</Button></div>
-      </header>
-      <section className="mb-5 grid gap-3 md:grid-cols-[1fr_auto]">
-        <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${alarms.length ? "border-red-500/50 bg-red-950/40 text-red-200" : "border-cyan-500/20 bg-slate-900/70 text-slate-300"}`}><BellRing size={18} className={alarms.length ? "text-red-400" : "text-cyan-400"}/><span>{alarms.length ? alarms.map(a => a.label).join(" · ") : lastEvent}</span></div>
-        <div className="flex gap-2"><Button size="sm" variant="outline" className="border-slate-600 bg-slate-900/70" onClick={() => setActivePanel("startup-shutdown")}>Controls</Button><Button size="sm" onClick={() => scram()} className="bg-red-700 hover:bg-red-600"><ShieldAlert size={15} className="mr-2"/>SCRAM</Button></div>
-      </section>
-      <nav className="mb-5 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/80 p-2">{panels.map(panel => <Button key={panel} variant={activePanel === panel ? "default" : "ghost"} size="sm" onClick={() => setActivePanel(panel)} className={activePanel === panel ? "bg-cyan-600 hover:bg-cyan-500 whitespace-nowrap" : "text-slate-300 whitespace-nowrap"}>{panelNames[panel]}</Button>)}</nav>
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/75 p-4 shadow-2xl shadow-cyan-950/20 md:p-6">
-        {activePanel === "status" && <ReactorStatusPanel temperature={temperature} pressure={pressure} fuelLevel={fuelLevel} gridSync={gridSync} turbineOutputMW={turbineOutputMW} valveValue={valveValue} isRunning={isRunning} getStatusColor={() => status === "ALARM" ? "destructive" : "default"} getStatusText={() => status} />}
-        {activePanel === "control-rods" && <ControlRodsPanel rodPercentage={rodPercentage} rodDirection={rodDirection} onRodPress={setRodDirection} onRodNeutral={() => setRodDirection(0)} />}
-        {activePanel === "startup-shutdown" && <StartupShutdownPanel isRunning={isRunning} temperature={temperature} scramPressed={scramPressed} onStartReactor={startReactor} onStopReactor={stopReactor} onEmergencyShutdown={() => scram()} />}
-        {activePanel === "power-coolant" && <PowerCoolantPanel pump1Online={pump1Online} pump2Online={pump2Online} coolantPumpOn={coolantPumpOn} coolantFlow={coolantFlow} pressure={pressure} onPump1Change={setPump1Online} onPump2Change={setPump2Online} onCoolantPumpChange={setCoolantPumpOn} onCoolantFlowChange={setCoolantFlow} />}
-        {activePanel === "power-grid" && <PowerGridPanel actualRPM={actualRPM} targetRPM={targetRPM} isSynchronized={isSynchronized} isLocked={isLocked} valveValue={valveValue} valveDirection={valveDirection} turbineOutputMW={turbineOutputMW} turbineSpeed={turbineSpeed} onValvePress={setValveDirection} onPausePress={() => setValveDirection(0)} onSyncPress={() => { if (isSynchronized) { setIsLocked(!isLocked); setLastEvent(isLocked ? "Generator breaker opened." : "Generator synchronized to grid."); } }} />}
-        {["condenser", "feedwater", "mcc", "rps"].includes(activePanel) && <PlantSystemsPanel panel={activePanel as ProcessPanel} condenserVacuum={condenserVacuum} condenserPumpOn={condenserPumpOn} sjaeOn={sjaeOn} deaeratorLevel={deaeratorLevel} feedwaterDemand={feedwaterDemand} mccLevel={mccLevel} mccPumpOn={mccPumpOn} rpsTrips={rpsTrips} onCondenserPumpChange={setCondenserPumpOn} onSjaeChange={setSjaeOn} onFeedwaterDemandChange={setFeedwaterDemand} onMccPumpChange={setMccPumpOn} onManualTrip={() => { setRpsTrips(previous => ({ ...previous, "MANUAL TRIP": true })); scram(); }} onResetTrips={resetTrips} />}
-      </div>
-      <div className="mt-5 flex items-center justify-between text-xs text-slate-500"><span><Activity className="mr-1 inline h-3 w-3 text-emerald-400"/>Simulation clock: 4 Hz</span><div className="flex gap-3"><button onClick={() => movePanel(-1)} aria-label="Previous panel"><ArrowLeft size={17}/></button><button onClick={() => movePanel(1)} aria-label="Next panel"><ArrowRight size={17}/></button><ArrowUp size={17}/><ArrowDown size={17}/></div></div>
-    </main>
-  </div>;
-};
-
-export default ReactorSimulator;
+  const alarms = Object.values(rpsTrips).some(Boolean) ? "RPS TRIP NODE LATCHED" : reactorLevel < -1.5 ? "REACTOR LEVEL LOW" : "All plant systems nominal.";
+  const start = () => { if (Object.values(rpsTrips).some(Boolean)) { setEvent("START INHIBITED — reset RPS nodes first."); return; } setIsRunning(true); setScramPressed(false); setEvent("Reactor criticality sequence started."); };
+  const resetTrips = () => { if (reactorLevel < -2 || reactorLevel > 2 || deaeratorLevel < -2 || mccLevel < 15 || temperature > 900) { setEvent("RPS RESET REJECTED — unsafe process condition remains."); return; } setRpsTrips(Object.fromEntries(Object.keys(rpsTrips).map(key => [key, false]))); setScramPressed(false); setEvent("RPS nodes reset."); };
+  const reset = () => { localStorage.removeItem(STORAGE); setRods(createInitialRods()); setMode("SD"); setIprCycle(1); setReactorLevel(0); setHotwellLevel(0); setDeaeratorLevel(0); setIsRunning(false); setScramPressed(false); setRpsTrips(Object.fromEntries(Object.keys(rpsTrips).map(key => [key, false]))); setEvent("Simulator reset to cold shutdown."); };
+  useEffect(() => { if ((!turbineBusB || !isLocked) && pump2Online) setPump2Online(false); }, [turbineBusB, isLocked, pump2Online]);
+  useEffect(() => { if (previousSync.current && !isLocked && turbineBusB && rolldownProtection) { setTurbineBusB(false); setRpsTrips(previous => ({ ...previous, "TURBINE ROLLDOWN": true })); setEvent("ROLLDOWN PROTECTION OPENED BUS B AND TRIPPED TURBINE PROTECTION."); } previousSync.current = isLocked; }, [isLocked, turbineBusB, rolldownProtection]);
+  if (active === "electrical") return <div className="min-h-screen bg-[#07111d] p-4 text-slate-100"><main className="mx-auto max-w-7xl py-4"><div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold tracking-[.3em] text-cyan-400">RBWR // UNIT 02</p><h1 className="text-3xl font-black">Electrical Distribution</h1></div><Button variant="outline" onClick={() => setActive("status")}>RETURN TO OVERVIEW</Button></div><ElectricalPanel startupBusA={startupBusA} turbineBusB={turbineBusB} safetyBusS={safetyBusS} rolldownProtection={rolldownProtection} turbineOnline={isLocked} onStartupBusAChange={setStartupBusA} onTurbineBusBChange={setTurbineBusB} onSafetyBusSChange={setSafetyBusS} onRolldownProtectionChange={value => { setRolldownProtection(value); setEvent(value ? "ROLLDOWN PROTECTION ENABLED." : "ROLLDOWN PROTECTION BYPASSED — RPS turbine trip disabled."); }}/></main></div>;
+  return <div className="min-h-screen bg-[#07111d] text-slate-100"><main className="mx-auto max-w-7xl p-4 md:p-7"><header className="mb-5 flex flex-col justify-between gap-4 border-b border-cyan-500/20 pb-5 md:flex-row md:items-end"><div><p className="text-xs font-bold tracking-[.3em] text-cyan-400">RBWR // UNIT 02 SIMULATOR</p><h1 className="text-3xl font-black">Boiling Water Reactor Control Room</h1></div><div className="flex gap-2"><Badge className={Object.values(rpsTrips).some(Boolean) ? "bg-red-700" : "bg-emerald-700"}>{Object.values(rpsTrips).some(Boolean) ? "ALARM" : "NOMINAL"}</Badge><Button variant="outline" onClick={reset}><RotateCcw className="mr-2 h-4 w-4"/>Reset</Button></div></header><section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-slate-900/70 p-3 text-sm"><span className={alarms === "All plant systems nominal." ? "text-slate-300" : "text-red-300"}><BellRing className="mr-2 inline h-4 w-4"/>{alarms === "All plant systems nominal." ? event : alarms}</span><Button size="sm" className="bg-red-700 hover:bg-red-600" onClick={() => scram(true)}><ShieldAlert className="mr-2 h-4 w-4"/>SCRAM</Button></section><nav className="mb-5 flex gap-2 overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/80 p-2">{panels.map(panel => <Button key={panel} size="sm" variant={active === panel ? "default" : "ghost"} onClick={() => setActive(panel)} className={active === panel ? "bg-cyan-500 text-slate-950" : "text-slate-300"}>{names[panel]}</Button>)}</nav><div className="rounded-2xl border border-slate-700 bg-slate-900/75 p-4 md:p-6">{active === "status" && <ReactorStatusPanel temperature={temperature} pressure={pressure} fuelLevel={fuelLevel} gridSync={gridSync} turbineOutputMW={turbineOutputMW} valveValue={valveValue} isRunning={isRunning} getStatusColor={() => Object.values(rpsTrips).some(Boolean) ? "destructive" : "default"} getStatusText={() => Object.values(rpsTrips).some(Boolean) ? "ALARM" : isRunning ? "OPERATIONAL" : "STANDBY"}/>} {active === "control-rods" && <ControlRodsPanel rods={rods} selectedRodId={selectedRodId} mode={mode} iprCycle={iprCycle} aprm={aprm} srmCount={srmCount} direction={rodDirection} autoEnabled={autoEnabled} autoTarget={autoTarget} autoSpeed={autoSpeed} autoMessage={autoMessage} nextRodId={nextRod?.id} selectionScope={selectionScope} reactorPeriod={reactorPeriod} onSelectRod={setSelectedRodId} onModeChange={next => { if (next === "IPR" && !isCycleComplete(rods, "SRM", 1)) { setAutoMessage("SRM BLOCK — complete the 5% SRM cycle before selecting IPR."); return; } setMode(next); if (next === "SD") setAutoEnabled(false); }} onDirectionChange={setRodDirection} onAdvanceCycle={() => { if (isCycleComplete(rods, mode, iprCycle)) { setIprCycle(value => Math.min(3, value + 1)); setEvent("IPR cycle advanced."); } else setAutoMessage("GROUP BLOCK — complete the current withdrawal cycle first."); }} onAutoEnabledChange={setAutoEnabled} onAutoTargetChange={value => setAutoTarget(clamp(value, 0, 100))} onAutoSpeedChange={setAutoSpeed} onSelectionScopeChange={setSelectionScope}/>} {active === "startup-shutdown" && <StartupShutdownPanel isRunning={isRunning} temperature={temperature} scramPressed={scramPressed} onStartReactor={start} onStopReactor={() => setIsRunning(false)} onEmergencyShutdown={() => scram(true)}/>} {active === "power-coolant" && <PowerCoolantPanel pump1Online={pump1Online} pump2Online={pump2Online} coolantPumpOn={coolantPumpOn} coolantFlow={coolantFlow} pressure={pressure} onPump1Change={setPump1Online} onPump2Change={setPump2Online} onCoolantPumpChange={setCoolantPumpOn} onCoolantFlowChange={setCoolantFlow}/>} {active === "power-grid" && <PowerGridPanel actualRPM={actualRPM} targetRPM={targetRPM} isSynchronized={isSynchronized} isLocked={isLocked} valveValue={valveValue} valveDirection={valveDirection} turbineOutputMW={turbineOutputMW} turbineSpeed={turbineSpeed} onValvePress={setValveDirection} onPausePress={() => setValveDirection(0)} onSyncPress={() => setIsLocked(value => !value)}/>} {["mcc", "feedwater", "condenser", "rps"].includes(active) && <PlantSystemsPanel panel={active as ProcessPanel} condenserVacuum={condenserVacuum} condenserPumpOn={condenserPumpOn} sjaeOn={sjaeOn} deaeratorLevel={deaeratorLevel} feedwaterDemand={feedwaterFlow} mccLevel={mccLevel} mccPumpOn={mccPumpOn} rpsTrips={rpsTrips} reactorLevel={reactorLevel} hotwellLevel={hotwellLevel} condensateFlow={condensateFlow} steamFlow={steamFlow} onCondenserPumpChange={setCondenserPumpOn} onSjaeChange={setSjaeOn} onFeedwaterDemandChange={setFeedwaterFlow} onCondensateFlowChange={setCondensateFlow} onMccPumpChange={setMccPumpOn} onManualTrip={() => scram(true)} onResetTrips={resetTrips}/>}</div><div className="mt-5 text-xs text-slate-500"><Activity className="mr-1 inline h-3 w-3 text-emerald-400"/>4 Hz physics clock · U2 temporary rod program</div></main></div>;
+}
