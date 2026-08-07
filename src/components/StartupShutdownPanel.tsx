@@ -7,6 +7,7 @@ interface StartupShutdownPanelProps {
   temperature: number;
   scramPressed: boolean;
   onStartReactor: () => void;
+  onInstantStartup?: () => void;
   onStopReactor: () => void;
   onEmergencyShutdown: () => void;
 }
@@ -16,6 +17,7 @@ export const StartupShutdownPanel: React.FC<StartupShutdownPanelProps> = ({
   temperature,
   scramPressed,
   onStartReactor,
+  onInstantStartup,
   onStopReactor,
   onEmergencyShutdown
 }) => {
@@ -28,8 +30,9 @@ export const StartupShutdownPanel: React.FC<StartupShutdownPanelProps> = ({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="flex justify-center"><SpringButton onClick={onStartReactor} disabled={isRunning} label="START REACTOR" /></div>
+            <div className="flex justify-center"><SpringButton onClick={onInstantStartup} disabled={isRunning} label="INSTANT STARTUP" /></div>
             <div className="flex justify-center"><SpringButton onClick={onStopReactor} disabled={!isRunning} variant="danger" label="NORMAL STOP" /></div>
             <div className="flex justify-center"><SpringButton onClick={onEmergencyShutdown} variant="danger" label={scramPressed ? "SCRAM LATCHED" : "SCRAM"} /></div>
           </div>

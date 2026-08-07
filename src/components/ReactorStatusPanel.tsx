@@ -7,16 +7,13 @@ import {
   Thermometer, 
   Gauge, 
   Fuel, 
-  Shield, 
-  Grid3X3,
-  Zap
+  Shield
 } from "lucide-react";
 
 interface ReactorStatusPanelProps {
   temperature: number;
   pressure: number;
   fuelLevel: number;
-  gridSync: number;
   turbineOutputMW: number;
   valveValue: number;
   isRunning: boolean;
@@ -28,7 +25,6 @@ export const ReactorStatusPanel: React.FC<ReactorStatusPanelProps> = ({
   temperature,
   pressure,
   fuelLevel,
-  gridSync,
   turbineOutputMW,
   valveValue,
   isRunning,
@@ -97,18 +93,6 @@ export const ReactorStatusPanel: React.FC<ReactorStatusPanelProps> = ({
             <Badge variant={getStatusColor() as any} className="text-lg px-3 py-1">
               {getStatusText()}
             </Badge>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-800/50 border-blue-500/30">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-blue-400 flex items-center gap-2">
-              <Grid3X3 className="text-blue-400" size={20} />
-              Grid Sync
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{gridSync.toFixed(1)}%</div>
-            <Progress value={gridSync} className="mt-2 h-2 bg-blue-500/20" />
           </CardContent>
         </Card>
         <Card className="bg-slate-800/50 border-cyan-500/30">

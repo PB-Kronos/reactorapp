@@ -3,12 +3,13 @@ import { useEffect, useRef } from "react";
 interface UseReactorPhysicsProps {
   isRunning: boolean;
   temperature: number;
-  valveValue: number;
+  mainValve: number;
+  mainSteamInletOpen: boolean;
+  bypassValve: number;
+  reliefOpen: boolean;
   rodPercentage: number;
   pump1Online: boolean;
   pump2Online: boolean;
-  coolantPumpOn: boolean;
-  coolantFlow: number;
   isLocked: boolean;
   targetTurbineSpeed: number;
   onTemperatureChange: (value: number | ((previous: number) => number)) => void;
@@ -37,7 +38,7 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
 
       const pumps = Number(state.pump1Online) + Number(state.pump2Online);
       const reactivity = (100 - state.rodPercentage) / 100;
-      const coolant = (state.coolantPumpOn ? state.coolantFlow * 0.065 : 0) + pumps * 0.45;
+      const coolant = pumps * 0.75;
       const heat = 3.1 * reactivity;
       const temperatureDelta = (heat - coolant) * 0.25;
 
@@ -49,8 +50,9 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
       }
       state.onTemperatureChange(nextTemperature);
       state.onPressureChange(previous => {
-        const target = 1 + (state.valveValue / 100) * 3 + Math.max(0, heat * 2.4 - coolant * 0.5);
-        return clamp(previous + (target - previous) * 0.06, 1, 120);
+        const admittedMainSteam = state.mainSteamInletOpen ? state.mainValve : 0;
+        const target = clamp(101 + reactivity * 9000 - (admittedMainSteam + state.bypassValve + (state.reliefOpen ? 100 : 0)) * 70, 101, 12000);
+        return clamp(previous + (target - previous) * 0.045, 101, 12000);
       });
       state.onFuelLevelChange(previous => clamp(previous - (0.0015 + reactivity * 0.004) * 0.25, 0, 100));
       state.onTurbineSpeedChange(previous => {
