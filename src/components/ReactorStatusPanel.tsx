@@ -17,6 +17,17 @@ interface ReactorStatusPanelProps {
   turbineOutputMW: number;
   valveValue: number;
   isRunning: boolean;
+  aprm?: number;
+  rodAprm?: number;
+  recirculationAprm?: number;
+  recircPumpA?: boolean;
+  recircPumpB?: boolean;
+  recircSpeedA?: number;
+  recircSpeedB?: number;
+  onRecircPumpAChange?: (value: boolean) => void;
+  onRecircPumpBChange?: (value: boolean) => void;
+  onRecircSpeedAChange?: (value: number) => void;
+  onRecircSpeedBChange?: (value: number) => void;
   getStatusColor: () => "default" | "destructive" | "warning";
   getStatusText: () => string;
 }
@@ -90,29 +101,12 @@ export const ReactorStatusPanel: React.FC<ReactorStatusPanelProps> = ({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Badge variant={getStatusColor() as any} className="text-lg px-3 py-1">
+            <Badge variant={getStatusColor() === "warning" ? "default" : getStatusColor()} className="text-lg px-3 py-1">
               {getStatusText()}
             </Badge>
           </CardContent>
         </Card>
-        <Card className="bg-slate-800/50 border-cyan-500/30">
-          <CardHeader>
-            <CardTitle className="text-cyan-400">Reactor Core Visualization</CardTitle>
-          </CardHeader>
-          <CardContent className="flex justify-center">
-            <div className="relative w-64 h-64">
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-purple-500/20 rounded-full border-2 border-cyan-500/50"></div>
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                <div className="grid grid-cols-3 gap-2">
-                  {[...Array(9)].map((_, i) => (
-                    <div key={i} className={`w-4 h-4 rounded ${fuelLevel > 20 ? 'bg-green-500' : 'bg-red-500'} opacity-70`} />
-                  ))}
-                </div>
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-cyan-400 opacity-50" style={{ animation: isRunning ? 'pulse 2s infinite' : 'none', boxShadow: isRunning ? '0 0 20px rgba(34, 211, 238, 0.5)' : 'none' }} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+
       </div>
     </div>
   );

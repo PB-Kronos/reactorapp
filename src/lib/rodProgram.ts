@@ -1,10 +1,12 @@
 export type ReactorMode = "SD" | "SRM" | "IPR" | "RUN";
 export type AutoSpeed = "slow" | "medium" | "fast";
+export type ManualSpeed = "slow" | "normal" | "fast";
 export type RodSelectionScope = "rod" | "group" | "all";
 
 export interface ControlRod { id: string; row: number; column: number; group: string; position: number; temperature: number; angle: number; radius: number; }
 export const AUTO_ROD_RATES: Record<AutoSpeed, number> = { slow: 0.5, medium: 1, fast: 2 };
 export const WITHDRAWAL_RATES = { startup: 5 / 3.5, run: 3 };
+export const MANUAL_ROD_RATES: Record<ManualSpeed, number> = { slow: .5, normal: 1, fast: 2 };
 
 /** Temporary circular 36-rod core. Replace this map when an exact U2 pattern becomes available. */
 export const createInitialRods = (): ControlRod[] => Array.from({ length: 36 }, (_, index) => ({ id: `${String.fromCharCode(65 + Math.floor(index / 6))}${index % 6 + 1}`, row: Math.floor(index / 6), column: index % 6, group: `G${index % 6 + 1}`, position: 100, temperature: 25, angle: index * 10, radius: 43 }));
