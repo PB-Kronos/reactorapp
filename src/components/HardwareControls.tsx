@@ -15,7 +15,7 @@ export const MaintainedSwitch = ({ label, on, onChange, disabled = false }: { la
 export const SpringLever = ({ label, negativeLabel, positiveLabel, direction, onDirectionChange }: { label: string; negativeLabel: string; positiveLabel: string; direction: number; onDirectionChange: (direction: number) => void }) => {
   const release = () => onDirectionChange(0);
   const bind = (next: number) => ({
-    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => { event.currentTarget.setPointerCapture(event.pointerId); onDirectionChange(next); },
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); onDirectionChange(next); },
     onPointerUp: release,
     onPointerCancel: release,
     onLostPointerCapture: release,

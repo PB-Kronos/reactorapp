@@ -106,7 +106,14 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  button, input, [role="slider"] {
+  button, [role="slider"] {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  input {
     touch-action: manipulation;
   }
 
