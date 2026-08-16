@@ -132,3 +132,17 @@
     gap: 0.5rem;
   }
 }
+
+@keyframes annunciator-fast-flash {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.18; }
+}
+
+@keyframes annunciator-slow-flash {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.18; }
+}
+
+.annunciator-fast-flash { animation: annunciator-fast-flash 0.45s steps(1, end) infinite; }
+.annunciator-slow-flash { animation: annunciator-slow-flash 1.25s steps(1, end) infinite; }
+.annunciator-steady { opacity: 1; }

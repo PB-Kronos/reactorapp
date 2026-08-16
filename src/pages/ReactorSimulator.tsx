@@ -61,7 +61,7 @@ export default function ReactorSimulator() {
   const turbineOutputMW = isRunning && isLocked && exciterOn && turbineSteamFlow > 1
     ? turbineSteamFlow * .742 * turbineSteamQuality * condenserEfficiency
     : 0;
-  const hotwellOutflowKgS = (condenserPumpOn ? condensateFlow * 20 : 0) + (condenserPumpB && turbineBusB && isLocked ? condensatePumpBFlow * 20 : 0);
+  const hotwellOutflowKgS = (condenserPumpOn ? condensateFlow * 10 : 0) + (condenserPumpB && turbineBusB && isLocked ? condensatePumpBFlow * 10 : 0);
   const daOutflowKgS = (pump1Online ? feedwaterFlow * 10 : 0) + (pump2Online && turbineBusB && isLocked ? feedwaterPumpBFlow * 10 : 0);
   mccProcessRef.current = { mccPumpOn, steamFlow, hotwellOutflowKgS, daOutflowKgS, isRunning, daIntakeOpen, daOutputOpen };
   const annunciators = useMemo<Annunciator[]>(() => [
