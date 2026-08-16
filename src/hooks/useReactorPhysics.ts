@@ -7,6 +7,7 @@ interface UseReactorPhysicsProps {
   mainSteamInletOpen: boolean;
   bypassValve: number;
   reliefOpen: boolean;
+  reliefValvesOpen?: number;
   turbineSteamFlow: number;
   bypassSteamFlow: number;
   aprm: number;
@@ -33,7 +34,11 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
   useEffect(() => {
     const clock = window.setInterval(() => {
       const state = current.current;
+      const openReliefValves = state.reliefValvesOpen ?? (state.reliefOpen ? 1 : 0);
       if (!state.isRunning) {
+        // SRVs remain connected to the vessel following a SCRAM. This lets ADS
+        // depressurize a shut-down reactor instead of freezing its pressure.
+        if (openReliefValves > 0) state.onPressureChange(previous => clamp(previous - openReliefValves * 90, 101, 12000));
         scramLatched.current = false;
         return;
       }
@@ -53,7 +58,7 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
         // Core power creates steam; actual measured steam flow, rather than a
         // valve-position shortcut, removes it from the vessel.
         const steamProduction = reactivity * 25000;
-        const steamRemoval = (state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + (state.reliefOpen ? 8000 : 0);
+        const steamRemoval = (state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + openReliefValves * 8000;
         const target = clamp(101 + steamProduction - steamRemoval, 101, 12000);
         return clamp(previous + (target - previous) * 0.045, 101, 12000);
       });
