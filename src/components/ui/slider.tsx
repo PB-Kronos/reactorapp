@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
->(({ className, value, defaultValue, min = 0, max = 100, step = 1, onValueChange, disabled, ...props }, ref) => {
+>(({ className, value, defaultValue, min = 0, max = 100, step = 1, onValueChange, onValueCommit, onPointerDown, disabled, ...props }, ref) => {
   const currentValue = value?.[0] ?? defaultValue?.[0] ?? min;
   const changeBy = (amount: number) => onValueChange?.([Math.max(min, Math.min(max, currentValue + amount))]);
 
@@ -22,6 +22,8 @@ const Slider = React.forwardRef<
         step={step}
         disabled={disabled}
         onValueChange={onValueChange}
+        onValueCommit={(nextValue) => { onValueCommit?.(nextValue); window.dispatchEvent(new Event("rbwr-slider-adjust-end")); }}
+        onPointerDown={(event) => { window.dispatchEvent(new Event("rbwr-slider-adjust-start")); onPointerDown?.(event); }}
         className={cn("relative flex min-h-11 w-full touch-none select-none items-center", className)}
         {...props}
       >

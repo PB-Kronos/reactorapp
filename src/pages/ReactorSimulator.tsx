@@ -38,9 +38,12 @@ export default function ReactorSimulator() {
   const [startupBusA, setStartupBusA] = useState(false); const [turbineBusB, setTurbineBusB] = useState(false); const [safetyBusS, setSafetyBusS] = useState(false); const [rolldownProtection, setRolldownProtection] = useState(true);
   const [cstLevel, setCstLevel] = useState(8); const [cstMakeup, setCstMakeup] = useState(false); const [cstDrain, setCstDrain] = useState(false); const [hotwellMakeup, setHotwellMakeup] = useState(false); const [hotwellDrain, setHotwellDrain] = useState(false); const [rcicValve, setRcicValve] = useState(false); const [rcicFlow, setRcicFlow] = useState(0); const [eccsPumpA, setEccsPumpA] = useState(false); const [eccsPumpB, setEccsPumpB] = useState(false); const [eccsPumpAMode, setEccsPumpAMode] = useState<"RHR" | "LPCI">("RHR"); const [eccsPumpBMode, setEccsPumpBMode] = useState<"RHR" | "LPCI">("RHR"); const [srvOpen, setSrvOpen] = useState<boolean[]>(() => Array(6).fill(false)); const [adsActive, setAdsActive] = useState(false);
   const previousSync = useRef(false);
+  const mccAutoManualAdjusting = useRef(false);
   const pressureSample = useRef({ value: 101, time: performance.now() }); const condenserTargetRef = useRef(1); const condenserPhaseRef = useRef(0);
   const aprmSample = useRef({ value: 0, time: performance.now() });
   const mccProcessRef = useRef({ mccPumpOn: false, steamFlow: 0, hotwellOutflowKgS: 0, daOutflowKgS: 0, isRunning: false, daIntakeOpen: true, daOutputOpen: true });
+
+  useEffect(() => { const begin = () => { mccAutoManualAdjusting.current = true; }; const end = () => { mccAutoManualAdjusting.current = false; }; window.addEventListener("rbwr-slider-adjust-start", begin); window.addEventListener("rbwr-slider-adjust-end", end); return () => { window.removeEventListener("rbwr-slider-adjust-start", begin); window.removeEventListener("rbwr-slider-adjust-end", end); }; }, []);
 
   const averageInsertion = useMemo(() => rods.reduce((sum, rod) => sum + rod.position, 0) / rods.length, [rods]);
   const rodAprm = useMemo(() => getAprm(rods), [rods]);
@@ -152,7 +155,8 @@ export default function ReactorSimulator() {
   }, []);
   useEffect(() => {
     if (!mccAutoOn) return;
-    const tick = window.setInterval(() => {
+    const applyTargets = () => {
+      if (mccAutoManualAdjusting.current) return;
       const busBAvailable = turbineBusB && isLocked;
       const clampFlow = (flow: number) => Math.max(0, Math.min(2000, flow));
       // Reactor error drives feedwater; DA error balances the two transfer legs;
@@ -168,7 +172,9 @@ export default function ReactorSimulator() {
       dispatch(feedTarget, setFeedwaterFlow, setFeedwaterPumpBFlow);
       if (busBAvailable && condensateTarget > 1000) setCondenserPumpB(true);
       if (busBAvailable && feedTarget > 1000) setPump2Online(true);
-    }, 500);
+    };
+    applyTargets();
+    const tick = window.setInterval(applyTargets, 150);
     return () => window.clearInterval(tick);
   }, [mccAutoOn, steamFlow, reactorLevel, hotwellLevel, deaeratorLevel, turbineBusB, isLocked]);
   const lpciSelected = eccsPumpAMode === "LPCI" || eccsPumpBMode === "LPCI";
