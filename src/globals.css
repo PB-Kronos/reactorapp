@@ -103,5 +103,25 @@
     min-width: 320px;
     overflow-x: hidden;
     overflow-y: auto;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button, input, [role="slider"] {
+    touch-action: manipulation;
+  }
+
+  input[type="number"] {
+    min-height: 2.75rem;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  [data-slider-control] {
+    gap: 0.5rem;
   }
 }
