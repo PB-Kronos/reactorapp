@@ -15,6 +15,10 @@ interface UseReactorPhysicsProps {
   pump2Online: boolean;
   isLocked: boolean;
   targetTurbineSpeed: number;
+  thermalResponse?: number;
+  steamProductionMultiplier?: number;
+  steamRemovalMultiplier?: number;
+  automaticScramTemperature?: number;
   onTemperatureChange: (value: number | ((previous: number) => number)) => void;
   onPressureChange: (value: number | ((previous: number) => number)) => void;
   onFuelLevelChange: (value: number | ((previous: number) => number)) => void;
@@ -46,10 +50,10 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
       const reactivity = clamp(state.aprm / 100, 0, 1.15);
       // Tuned bulk-water temperature: about 280 C at 80% APRM with slow thermal inertia.
       const targetTemperature = 25 + reactivity * 320;
-      const temperatureDelta = (targetTemperature - state.temperature) * .008;
+      const temperatureDelta = (targetTemperature - state.temperature) * .008 * (state.thermalResponse ?? 1);
 
       const nextTemperature = clamp(state.temperature + temperatureDelta, 20, 1800);
-      if (nextTemperature >= 1100 && !scramLatched.current) {
+      if (nextTemperature >= (state.automaticScramTemperature ?? 1100) && !scramLatched.current) {
         scramLatched.current = true;
         state.onAutomaticScram();
       }
@@ -57,8 +61,8 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
       state.onPressureChange(previous => {
         // Core power creates steam; actual measured steam flow, rather than a
         // valve-position shortcut, removes it from the vessel.
-        const steamProduction = reactivity * 25000;
-        const steamRemoval = (state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + openReliefValves * 8000;
+        const steamProduction = reactivity * 25000 * (state.steamProductionMultiplier ?? 1);
+        const steamRemoval = ((state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + openReliefValves * 8000) * (state.steamRemovalMultiplier ?? 1);
         const target = clamp(101 + steamProduction - steamRemoval, 101, 12000);
         return clamp(previous + (target - previous) * 0.045, 101, 12000);
       });

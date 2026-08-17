@@ -42,8 +42,8 @@ export const AnnunciatorPanel = ({ annunciators }: Props) => {
     return () => window.clearInterval(timer);
   }, [audioEnabled, hornAlarms]);
 
-  const acknowledge = () => setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, { ...state, acknowledged: true, silenced: false }])));
-  const silence = () => setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, state.active && !state.acknowledged ? { ...state, silenced: true } : state])));
+  const acknowledge = () => { window.dispatchEvent(new Event("rbwr-annunciator-ack")); setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, { ...state, acknowledged: true, silenced: false }]))); };
+  const silence = () => { window.dispatchEvent(new Event("rbwr-annunciator-silence")); setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, state.active && !state.acknowledged ? { ...state, silenced: true } : state]))); };
   const testLamps = () => { setLampTest(true); window.setTimeout(() => setLampTest(false), 1000); };
   const activeCount = annunciators.filter(item => item.active).length;
   const unacknowledged = Object.values(windows).filter(state => !state.acknowledged).length;

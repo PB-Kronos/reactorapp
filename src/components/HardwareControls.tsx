@@ -2,13 +2,13 @@ import { Power } from "lucide-react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import type { ReactorMode } from "@/lib/rodProgram";
 
-export const MaintainedSwitch = ({ label, on, onChange, disabled = false }: { label: string; on: boolean; onChange: (value: boolean) => void; disabled?: boolean }) => (
+export const MaintainedSwitch = ({ label, on, onChange, disabled = false, unavailable = false }: { label: string; on: boolean; onChange: (value: boolean) => void; disabled?: boolean; unavailable?: boolean }) => (
   <button type="button" disabled={disabled} onClick={() => onChange(!on)} aria-pressed={on} className="group flex min-w-28 flex-col items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
     <span className="text-[10px] font-bold tracking-widest text-slate-400">{label}</span>
-    <span className={`relative h-14 w-8 rounded-md border-2 p-1 shadow-inner transition-colors ${on ? "border-emerald-400 bg-emerald-950" : "border-slate-600 bg-slate-950"}`}>
-      <span className={`block h-5 w-full rounded-sm shadow transition-transform ${on ? "translate-y-6 bg-emerald-400" : "translate-y-0 bg-slate-400"}`} />
+    <span className={`relative h-14 w-8 rounded-md border-2 p-1 shadow-inner transition-colors ${on ? unavailable ? "border-amber-300 bg-amber-950" : "border-emerald-400 bg-emerald-950" : "border-slate-600 bg-slate-950"}`}>
+      <span className={`block h-5 w-full rounded-sm shadow transition-transform ${on ? `translate-y-6 ${unavailable ? "bg-amber-300" : "bg-emerald-400"}` : "translate-y-0 bg-slate-400"}`} />
     </span>
-    <span className={on ? "text-xs font-bold text-emerald-400" : "text-xs font-bold text-slate-500"}>{on ? "ON" : "OFF"}</span>
+    <span className={on ? unavailable ? "text-xs font-bold text-amber-300" : "text-xs font-bold text-emerald-400" : "text-xs font-bold text-slate-500"}>{on ? unavailable ? "NO POWER" : "ON" : "OFF"}</span>
   </button>
 );
 
