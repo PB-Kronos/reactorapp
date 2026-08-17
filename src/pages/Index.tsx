@@ -197,22 +197,42 @@ const Index = () => {
               {booting && "\n_"}
             </pre>
             {!booting && (
-              <div className="mt-5 flex gap-2">
-                <span className="py-3 text-emerald-400">unit2@operator:~$</span>
-                <input
-                  autoFocus
-                  className="min-w-0 flex-1 border-b border-emerald-400 bg-transparent px-2 py-3 text-emerald-100 outline-none"
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && void run()}
-                  placeholder="help"
-                />
-                <Button
-                  onClick={() => void run()}
-                  className="bg-emerald-500 text-black hover:bg-emerald-300"
-                >
-                  RUN
-                </Button>
+              <div className="mt-5 space-y-3">
+                <div className="flex gap-2">
+                  <span className="py-3 text-emerald-400">unit2@operator:~$</span>
+                  <input
+                    autoFocus
+                    className="min-w-0 flex-1 border-b border-emerald-400 bg-transparent px-2 py-3 text-emerald-100 outline-none"
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={(event) => event.key === "Enter" && void run()}
+                    placeholder="help"
+                  />
+                  <Button
+                    onClick={() => void run()}
+                    className="bg-emerald-500 text-black hover:bg-emerald-300"
+                  >
+                    RUN
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2 pl-0 sm:pl-36">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void fullscreen().then(() => navigate("/reactor"))}
+                    className="h-7 border-emerald-600 bg-emerald-950/30 px-2 text-[10px] tracking-wide text-emerald-200 hover:bg-emerald-500 hover:text-black"
+                  >
+                    GO TO REACTOR
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void fullscreen().then(() => navigate("/mainframe"))}
+                    className="h-7 border-cyan-700 bg-cyan-950/20 px-2 text-[10px] tracking-wide text-cyan-200 hover:bg-cyan-400 hover:text-black"
+                  >
+                    GO TO CONSOLE
+                  </Button>
+                </div>
               </div>
             )}
           </section>
