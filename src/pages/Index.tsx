@@ -1,119 +1,14 @@
-"use client";
-
-import { MadeWithDyad } from "@/components/made-with-dyad";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Zap, Shield, Settings, ArrowRight, Terminal as TerminalIcon } from "lucide-react";
+import { GREETING_HELP, GREETING_TERMINAL_RESPONSES } from "@/lib/terminalCommands";
 
 const Index = () => {
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4">
-      {/* Background Grid Pattern */}
-      <div className="fixed inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.4%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')]"></div>
-      </div>
-
-      <div className="relative z-10 max-w-4xl mx-auto text-center">
-        {/* Header */}
-        <div className="mb-12">
-          <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            NUCLEAR REACTOR
-          </h1>
-          <h2 className="text-4xl font-bold mb-6 bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
-            CONTROL SYSTEM
-          </h2>
-          <p className="text-xl text-gray-300 mb-8">
-            Advanced Reactor Management Interface v2.0
-          </p>
-        </div>
-
-        {/* Main Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <Card className="bg-slate-800/50 border-cyan-500/30 hover:border-cyan-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <Zap className="text-cyan-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-cyan-400">Real-time Monitoring</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Monitor power output, temperature, pressure, and fuel levels in real-time with advanced sensors.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800/50 border-purple-500/30 hover:border-purple-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <Shield className="text-purple-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-purple-400">Safety Systems</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Advanced safety protocols with emergency shutdown capabilities and containment monitoring.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800/50 border-green-500/30 hover:border-green-400 transition-all duration-300 hover:scale-105">
-            <CardHeader>
-              <Settings className="text-green-400 mx-auto mb-2" size={48} />
-              <CardTitle className="text-green-400">Full Control</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-300">
-                Complete control over reactor operations, coolant systems, and power grid synchronization.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* CTA Buttons */}
-        <div className="mb-12 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white px-8 py-4 text-lg font-bold border-2 border-cyan-400/50 hover:border-cyan-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/reactor'}
-          >
-            ENTER REACTOR CONTROL SYSTEM
-            <ArrowRight className="ml-2" size={20} />
-          </Button>
-          <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-8 py-4 text-lg font-bold border-2 border-yellow-400/50 hover:border-yellow-300 transition-all duration-300 hover:scale-105"
-            onClick={() => window.location.href = '/mainframe'}
-          >
-            ENTER HACKER MAINFRAME
-            <TerminalIcon className="ml-2" size={20} />
-          </Button>
-        </div>
-
-        {/* System Status */}
-        <Card className="bg-slate-800/50 border-cyan-500/30 mb-8">
-          <CardHeader>
-            <CardTitle className="text-cyan-400">System Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-green-400 font-bold text-lg">OPERATIONAL</div>
-                <div className="text-sm text-gray-400">Reactor Core</div>
-              </div>
-              <div>
-                <div className="text-green-400 font-bold text-lg">NOMINAL</div>
-                <div className="text-sm text-gray-400">Coolant System</div>
-              </div>
-              <div>
-                <div className="text-green-400 font-bold text-lg">SYNCHRONIZED</div>
-                <div className="text-sm text-gray-400">Power Grid</div>
-              </div>
-              <div>
-                <div className="text-green-400 font-bold text-lg">SECURE</div>
-                <div className="text-sm text-gray-400">Containment</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+  const navigate = useNavigate(); const [input, setInput] = useState(""); const [booting, setBooting] = useState(true); const [lines, setLines] = useState<string[]>([]); const [history, setHistory] = useState<string[]>(["RBWR UNIT 02 // OPERATOR ACCESS TERMINAL", "Type HELP for available commands."]); const introStarted = useRef(false);
+  useEffect(() => { const boot = ["[ OK ] Loading RBWR Unit 02 kernel", "[ OK ] Verifying operator terminal memory", "[ OK ] Initializing reactor physics model", "[ OK ] Loading 6 × 6 control-rod programme", "[ OK ] Starting MCC process controller", "[ OK ] Calibrating reactor, Hotwell and DA level instruments", "[ OK ] Establishing condensate and feedwater flow paths", "[ OK ] Arming RPS channels A / B", "[ OK ] Checking ECCS train availability", "[ OK ] Polling condenser circulation and vacuum controls", "[ OK ] Linking turbine and grid controls", "[ OK ] Loading annunciator matrix", "[ OK ] Restoring public simulator workspace","", "", "", "[ OK ] Running final interface diagnostics", "RBWR operator terminal ready."]; let index = 0; const timer = window.setInterval(() => { setLines(current => [...current, boot[index]]); index += 1; if (index === boot.length) { window.clearInterval(timer); window.setTimeout(() => setBooting(false), 700); } }, 500); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { const start = new Audio("/sounds/booting-start.mp3"); const loop = new Audio("/sounds/booting-loop.mp3"); start.volume = .34; loop.volume = .28; loop.loop = true; const begin = () => { if (introStarted.current) return; introStarted.current = true; void start.play().catch(() => { introStarted.current = false; }); }; const beginLoop = () => { void loop.play().catch(() => {}); }; const unlock = () => begin(); start.addEventListener("ended", beginLoop); void start.play().then(() => { introStarted.current = true; }).catch(() => { window.addEventListener("pointerdown", unlock, { once: true }); window.addEventListener("keydown", unlock, { once: true }); }); return () => { start.removeEventListener("ended", beginLoop); window.removeEventListener("pointerdown", unlock); window.removeEventListener("keydown", unlock); start.pause(); start.currentTime = 0; loop.pause(); loop.currentTime = 0; }; }, []);
+  const fullscreen = async () => { try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); } catch { return; } };
+  const run = async () => { const command = input.trim(); if (!command) return; const [verb, ...args] = command.split(/\s+/); const lower = verb.toLowerCase(); let response = "Unknown command. Type HELP."; if (GREETING_TERMINAL_RESPONSES[lower]) response = GREETING_TERMINAL_RESPONSES[lower]; else if (lower === "help") response = GREETING_HELP; else if (lower === "login") { const operator = args.join(" ").trim() || "GUEST"; localStorage.setItem("rbwr-operator", operator.toUpperCase()); response = `ACCESS GRANTED — OPERATOR ${operator.toUpperCase()}`; } else if (lower === "logout") { localStorage.removeItem("rbwr-operator"); response = "SESSION CLOSED."; } else if (lower === "status") response = `Operator: ${localStorage.getItem("rbwr-operator") || "GUEST"}\nSystem bus: ONLINE\nRPS: ARMED\nECCS: AVAILABLE`; else if (lower === "reactor") { await fullscreen(); navigate("/reactor"); return; } else if (lower === "console") { await fullscreen(); navigate("/mainframe"); return; } else if (lower === "google") { const url = args.join(" "); if (/^https?:\/\//i.test(url)) { window.open(url, "_blank", "noopener,noreferrer"); response = `Opening ${url}`; } else response = "URL rejected. Use a full http:// or https:// address."; } setHistory(current => [...current.slice(-18), `> ${command}`, response]); setInput(""); };
+  return <main className="min-h-screen overflow-hidden bg-[#050b0d] p-4 font-mono text-emerald-300 selection:bg-emerald-400 selection:text-black sm:p-8"><div className="pointer-events-none fixed inset-0 opacity-20 [background-image:linear-gradient(rgba(52,211,153,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(52,211,153,.12)_1px,transparent_1px)] [background-size:32px_32px]"/><section className="relative mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl flex-col border border-emerald-500/50 bg-black/75 p-5 shadow-[0_0_60px_rgba(16,185,129,.18)] sm:p-8"><header className="mb-8 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-500/40 pb-4"><div><p className="text-xs tracking-[.28em] text-emerald-500">RBWR // UNIT 02</p><h1 className="text-xl font-black text-emerald-200 sm:text-3xl">PLANT OPERATIONS TERMINAL</h1></div><span className="border border-emerald-500/60 px-3 py-1 text-xs">{booting ? "BOOTING" : "SYSTEM ONLINE"}</span></header><div className="grid flex-1 gap-8 lg:grid-cols-[1.5fr_1fr]"><section className="flex flex-col justify-center"><pre className="min-h-72 whitespace-pre-wrap border-l-2 border-emerald-400 bg-emerald-950/20 p-5 text-sm leading-7 text-emerald-200 sm:text-base">{booting ? lines.join("\n") : history.join("\n")}{booting && "\n_"}</pre>{!booting && <div className="mt-5 flex gap-2"><span className="py-3 text-emerald-400">u2@operator:~$</span><input autoFocus className="min-w-0 flex-1 border-b border-emerald-400 bg-transparent px-2 py-3 text-emerald-100 outline-none" value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === "Enter" && void run()} placeholder="help"/><Button onClick={() => void run()} className="bg-emerald-500 text-black hover:bg-emerald-300">RUN</Button></div>}</section><aside className="space-y-4"><section className="border border-emerald-700/60 bg-emerald-950/15 p-5 text-sm"><div className="mb-4 flex items-center justify-between"><h2 className="font-bold text-emerald-100">LIVE SYSTEM SUMMARY</h2><span className="border border-emerald-500 px-2 py-1 text-xs text-emerald-200">V2</span></div><dl className="space-y-3"><div className="flex justify-between"><dt>Reactor core</dt><dd>STANDBY</dd></div><div className="flex justify-between"><dt>RPS monitoring</dt><dd>ARMED</dd></div><div className="flex justify-between"><dt>ECCS</dt><dd>AVAILABLE</dd></div><div className="flex justify-between"><dt>Console access</dt><dd>PUBLIC SANDBOX</dd></div></dl><a className="mt-5 inline-block text-xs text-emerald-400 underline underline-offset-4 hover:text-emerald-200" href="https://github.com/PB-Kronos/reactorapp/activity" target="_blank" rel="noreferrer">View changelog / GitHub activity ↗</a></section><section className="border border-cyan-700/50 bg-cyan-950/15 p-5 text-xs text-cyan-100"><h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2</h2><ul className="space-y-2"><li>• Terminals: reworked greeting commands and the live /mainframe simulator terminal.</li><li>• Turbine: preparations, run-up conditions, fire protection, and auxiliaries.</li><li>• Annunciators: more sounds, local acknowledge/silence, and per-page windows.</li><li>• APRM now gradually moves toward its intended target.</li><li>• ECCS: ADS, six relief valves, LCPI/RHR selector pumps, and RCIC.</li></ul></section><p className="border-t border-emerald-900 pt-3 text-xs text-emerald-600">Use HELP or VERSION in the terminal. Fullscreen is requested when entering a workspace.</p></aside></div></section></main>;
 };
 export default Index;

@@ -146,3 +146,21 @@
 .annunciator-fast-flash { animation: annunciator-fast-flash 0.45s steps(1, end) infinite; }
 .annunciator-slow-flash { animation: annunciator-slow-flash 1.25s steps(1, end) infinite; }
 .annunciator-steady { opacity: 1; }
+
+/* The advanced console is now the dedicated /mainframe workspace. */
+button[aria-expanded],
+aside[aria-label="Simulator console"] { display: none !important; }
+
+/* The annunciator hardware always monitors every sensor, but each panel shows
+   the windows assigned to its local operating area. */
+body[data-rbwr-panel] .rbwr-annunciator { display: none; }
+body[data-rbwr-panel="status"] .rbwr-annunciator[data-annunciator-page="status"],
+body[data-rbwr-panel="startup-shutdown"] .rbwr-annunciator[data-annunciator-page="startup-shutdown"],
+body[data-rbwr-panel="control-rods"] .rbwr-annunciator[data-annunciator-page="control-rods"],
+body[data-rbwr-panel="rps"] .rbwr-annunciator[data-annunciator-page="rps"],
+body[data-rbwr-panel="condenser"] .rbwr-annunciator[data-annunciator-page="condenser"],
+body[data-rbwr-panel="safety"] .rbwr-annunciator[data-annunciator-page="safety"],
+body[data-rbwr-panel="mcc"] .rbwr-annunciator[data-annunciator-page="mcc"],
+body[data-rbwr-panel="power-coolant"] .rbwr-annunciator[data-annunciator-page="power-coolant"],
+body[data-rbwr-panel="power-grid"] .rbwr-annunciator[data-annunciator-page="power-grid"] { display: block; }
+body[data-rbwr-panel="electrical"] .rbwr-annunciator[data-annunciator-page="electrical"] { display: block; }
