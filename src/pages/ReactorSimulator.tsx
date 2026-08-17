@@ -9,187 +9,1277 @@ import { ReactorStatusPanel } from "@/components/ReactorStatusPanel";
 import { ControlRodsPanel } from "@/components/ControlRodsPanel";
 import { StartupShutdownPanel } from "@/components/StartupShutdownPanel";
 import { PowerGridPanel } from "@/components/PowerGridPanel";
-import { PlantSystemsPanel, ProcessPanel } from "@/components/PlantSystemsPanel";
+import {
+  PlantSystemsPanel,
+  ProcessPanel,
+} from "@/components/PlantSystemsPanel";
 import { ElectricalPanel } from "@/components/ElectricalPanel";
-import { SafetySystemsPanel, WaterManagementPanel } from "@/components/WaterSafetyPanel";
+import {
+  SafetySystemsPanel,
+  WaterManagementPanel,
+} from "@/components/WaterSafetyPanel";
 import { RpsPanel } from "@/components/RpsPanel";
-import { SimulatorConsolePanel, type PhysicsTuning } from "@/components/SimulatorConsolePanel";
+import {
+  SimulatorConsolePanel,
+  type PhysicsTuning,
+} from "@/components/SimulatorConsolePanel";
 import { TurbineAuxPanel } from "@/components/TurbineAuxPanel";
-import { AnnunciatorPanel, type Annunciator } from "@/components/AnnunciatorPanel";
+import {
+  AnnunciatorPanel,
+  type Annunciator,
+} from "@/components/AnnunciatorPanel";
 import { useReactorPhysics } from "@/hooks/useReactorPhysics";
 import { calculateTurbineData } from "@/hooks/useTurbineControl";
-import { AutoSpeed, ControlRod, createInitialRods, cycleLimit, getAprm, isCycleComplete, MANUAL_ROD_RATES, nextWithdrawableRod, ReactorMode, RodSelectionScope, WITHDRAWAL_RATES } from "@/lib/rodProgram";
+import {
+  AutoSpeed,
+  ControlRod,
+  createInitialRods,
+  cycleLimit,
+  getAprm,
+  isCycleComplete,
+  MANUAL_ROD_RATES,
+  nextWithdrawableRod,
+  ReactorMode,
+  RodSelectionScope,
+  WITHDRAWAL_RATES,
+} from "@/lib/rodProgram";
 import { getU2ThermalOutput } from "@/lib/thermalOutput";
 
-type Panel = "status" | "control-rods" | "startup-shutdown" | "power-grid" | "electrical" | "water" | "safety" | ProcessPanel;
-const panels: Panel[] = ["status", "startup-shutdown", "control-rods", "mcc", "safety", "condenser", "power-grid", "electrical", "rps"];
-const names: Record<Panel, string> = { status: "Overview", "startup-shutdown": "Reactor", "control-rods": "Control rods", mcc: "MCC / Water", water: "Water", safety: "ECCS", feedwater: "DA / feedwater", condenser: "Condenser", "power-grid": "Turbine", electrical: "Electrical", rps: "RPS" };
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+type Panel =
+  | "status"
+  | "control-rods"
+  | "startup-shutdown"
+  | "power-grid"
+  | "electrical"
+  | "water"
+  | "safety"
+  | ProcessPanel;
+const panels: Panel[] = [
+  "status",
+  "startup-shutdown",
+  "control-rods",
+  "mcc",
+  "safety",
+  "condenser",
+  "power-grid",
+  "electrical",
+  "rps",
+];
+const names: Record<Panel, string> = {
+  status: "Overview",
+  "startup-shutdown": "Reactor",
+  "control-rods": "Control rods",
+  mcc: "MCC / Water",
+  water: "Water",
+  safety: "ECCS",
+  feedwater: "DA / feedwater",
+  condenser: "Condenser",
+  "power-grid": "Turbine",
+  electrical: "Electrical",
+  rps: "RPS",
+};
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 const STORAGE = "rbwr-u2-sim-v4";
 
 export default function ReactorSimulator() {
   const [active, setActive] = useState<Panel>("status");
   const [consoleOpen, setConsoleOpen] = useState(false);
-  useEffect(() => { document.body.dataset.rbwrPanel = active; return () => { delete document.body.dataset.rbwrPanel; }; }, [active]);
-  const [temperature, setTemperature] = useState(25); const [pressure, setPressure] = useState(101); const [fuelLevel, setFuelLevel] = useState(100); const [isRunning, setIsRunning] = useState(false);
-  const [gridSync, setGridSync] = useState(0); const [turbineSpeed, setTurbineSpeed] = useState(0); const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0); const [valveValue, setValveValue] = useState(0); const [valveDirection, setValveDirection] = useState(0); const [mainSteamInletOpen, setMainSteamInletOpen] = useState(false); const [bypassValve, setBypassValve] = useState(100); const [bypassDirection, setBypassDirection] = useState(0); const [reliefOpen, setReliefOpen] = useState(false); const [reliefValveB, setReliefValveB] = useState(false); const [exciterOn, setExciterOn] = useState(false); const [pressureRate, setPressureRate] = useState(0); const [isLocked, setIsLocked] = useState(false);
-  const [pump1Online, setPump1Online] = useState(false); const [pump2Online, setPump2Online] = useState(false); const [daIntakeOpen, setDaIntakeOpen] = useState(true); const [daOutputOpen, setDaOutputOpen] = useState(true); const [daIntakeValve, setDaIntakeValve] = useState(100); const [daOuttakeValve, setDaOuttakeValve] = useState(100); const [daIntakeDirection, setDaIntakeDirection] = useState(0); const [daOuttakeDirection, setDaOuttakeDirection] = useState(0); const [daTemperature, setDaTemperature] = useState(110); const [daPressure, setDaPressure] = useState(1.5); const [recircPumpA, setRecircPumpA] = useState(false); const [recircPumpB, setRecircPumpB] = useState(false); const [recircSpeedA, setRecircSpeedA] = useState(0); const [recircSpeedB, setRecircSpeedB] = useState(0);
+  const [sessionRestored, setSessionRestored] = useState(false);
+  useEffect(() => {
+    document.body.dataset.rbwrPanel = active;
+    return () => {
+      delete document.body.dataset.rbwrPanel;
+    };
+  }, [active]);
+  const [temperature, setTemperature] = useState(25);
+  const [pressure, setPressure] = useState(101);
+  const [fuelLevel, setFuelLevel] = useState(100);
+  const [isRunning, setIsRunning] = useState(false);
+  const [gridSync, setGridSync] = useState(0);
+  const [turbineSpeed, setTurbineSpeed] = useState(0);
+  const [targetTurbineSpeed, setTargetTurbineSpeed] = useState(0);
+  const [valveValue, setValveValue] = useState(0);
+  const [valveDirection, setValveDirection] = useState(0);
+  const [mainSteamInletOpen, setMainSteamInletOpen] = useState(false);
+  const [bypassValve, setBypassValve] = useState(100);
+  const [bypassDirection, setBypassDirection] = useState(0);
+  const [reliefOpen, setReliefOpen] = useState(false);
+  const [reliefValveB, setReliefValveB] = useState(false);
+  const [exciterOn, setExciterOn] = useState(false);
+  const [pressureRate, setPressureRate] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [pump1Online, setPump1Online] = useState(false);
+  const [pump2Online, setPump2Online] = useState(false);
+  const [daIntakeOpen, setDaIntakeOpen] = useState(true);
+  const [daOutputOpen, setDaOutputOpen] = useState(true);
+  const [daIntakeValve, setDaIntakeValve] = useState(100);
+  const [daOuttakeValve, setDaOuttakeValve] = useState(100);
+  const [daIntakeDirection, setDaIntakeDirection] = useState(0);
+  const [daOuttakeDirection, setDaOuttakeDirection] = useState(0);
+  const [daTemperature, setDaTemperature] = useState(110);
+  const [daPressure, setDaPressure] = useState(1.5);
+  const [recircPumpA, setRecircPumpA] = useState(false);
+  const [recircPumpB, setRecircPumpB] = useState(false);
+  const [recircSpeedA, setRecircSpeedA] = useState(0);
+  const [recircSpeedB, setRecircSpeedB] = useState(0);
   const [daFastCloseHeld, setDaFastCloseHeld] = useState(false);
-  const [rods, setRods] = useState<ControlRod[]>(createInitialRods); const [selectedRodId, setSelectedRodId] = useState("A1"); const [mode, setMode] = useState<ReactorMode>("SD"); const [iprCycle, setIprCycle] = useState(1); const [rodDirection, setRodDirection] = useState(0); const [selectionScope, setSelectionScope] = useState<RodSelectionScope>("rod"); const [reactorPeriod, setReactorPeriod] = useState(999); const [periodRecirculationAprm, setPeriodRecirculationAprm] = useState(0);
-  const [autoEnabled, setAutoEnabled] = useState(false); const [autoTarget, setAutoTarget] = useState(1); const [autoSpeed, setAutoSpeed] = useState<AutoSpeed>("medium"); const [autoMode, setAutoMode] = useState<"rods" | "recirculation">("rods"); const [autoMessage, setAutoMessage] = useState("Auto APRM is standing by.");
+  const [rods, setRods] = useState<ControlRod[]>(createInitialRods);
+  const [selectedRodId, setSelectedRodId] = useState("A1");
+  const [mode, setMode] = useState<ReactorMode>("SD");
+  const [iprCycle, setIprCycle] = useState(1);
+  const [rodDirection, setRodDirection] = useState(0);
+  const [selectionScope, setSelectionScope] =
+    useState<RodSelectionScope>("rod");
+  const [reactorPeriod, setReactorPeriod] = useState(999);
+  const [periodRecirculationAprm, setPeriodRecirculationAprm] = useState(0);
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [autoTarget, setAutoTarget] = useState(1);
+  const [autoSpeed, setAutoSpeed] = useState<AutoSpeed>("medium");
+  const [autoMode, setAutoMode] = useState<"rods" | "recirculation">("rods");
+  const [autoMessage, setAutoMessage] = useState("Auto APRM is standing by.");
   const [recirculationAprm, setRecirculationAprm] = useState(0);
-  const [physicsTuning, setPhysicsTuning] = useState<PhysicsTuning>({ thermalResponse: 1, steamProduction: 1, steamRemoval: 1, tripTemperature: 1100 });
-  const [reactorLevel, setReactorLevel] = useState(0); const [hotwellLevel, setHotwellLevel] = useState(0); const [deaeratorLevel, setDeaeratorLevel] = useState(0); const [condensateFlow, setCondensateFlow] = useState(0); const [condensatePumpBFlow, setCondensatePumpBFlow] = useState(0); const [feedwaterFlow, setFeedwaterFlow] = useState(0); const [feedwaterPumpBFlow, setFeedwaterPumpBFlow] = useState(0);
-  const [condenserVacuum, setCondenserVacuum] = useState(1); const [condenserPumpOn, setCondenserPumpOn] = useState(false); const [condenserPumpB, setCondenserPumpB] = useState(false); const [condenserValve, setCondenserValve] = useState(0); const [condenserValveDirection, setCondenserValveDirection] = useState(0); const [carAOn, setCarAOn] = useState(false); const [carBOn, setCarBOn] = useState(false); const [sjaeOn, setSjaeOn] = useState(false); const [mccLevel, setMccLevel] = useState(100); const [mccPumpOn, setMccPumpOn] = useState(false); const [mccAutoOn, setMccAutoOn] = useState(false); const [scramPressed, setScramPressed] = useState(false); const [rpsTrips, setRpsTrips] = useState<Record<string, boolean>>({ "REACTOR LEVEL": false, "MANUAL TRIP": false, "LOOP TRIP": false, "CORE TEMPERATURE": false, "RPV PRESSURE": false, "LOW REACTOR PERIOD": false, "TURBINE VACUUM": false, "TURBINE ROLLDOWN": false }); const [rpsTripInhibit, setRpsTripInhibit] = useState(() => localStorage.getItem("rbwr-rps-trip-inhibit") === "true"); const [event, setEvent] = useState("Cold shutdown — select SRM to begin startup.");
-  const [condenserCirculationPumpOn, setCondenserCirculationPumpOn] = useState(false);
-  const [startupBusA, setStartupBusA] = useState(false); const [turbineBusB, setTurbineBusB] = useState(false); const [safetyBusS, setSafetyBusS] = useState(false); const [rolldownProtection, setRolldownProtection] = useState(true);
-  const [cstLevel, setCstLevel] = useState(8); const [cstMakeup, setCstMakeup] = useState(false); const [cstDrain, setCstDrain] = useState(false); const [hotwellMakeup, setHotwellMakeup] = useState(false); const [hotwellDrain, setHotwellDrain] = useState(false); const [rcicValve, setRcicValve] = useState(false); const [rcicFlow, setRcicFlow] = useState(0); const [eccsPumpA, setEccsPumpA] = useState(false); const [eccsPumpB, setEccsPumpB] = useState(false); const [eccsPumpAMode, setEccsPumpAMode] = useState<"RHR" | "LPCI">("RHR"); const [eccsPumpBMode, setEccsPumpBMode] = useState<"RHR" | "LPCI">("RHR"); const [srvOpen, setSrvOpen] = useState<boolean[]>(() => Array(6).fill(false)); const [adsActive, setAdsActive] = useState(false);
-  const [lubePumpSource, setLubePumpSource] = useState<"aux" | "emergency" | "off">("off"); const [hydraulicPumpSource, setHydraulicPumpSource] = useState<"aux" | "emergency" | "off">("off"); const [coldOilValve, setColdOilValve] = useState(0); const [warmOilValve, setWarmOilValve] = useState(0); const [turningGear, setTurningGear] = useState(false); const [preheatValve, setPreheatValve] = useState(false); const [oilTemperature, setOilTemperature] = useState(25); const [turbineMetalTemperature, setTurbineMetalTemperature] = useState(25);
-  const [turbineSmoke, setTurbineSmoke] = useState<"idle" | "countdown" | "aborted" | "released">("idle"); const [agentSeconds, setAgentSeconds] = useState(10);
+  const [physicsTuning, setPhysicsTuning] = useState<PhysicsTuning>({
+    thermalResponse: 1,
+    steamProduction: 1,
+    steamRemoval: 1,
+    tripTemperature: 1100,
+  });
+  const [reactorLevel, setReactorLevel] = useState(0);
+  const [hotwellLevel, setHotwellLevel] = useState(0);
+  const [deaeratorLevel, setDeaeratorLevel] = useState(0);
+  const [condensateFlow, setCondensateFlow] = useState(0);
+  const [condensatePumpBFlow, setCondensatePumpBFlow] = useState(0);
+  const [feedwaterFlow, setFeedwaterFlow] = useState(0);
+  const [feedwaterPumpBFlow, setFeedwaterPumpBFlow] = useState(0);
+  const [condenserVacuum, setCondenserVacuum] = useState(1);
+  const [condenserPumpOn, setCondenserPumpOn] = useState(false);
+  const [condenserPumpB, setCondenserPumpB] = useState(false);
+  const [condenserValve, setCondenserValve] = useState(0);
+  const [condenserValveDirection, setCondenserValveDirection] = useState(0);
+  const [carAOn, setCarAOn] = useState(false);
+  const [carBOn, setCarBOn] = useState(false);
+  const [sjaeOn, setSjaeOn] = useState(false);
+  const [mccLevel, setMccLevel] = useState(100);
+  const [mccPumpOn, setMccPumpOn] = useState(false);
+  const [mccAutoOn, setMccAutoOn] = useState(false);
+  const [scramPressed, setScramPressed] = useState(false);
+  const [rpsTrips, setRpsTrips] = useState<Record<string, boolean>>({
+    "REACTOR LEVEL": false,
+    "MANUAL TRIP": false,
+    "LOOP TRIP": false,
+    "CORE TEMPERATURE": false,
+    "RPV PRESSURE": false,
+    "LOW REACTOR PERIOD": false,
+    "TURBINE VACUUM": false,
+    "TURBINE ROLLDOWN": false,
+  });
+  const [rpsTripInhibit, setRpsTripInhibit] = useState(
+    () => localStorage.getItem("rbwr-rps-trip-inhibit") === "true",
+  );
+  const [event, setEvent] = useState(
+    "Cold shutdown — select SRM to begin startup.",
+  );
+  const [condenserCirculationPumpOn, setCondenserCirculationPumpOn] =
+    useState(false);
+  const [startupBusA, setStartupBusA] = useState(false);
+  const [turbineBusB, setTurbineBusB] = useState(false);
+  const [safetyBusS, setSafetyBusS] = useState(false);
+  const [rolldownProtection, setRolldownProtection] = useState(true);
+  const [cstLevel, setCstLevel] = useState(8);
+  const [cstMakeup, setCstMakeup] = useState(false);
+  const [cstDrain, setCstDrain] = useState(false);
+  const [hotwellMakeup, setHotwellMakeup] = useState(false);
+  const [hotwellDrain, setHotwellDrain] = useState(false);
+  const [rcicValve, setRcicValve] = useState(false);
+  const [rcicFlow, setRcicFlow] = useState(0);
+  const [eccsPumpA, setEccsPumpA] = useState(false);
+  const [eccsPumpB, setEccsPumpB] = useState(false);
+  const [eccsPumpAMode, setEccsPumpAMode] = useState<"RHR" | "LPCI">("RHR");
+  const [eccsPumpBMode, setEccsPumpBMode] = useState<"RHR" | "LPCI">("RHR");
+  const [srvOpen, setSrvOpen] = useState<boolean[]>(() => Array(6).fill(false));
+  const [adsActive, setAdsActive] = useState(false);
+  const [lubePumpSource, setLubePumpSource] = useState<
+    "aux" | "emergency" | "off"
+  >("off");
+  const [hydraulicPumpSource, setHydraulicPumpSource] = useState<
+    "aux" | "emergency" | "off"
+  >("off");
+  const [coldOilValve, setColdOilValve] = useState(0);
+  const [warmOilValve, setWarmOilValve] = useState(0);
+  const [turningGear, setTurningGear] = useState(false);
+  const [preheatValve, setPreheatValve] = useState(false);
+  const [oilTemperature, setOilTemperature] = useState(25);
+  const [turbineMetalTemperature, setTurbineMetalTemperature] = useState(25);
+  const [turbineSmoke, setTurbineSmoke] = useState<
+    "idle" | "countdown" | "aborted" | "released"
+  >("idle");
+  const [agentSeconds, setAgentSeconds] = useState(10);
   const previousSync = useRef(false);
-  const daFastCloseAudio = useRef<{ context: AudioContext | null; source: AudioBufferSourceNode | null; buffer: AudioBuffer | null; wasHeld: boolean }>({ context: null, source: null, buffer: null, wasHeld: false });
+  const daFastCloseAudio = useRef<{
+    context: AudioContext | null;
+    source: AudioBufferSourceNode | null;
+    buffer: AudioBuffer | null;
+    wasHeld: boolean;
+  }>({ context: null, source: null, buffer: null, wasHeld: false });
   const mccAutoManualAdjusting = useRef(false);
   const tripAlarm = useRef<HTMLAudioElement | null>(null);
   const transferStateLoaded = useRef(false);
-  const pressureSample = useRef({ value: 101, time: performance.now() }); const condenserTargetRef = useRef(1); const condenserPhaseRef = useRef(0);
+  const pressureSample = useRef({ value: 101, time: performance.now() });
+  const condenserTargetRef = useRef(1);
+  const condenserPhaseRef = useRef(0);
   const aprmSample = useRef({ value: 0, time: performance.now() });
-  const mccProcessRef = useRef({ mccPumpOn: false, steamFlow: 0, hotwellOutflowKgS: 0, daOutflowKgS: 0, isRunning: false, daIntakeOpen: true, daOutputOpen: true });
+  const mccProcessRef = useRef({
+    mccPumpOn: false,
+    steamFlow: 0,
+    hotwellOutflowKgS: 0,
+    daOutflowKgS: 0,
+    isRunning: false,
+    daIntakeOpen: true,
+    daOutputOpen: true,
+  });
 
-  useEffect(() => { const begin = () => { mccAutoManualAdjusting.current = true; }; const end = () => { mccAutoManualAdjusting.current = false; }; window.addEventListener("rbwr-slider-adjust-start", begin); window.addEventListener("rbwr-slider-adjust-end", end); return () => { window.removeEventListener("rbwr-slider-adjust-start", begin); window.removeEventListener("rbwr-slider-adjust-end", end); }; }, []);
+  useEffect(() => {
+    const begin = () => {
+      mccAutoManualAdjusting.current = true;
+    };
+    const end = () => {
+      mccAutoManualAdjusting.current = false;
+    };
+    window.addEventListener("rbwr-slider-adjust-start", begin);
+    window.addEventListener("rbwr-slider-adjust-end", end);
+    return () => {
+      window.removeEventListener("rbwr-slider-adjust-start", begin);
+      window.removeEventListener("rbwr-slider-adjust-end", end);
+    };
+  }, []);
 
-  const averageInsertion = useMemo(() => rods.reduce((sum, rod) => sum + rod.position, 0) / rods.length, [rods]);
+  const averageInsertion = useMemo(
+    () => rods.reduce((sum, rod) => sum + rod.position, 0) / rods.length,
+    [rods],
+  );
   const rodAprm = useMemo(() => getAprm(rods), [rods]);
-  const recirculationTargetAprm = (recircPumpA ? recircSpeedA * .375 : 0) + (recircPumpB ? recircSpeedB * .375 : 0);
+  const recirculationTargetAprm =
+    (recircPumpA ? recircSpeedA * 0.375 : 0) +
+    (recircPumpB ? recircSpeedB * 0.375 : 0);
   const aprm = clamp(rodAprm + recirculationAprm, 0, 115);
   const periodAprm = rodAprm + periodRecirculationAprm;
   const srmCount = 10 + aprm * 50000;
-  const nextRod = useMemo(() => nextWithdrawableRod(rods, mode, iprCycle), [rods, mode, iprCycle]);
+  const nextRod = useMemo(
+    () => nextWithdrawableRod(rods, mode, iprCycle),
+    [rods, mode, iprCycle],
+  );
   const thermalOutput = useMemo(() => getU2ThermalOutput(aprm), [aprm]);
-  const steamPressureFactor = clamp(pressure / 7100, .25, 1.5);
-  const turbineSteamFlow = isRunning && mainSteamInletOpen ? thermalOutput.steamKgS * (valveValue / 100) * steamPressureFactor : 0;
-  const bypassSteamFlow = isRunning ? thermalOutput.steamKgS * (bypassValve / 100) * steamPressureFactor : 0;
+  const steamPressureFactor = clamp(pressure / 7100, 0.25, 1.5);
+  const turbineSteamFlow =
+    isRunning && mainSteamInletOpen
+      ? thermalOutput.steamKgS * (valveValue / 100) * steamPressureFactor
+      : 0;
+  const bypassSteamFlow = isRunning
+    ? thermalOutput.steamKgS * (bypassValve / 100) * steamPressureFactor
+    : 0;
   const steamFlow = turbineSteamFlow + bypassSteamFlow;
-  const condenserEfficiency = clamp((.28 - condenserVacuum) / .23, 0, 1);
+  const condenserEfficiency = clamp((0.28 - condenserVacuum) / 0.23, 0, 1);
   // Turbine work follows admitted steam mass flow. Pressure raises flow through
   // the valve; it is not an independent valve-position multiplier.
-  const turbineSteamQuality = clamp(pressure / 7100, .35, 1.12);
-  const turbineOutputMW = isRunning && isLocked && exciterOn && turbineSteamFlow > 1
-    ? turbineSteamFlow * .742 * turbineSteamQuality * condenserEfficiency
-    : 0;
-  const hotwellOutflowKgS = (condenserPumpOn ? condensateFlow * 10 : 0) + (condenserPumpB && turbineBusB && isLocked ? condensatePumpBFlow * 10 : 0);
-  const daOutflowKgS = (pump1Online ? feedwaterFlow * 10 : 0) + (pump2Online && turbineBusB && isLocked ? feedwaterPumpBFlow * 10 : 0);
-  mccProcessRef.current = { mccPumpOn, steamFlow, hotwellOutflowKgS, daOutflowKgS, isRunning, daIntakeOpen, daOutputOpen };
+  const turbineSteamQuality = clamp(pressure / 7100, 0.35, 1.12);
+  const turbineOutputMW =
+    isRunning && isLocked && exciterOn && turbineSteamFlow > 1
+      ? turbineSteamFlow * 0.742 * turbineSteamQuality * condenserEfficiency
+      : 0;
+  const hotwellOutflowKgS =
+    (condenserPumpOn ? condensateFlow * 10 : 0) +
+    (condenserPumpB && turbineBusB && isLocked ? condensatePumpBFlow * 10 : 0);
+  const daOutflowKgS =
+    (pump1Online ? feedwaterFlow * 10 : 0) +
+    (pump2Online && turbineBusB && isLocked ? feedwaterPumpBFlow * 10 : 0);
+  mccProcessRef.current = {
+    mccPumpOn,
+    steamFlow,
+    hotwellOutflowKgS,
+    daOutflowKgS,
+    isRunning,
+    daIntakeOpen,
+    daOutputOpen,
+  };
   const annunciators: Annunciator[] = [
-    { id: "reactor-trip", label: "REACTOR TRIP / SCRAM", active: scramPressed, priority: "red", tone: "warble", pan: "center", page: "rps", sample: "/sounds/full-trip-rps.mp3" },
-    { id: "cond-vac-low", label: "COND PRESS HIGH", active: condenserVacuum > .07 && condenserVacuum <= .25, priority: "amber", tone: "low", pan: "left", page: "condenser", sample: "/sounds/condenser-lowhigh.mp3" },
-    { id: "cond-vac-high", label: "COND PRESS LOW", active: condenserVacuum < .04, priority: "amber", tone: "high", pan: "left", page: "condenser", sample: "/sounds/condenser-lowhigh.mp3" },
-    { id: "no-cond-vac", label: "NO COND VAC", active: isRunning && condenserVacuum > .25, priority: "red", tone: "warble", pan: "right", page: "power-grid", sample: "/sounds/no-condenser-turbine.mp3" },
-    { id: "cond-ineffective", label: "CONDENSATION INEFFECTIVE", active: isRunning && condenserCirculationPumpOn && sjaeOn && condenserVacuum > .25, priority: "red", tone: "pulse", pan: "left", page: "condenser" },
-    { id: "high-steam", label: "HIGH STEAM PRESSURE", active: pressure > 8800, priority: pressure > 9500 ? "red" : "amber", tone: "high", pan: "center", page: "power-grid", sample: "/sounds/rpv-srv.mp3" },
-    { id: "bypass-sync", label: "BYPASS OPEN / SYNC", active: isLocked && bypassValve > 5, priority: "amber", tone: "double", pan: "right" },
-    { id: "srv-open", label: "SRV OPEN", active: srvOpen.some(Boolean), priority: "amber", tone: "chime", pan: "center", page: "safety", sample: "/sounds/rpv-srv.mp3" },
-    { id: "ads", label: "ADS ACTUATED", active: adsActive, priority: "red", tone: "pulse", pan: "center", page: "safety", sample: "/sounds/ads.mp3" },
-    { id: "lpci", label: "LPCI INJECTING", active: safetyBusS && pressure < 3500 && ((eccsPumpA && eccsPumpAMode === "LPCI") || (eccsPumpB && eccsPumpBMode === "LPCI")), priority: "amber", tone: "chime", pan: "center", page: "safety", sample: "/sounds/lcpi.mp3" },
-    { id: "rcic", label: "RCIC INJECTING", active: safetyBusS && rcicValve && rcicFlow > 0, priority: "amber", tone: "chime", pan: "center", page: "safety", sample: "/sounds/rcic.mp3" },
-    { id: "rcic-alarm", label: "RCIC UNAVAILABLE", active: reactorLevel < -3.5 && (!safetyBusS || !rcicValve || rcicFlow <= 0), priority: "red", tone: "warble", pan: "center", page: "safety", sample: "/sounds/rcic-alarm.mp3" },
-    { id: "lpci-eccs-conflict", label: "LPCI / ECCS CONFLICT", active: pressure < 3500 && ((eccsPumpA && eccsPumpAMode !== "LPCI") || (eccsPumpB && eccsPumpBMode !== "LPCI")), priority: "amber", tone: "double", pan: "center", page: "safety", sample: "/sounds/lcpi-without-eccs-conflict.mp3" },
-    { id: "da-high-pressure", label: "DA HIGH PRESSURE", active: daPressure > 2, priority: "amber", tone: "high", pan: "left", page: "mcc", sample: "/sounds/da-high-pressure.mp3" },
-    { id: "reactor-high-level", label: "REACTOR LEVEL HIGH", active: reactorLevel > 4.5, priority: "amber", tone: "high", pan: "center", page: "mcc", sample: "/sounds/tower-level-high.mp3" },
-    { id: "fw-preheat", label: "FW PREHEAT NOT ON", active: isRunning && daIntakeValve > 70 && daTemperature < 108, priority: "amber", tone: "chime", pan: "left", page: "mcc", sample: "/sounds/fw-preheat.mp3" },
-    { id: "rps-latched", label: "RPS TRIP LATCHED", active: Object.values(rpsTrips).some(Boolean), priority: "red", tone: "warble", pan: "center", page: "status", sample: "/sounds/half-trip-rps.mp3" },
-    { id: "startup-inhibit", label: "STARTUP INHIBITED", active: !isRunning && Object.values(rpsTrips).some(Boolean), priority: "amber", tone: "low", pan: "center", page: "startup-shutdown" },
-    { id: "rod-withdraw-block", label: "ROD WITHDRAW BLOCK", active: isRunning && mode === "SD", priority: "amber", tone: "double", pan: "center", page: "control-rods" },
-    { id: "srm-block", label: "SRM BLOCK", active: mode === "SRM" && isCycleComplete(rods, "SRM", 1), priority: "amber", tone: "double", pan: "center", page: "control-rods" },
-    { id: "ipr-block", label: "IPR BLOCK", active: mode === "IPR" && isCycleComplete(rods, "IPR", iprCycle), priority: "amber", tone: "double", pan: "center", page: "control-rods" },
-    { id: "group-block", label: "GROUP BLOCK", active: mode !== "RUN" && mode !== "SD" && !nextRod, priority: "amber", tone: "double", pan: "center", page: "control-rods" },
-    { id: "mode-sd", label: "MODE IN SD", active: mode === "SD", priority: "blue", tone: "low", pan: "center", page: "control-rods" },
-    { id: "low-ipr", label: "LOW IPR", active: mode === "IPR" && iprCycle === 1, priority: "blue", tone: "low", pan: "center", page: "control-rods" },
-    { id: "high-ipr", label: "HIGH IPR", active: mode === "IPR" && iprCycle === 3, priority: "amber", tone: "high", pan: "center", page: "control-rods" },
-    { id: "low-reactor-period", label: "LOW REACTOR PERIOD", active: reactorPeriod < 30, priority: "red", tone: "high", pan: "center", page: "control-rods", sample: "/sounds/rps.mp3" },
-    { id: "recirc-a-cavitation", label: "RECIRC A CAVITATION", active: recircPumpA && recircSpeedA > 30 && aprm < 20, priority: "amber", tone: "low", pan: "left", page: "control-rods" },
-    { id: "recirc-b-cavitation", label: "RECIRC B CAVITATION", active: recircPumpB && recircSpeedB > 30 && aprm < 20, priority: "amber", tone: "low", pan: "right", page: "control-rods" },
-    { id: "recirc-imbalance", label: "RECIRC FLOW IMBALANCE", active: recircPumpA && recircPumpB && Math.abs(recircSpeedA - recircSpeedB) >= 10, priority: "amber", tone: "double", pan: "center", page: "control-rods" },
-    { id: "auto-aprm", label: "AUTO APRM ACTIVE", active: autoEnabled, priority: "blue", tone: "chime", pan: "center", page: "control-rods" },
-    { id: "auto-out-of-reach", label: "AUTO CONTROL OUT OF REACH", active: autoEnabled && autoMessage.includes("OUT OF REACH"), priority: "amber", tone: "double", pan: "center", page: "control-rods" },
-    { id: "bus-s-unavailable", label: "SAFETY BUS S LOST", active: isRunning && !safetyBusS, priority: "red", tone: "warble", pan: "right", page: "electrical" },
-    { id: "bus-a-unavailable", label: "STARTUP BUS A OPEN", active: isRunning && !startupBusA && !turbineBusB, priority: "amber", tone: "low", pan: "right", page: "electrical" },
-    { id: "mcc-pump-off", label: "MCC CIRCULATION OFF", active: isRunning && !mccPumpOn, priority: "amber", tone: "low", pan: "left", page: "mcc" },
-    { id: "da-low-level", label: "DA LEVEL LOW", active: deaeratorLevel < -3, priority: "amber", tone: "low", pan: "left", page: "mcc" },
-    { id: "mcc-reactor-level-low", label: "REACTOR LEVEL LOW", active: reactorLevel < -1.5, priority: "amber", tone: "low", pan: "left", page: "mcc" },
-    { id: "mcc-da-level-low", label: "DA LEVEL LOW", active: deaeratorLevel < -3, priority: "amber", tone: "low", pan: "right", page: "mcc" },
-    { id: "mcc-da-level-high", label: "DA LEVEL HIGH", active: deaeratorLevel > 3, priority: "amber", tone: "high", pan: "right", page: "mcc" },
-    { id: "hotwell-makeup", label: "HOTWELL MAKEUP ACTIVE", active: hotwellMakeup, priority: "blue", tone: "chime", pan: "left", page: "mcc", sample: "/sounds/hotwell-pumps-active.mp3" },
-    { id: "hotwell-drain", label: "HOTWELL DRAIN ACTIVE", active: hotwellDrain, priority: "blue", tone: "chime", pan: "left", page: "mcc", sample: "/sounds/hotwell-pumps-active.mp3" },
-    { id: "hotwell-level-low", label: "HOTWELL LEVEL LOW", active: hotwellLevel < -3, priority: "amber", tone: "low", pan: "left", page: "mcc" },
-    { id: "hotwell-level-high", label: "HOTWELL LEVEL HIGH", active: hotwellLevel > 3, priority: "amber", tone: "high", pan: "left", page: "mcc" },
-    { id: "feedwater-pump-demand", label: "FEEDWATER PUMP DEMAND", active: mccPumpOn && steamFlow > daOutflowKgS + 50 && !pump2Online, priority: "amber", tone: "double", pan: "right", page: "mcc" },
-    { id: "condensate-pump-demand", label: "CONDENSATE PUMP DEMAND", active: mccPumpOn && steamFlow > hotwellOutflowKgS + 50 && !condenserPumpB, priority: "amber", tone: "double", pan: "left", page: "mcc" },
-    { id: "cst-level-high", label: "CST LEVEL HIGH", active: cstLevel > 9, priority: "amber", tone: "high", pan: "left", page: "mcc" },
-    { id: "cst-level-low", label: "CST LEVEL LOW", active: cstLevel < 1, priority: "amber", tone: "low", pan: "left", page: "mcc" },
-    { id: "mcc-auto", label: "MCC AUTOCONTROL ACTIVE", active: mccAutoOn, priority: "blue", tone: "chime", pan: "center", page: "mcc" },
-    { id: "turbine-not-synced", label: "TURBINE NOT SYNCHRONIZED", active: isRunning && mainSteamInletOpen && valveValue > 15 && !isLocked, priority: "amber", tone: "double", pan: "right", page: "power-grid" },
-    { id: "turbine-vac", label: "TURBINE / NO COND VAC", active: isRunning && valveValue > 15 && condenserVacuum > .25, priority: "red", tone: "warble", pan: "right" },
+    {
+      id: "reactor-trip",
+      label: "REACTOR TRIP / SCRAM",
+      active: scramPressed,
+      priority: "red",
+      tone: "warble",
+      pan: "center",
+      page: "rps",
+      sample: "/sounds/full-trip-rps.mp3",
+    },
+    {
+      id: "cond-vac-low",
+      label: "COND PRESS HIGH",
+      active: condenserVacuum > 0.07 && condenserVacuum <= 0.25,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "condenser",
+      sample: "/sounds/condenser-lowhigh.mp3",
+    },
+    {
+      id: "cond-vac-high",
+      label: "COND PRESS LOW",
+      active: condenserVacuum < 0.04,
+      priority: "amber",
+      tone: "high",
+      pan: "left",
+      page: "condenser",
+      sample: "/sounds/condenser-lowhigh.mp3",
+    },
+    {
+      id: "no-cond-vac",
+      label: "NO COND VAC",
+      active: isRunning && condenserVacuum > 0.25,
+      priority: "red",
+      tone: "warble",
+      pan: "right",
+      page: "power-grid",
+      sample: "/sounds/no-condenser-turbine.mp3",
+    },
+    {
+      id: "cond-ineffective",
+      label: "CONDENSATION INEFFECTIVE",
+      active:
+        isRunning &&
+        condenserCirculationPumpOn &&
+        sjaeOn &&
+        condenserVacuum > 0.25,
+      priority: "red",
+      tone: "pulse",
+      pan: "left",
+      page: "condenser",
+    },
+    {
+      id: "high-steam",
+      label: "HIGH STEAM PRESSURE",
+      active: pressure > 8800,
+      priority: pressure > 9500 ? "red" : "amber",
+      tone: "high",
+      pan: "center",
+      page: "power-grid",
+      sample: "/sounds/rpv-srv.mp3",
+    },
+    {
+      id: "bypass-sync",
+      label: "BYPASS OPEN / SYNC",
+      active: isLocked && bypassValve > 5,
+      priority: "amber",
+      tone: "double",
+      pan: "right",
+    },
+    {
+      id: "srv-open",
+      label: "SRV OPEN",
+      active: srvOpen.some(Boolean),
+      priority: "amber",
+      tone: "chime",
+      pan: "center",
+      page: "safety",
+      sample: "/sounds/rpv-srv.mp3",
+    },
+    {
+      id: "ads",
+      label: "ADS ACTUATED",
+      active: adsActive,
+      priority: "red",
+      tone: "pulse",
+      pan: "center",
+      page: "safety",
+      sample: "/sounds/ads.mp3",
+    },
+    {
+      id: "lpci",
+      label: "LPCI INJECTING",
+      active:
+        safetyBusS &&
+        pressure < 3500 &&
+        ((eccsPumpA && eccsPumpAMode === "LPCI") ||
+          (eccsPumpB && eccsPumpBMode === "LPCI")),
+      priority: "amber",
+      tone: "chime",
+      pan: "center",
+      page: "safety",
+      sample: "/sounds/lcpi.mp3",
+    },
+    {
+      id: "rcic",
+      label: "RCIC INJECTING",
+      active: safetyBusS && rcicValve && rcicFlow > 0,
+      priority: "amber",
+      tone: "chime",
+      pan: "center",
+      page: "safety",
+      sample: "/sounds/rcic.mp3",
+    },
+    {
+      id: "rcic-alarm",
+      label: "RCIC UNAVAILABLE",
+      active:
+        reactorLevel < -3.5 && (!safetyBusS || !rcicValve || rcicFlow <= 0),
+      priority: "red",
+      tone: "warble",
+      pan: "center",
+      page: "safety",
+      sample: "/sounds/rcic-alarm.mp3",
+    },
+    {
+      id: "lpci-eccs-conflict",
+      label: "LPCI / ECCS CONFLICT",
+      active:
+        pressure < 3500 &&
+        ((eccsPumpA && eccsPumpAMode !== "LPCI") ||
+          (eccsPumpB && eccsPumpBMode !== "LPCI")),
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "safety",
+      sample: "/sounds/lcpi-without-eccs-conflict.mp3",
+    },
+    {
+      id: "da-high-pressure",
+      label: "DA HIGH PRESSURE",
+      active: daPressure > 2,
+      priority: "amber",
+      tone: "high",
+      pan: "left",
+      page: "mcc",
+      sample: "/sounds/da-high-pressure.mp3",
+    },
+    {
+      id: "reactor-high-level",
+      label: "REACTOR LEVEL HIGH",
+      active: reactorLevel > 4.5,
+      priority: "amber",
+      tone: "high",
+      pan: "center",
+      page: "mcc",
+      sample: "/sounds/tower-level-high.mp3",
+    },
+    {
+      id: "fw-preheat",
+      label: "FW PREHEAT NOT ON",
+      active: isRunning && daIntakeValve > 70 && daTemperature < 108,
+      priority: "amber",
+      tone: "chime",
+      pan: "left",
+      page: "mcc",
+      sample: "/sounds/fw-preheat.mp3",
+    },
+    {
+      id: "rps-latched",
+      label: "RPS TRIP LATCHED",
+      active: Object.values(rpsTrips).some(Boolean),
+      priority: "red",
+      tone: "warble",
+      pan: "center",
+      page: "status",
+      sample: "/sounds/half-trip-rps.mp3",
+    },
+    {
+      id: "startup-inhibit",
+      label: "STARTUP INHIBITED",
+      active: !isRunning && Object.values(rpsTrips).some(Boolean),
+      priority: "amber",
+      tone: "low",
+      pan: "center",
+      page: "startup-shutdown",
+    },
+    {
+      id: "rod-withdraw-block",
+      label: "ROD WITHDRAW BLOCK",
+      active: isRunning && mode === "SD",
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "srm-block",
+      label: "SRM BLOCK",
+      active: mode === "SRM" && isCycleComplete(rods, "SRM", 1),
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "ipr-block",
+      label: "IPR BLOCK",
+      active: mode === "IPR" && isCycleComplete(rods, "IPR", iprCycle),
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "group-block",
+      label: "GROUP BLOCK",
+      active: mode !== "RUN" && mode !== "SD" && !nextRod,
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "mode-sd",
+      label: "MODE IN SD",
+      active: mode === "SD",
+      priority: "blue",
+      tone: "low",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "low-ipr",
+      label: "LOW IPR",
+      active: mode === "IPR" && iprCycle === 1,
+      priority: "blue",
+      tone: "low",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "high-ipr",
+      label: "HIGH IPR",
+      active: mode === "IPR" && iprCycle === 3,
+      priority: "amber",
+      tone: "high",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "low-reactor-period",
+      label: "LOW REACTOR PERIOD",
+      active: reactorPeriod < 30,
+      priority: "red",
+      tone: "high",
+      pan: "center",
+      page: "control-rods",
+      sample: "/sounds/rps.mp3",
+    },
+    {
+      id: "recirc-a-cavitation",
+      label: "RECIRC A CAVITATION",
+      active: recircPumpA && recircSpeedA > 30 && aprm < 20,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "control-rods",
+    },
+    {
+      id: "recirc-b-cavitation",
+      label: "RECIRC B CAVITATION",
+      active: recircPumpB && recircSpeedB > 30 && aprm < 20,
+      priority: "amber",
+      tone: "low",
+      pan: "right",
+      page: "control-rods",
+    },
+    {
+      id: "recirc-imbalance",
+      label: "RECIRC FLOW IMBALANCE",
+      active:
+        recircPumpA &&
+        recircPumpB &&
+        Math.abs(recircSpeedA - recircSpeedB) >= 10,
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "auto-aprm",
+      label: "AUTO APRM ACTIVE",
+      active: autoEnabled,
+      priority: "blue",
+      tone: "chime",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "auto-out-of-reach",
+      label: "AUTO CONTROL OUT OF REACH",
+      active: autoEnabled && autoMessage.includes("OUT OF REACH"),
+      priority: "amber",
+      tone: "double",
+      pan: "center",
+      page: "control-rods",
+    },
+    {
+      id: "bus-s-unavailable",
+      label: "SAFETY BUS S LOST",
+      active: isRunning && !safetyBusS,
+      priority: "red",
+      tone: "warble",
+      pan: "right",
+      page: "electrical",
+    },
+    {
+      id: "bus-a-unavailable",
+      label: "STARTUP BUS A OPEN",
+      active: isRunning && !startupBusA && !turbineBusB,
+      priority: "amber",
+      tone: "low",
+      pan: "right",
+      page: "electrical",
+    },
+    {
+      id: "mcc-pump-off",
+      label: "MCC CIRCULATION OFF",
+      active: isRunning && !mccPumpOn,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "da-low-level",
+      label: "DA LEVEL LOW",
+      active: deaeratorLevel < -3,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "mcc-reactor-level-low",
+      label: "REACTOR LEVEL LOW",
+      active: reactorLevel < -1.5,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "mcc-da-level-low",
+      label: "DA LEVEL LOW",
+      active: deaeratorLevel < -3,
+      priority: "amber",
+      tone: "low",
+      pan: "right",
+      page: "mcc",
+    },
+    {
+      id: "mcc-da-level-high",
+      label: "DA LEVEL HIGH",
+      active: deaeratorLevel > 3,
+      priority: "amber",
+      tone: "high",
+      pan: "right",
+      page: "mcc",
+    },
+    {
+      id: "hotwell-makeup",
+      label: "HOTWELL MAKEUP ACTIVE",
+      active: hotwellMakeup,
+      priority: "blue",
+      tone: "chime",
+      pan: "left",
+      page: "mcc",
+      sample: "/sounds/hotwell-pumps-active.mp3",
+    },
+    {
+      id: "hotwell-drain",
+      label: "HOTWELL DRAIN ACTIVE",
+      active: hotwellDrain,
+      priority: "blue",
+      tone: "chime",
+      pan: "left",
+      page: "mcc",
+      sample: "/sounds/hotwell-pumps-active.mp3",
+    },
+    {
+      id: "hotwell-level-low",
+      label: "HOTWELL LEVEL LOW",
+      active: hotwellLevel < -3,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "hotwell-level-high",
+      label: "HOTWELL LEVEL HIGH",
+      active: hotwellLevel > 3,
+      priority: "amber",
+      tone: "high",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "feedwater-pump-demand",
+      label: "FEEDWATER PUMP DEMAND",
+      active: mccPumpOn && steamFlow > daOutflowKgS + 50 && !pump2Online,
+      priority: "amber",
+      tone: "double",
+      pan: "right",
+      page: "mcc",
+    },
+    {
+      id: "condensate-pump-demand",
+      label: "CONDENSATE PUMP DEMAND",
+      active:
+        mccPumpOn && steamFlow > hotwellOutflowKgS + 50 && !condenserPumpB,
+      priority: "amber",
+      tone: "double",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "cst-level-high",
+      label: "CST LEVEL HIGH",
+      active: cstLevel > 9,
+      priority: "amber",
+      tone: "high",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "cst-level-low",
+      label: "CST LEVEL LOW",
+      active: cstLevel < 1,
+      priority: "amber",
+      tone: "low",
+      pan: "left",
+      page: "mcc",
+    },
+    {
+      id: "mcc-auto",
+      label: "MCC AUTOCONTROL ACTIVE",
+      active: mccAutoOn,
+      priority: "blue",
+      tone: "chime",
+      pan: "center",
+      page: "mcc",
+    },
+    {
+      id: "turbine-not-synced",
+      label: "TURBINE NOT SYNCHRONIZED",
+      active: isRunning && mainSteamInletOpen && valveValue > 15 && !isLocked,
+      priority: "amber",
+      tone: "double",
+      pan: "right",
+      page: "power-grid",
+    },
+    {
+      id: "turbine-vac",
+      label: "TURBINE / NO COND VAC",
+      active: isRunning && valveValue > 15 && condenserVacuum > 0.25,
+      priority: "red",
+      tone: "warble",
+      pan: "right",
+    },
   ];
 
-  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem(STORAGE) || "null"); if (saved?.rods?.length === 36) { setRods(saved.rods); setSelectedRodId(saved.selectedRodId || "A1"); setMode(saved.mode || "SD"); setIprCycle(saved.iprCycle || 1); setAutoTarget(saved.autoTarget || 1); setAutoSpeed(saved.autoSpeed || "medium"); setReactorLevel(saved.reactorLevel || 0); setHotwellLevel(saved.hotwellLevel || 0); setDeaeratorLevel(saved.deaeratorLevel || 0); } } catch { localStorage.removeItem(STORAGE); } }, []);
-  useEffect(() => { localStorage.setItem(STORAGE, JSON.stringify({ rods, selectedRodId, mode, iprCycle, autoTarget, autoSpeed, reactorLevel, hotwellLevel, deaeratorLevel })); }, [rods, selectedRodId, mode, iprCycle, autoTarget, autoSpeed, reactorLevel, hotwellLevel, deaeratorLevel]);
-  useEffect(() => { if (transferStateLoaded.current) return; transferStateLoaded.current = true; try { const saved = JSON.parse(sessionStorage.getItem("rbwr-live-plant-state") || "null"); if (!saved) return; if (saved.rods?.length === 36) setRods(saved.rods); if (typeof saved.temperature === "number") setTemperature(saved.temperature); if (typeof saved.pressure === "number") setPressure(saved.pressure); if (typeof saved.reactorLevel === "number") setReactorLevel(saved.reactorLevel); if (typeof saved.hotwellLevel === "number") setHotwellLevel(saved.hotwellLevel); if (typeof saved.deaeratorLevel === "number") setDeaeratorLevel(saved.deaeratorLevel); if (typeof saved.condenserVacuum === "number") setCondenserVacuum(saved.condenserVacuum); if (typeof saved.mode === "string") setMode(saved.mode); if (typeof saved.iprCycle === "number") setIprCycle(saved.iprCycle); if (typeof saved.isRunning === "boolean") setIsRunning(saved.isRunning); if (typeof saved.bypassValve === "number") setBypassValve(saved.bypassValve); if (typeof saved.valveValue === "number") setValveValue(saved.valveValue); } catch {} }, []);
-  useEffect(() => { sessionStorage.setItem("rbwr-live-plant-state", JSON.stringify({ rods, temperature, pressure, reactorLevel, hotwellLevel, deaeratorLevel, condenserVacuum, mode, iprCycle, isRunning, bypassValve, valveValue, aprm, turbineOutputMW, updatedAt: Date.now() })); }, [rods, temperature, pressure, reactorLevel, hotwellLevel, deaeratorLevel, condenserVacuum, mode, iprCycle, isRunning, bypassValve, valveValue, aprm, turbineOutputMW]);
-  useEffect(() => { localStorage.setItem("rbwr-rps-trip-inhibit", String(rpsTripInhibit)); }, [rpsTripInhibit]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE) || "null");
+      if (saved?.rods?.length === 36) {
+        setRods(saved.rods);
+        setSelectedRodId(saved.selectedRodId || "A1");
+        setMode(saved.mode || "SD");
+        setIprCycle(saved.iprCycle || 1);
+        setAutoTarget(saved.autoTarget || 1);
+        setAutoSpeed(saved.autoSpeed || "medium");
+        setReactorLevel(saved.reactorLevel || 0);
+        setHotwellLevel(saved.hotwellLevel || 0);
+        setDeaeratorLevel(saved.deaeratorLevel || 0);
+      }
+    } catch {
+      localStorage.removeItem(STORAGE);
+    }
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE,
+      JSON.stringify({
+        rods,
+        selectedRodId,
+        mode,
+        iprCycle,
+        autoTarget,
+        autoSpeed,
+        reactorLevel,
+        hotwellLevel,
+        deaeratorLevel,
+      }),
+    );
+  }, [
+    rods,
+    selectedRodId,
+    mode,
+    iprCycle,
+    autoTarget,
+    autoSpeed,
+    reactorLevel,
+    hotwellLevel,
+    deaeratorLevel,
+  ]);
+  useEffect(() => {
+    if (transferStateLoaded.current) return;
+    transferStateLoaded.current = true;
+    try {
+      const saved = JSON.parse(
+        sessionStorage.getItem("rbwr-live-plant-state") || "null",
+      );
+      if (!saved) { setSessionRestored(true); return; }
+      if (saved.rods?.length === 36) setRods(saved.rods);
+      if (typeof saved.temperature === "number")
+        setTemperature(saved.temperature);
+      if (typeof saved.pressure === "number") setPressure(saved.pressure);
+      if (typeof saved.reactorLevel === "number")
+        setReactorLevel(saved.reactorLevel);
+      if (typeof saved.hotwellLevel === "number")
+        setHotwellLevel(saved.hotwellLevel);
+      if (typeof saved.deaeratorLevel === "number")
+        setDeaeratorLevel(saved.deaeratorLevel);
+      if (typeof saved.condenserVacuum === "number")
+        setCondenserVacuum(saved.condenserVacuum);
+      if (typeof saved.mode === "string") setMode(saved.mode);
+      if (typeof saved.iprCycle === "number") setIprCycle(saved.iprCycle);
+      if (typeof saved.isRunning === "boolean") setIsRunning(saved.isRunning);
+      if (typeof saved.bypassValve === "number")
+        setBypassValve(saved.bypassValve);
+      if (typeof saved.valveValue === "number") setValveValue(saved.valveValue);
+      if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning(current => ({ ...current, ...saved.physicsTuning }));
+      const controls = saved.controls || {};
+      const apply = (key: string, setter: (value: any) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key]); };
+      apply("mainSteamInletOpen", setMainSteamInletOpen); apply("reliefOpen", setReliefOpen); apply("reliefValveB", setReliefValveB); apply("exciterOn", setExciterOn); apply("isLocked", setIsLocked);
+      apply("pump1Online", setPump1Online); apply("pump2Online", setPump2Online); apply("daIntakeOpen", setDaIntakeOpen); apply("daOutputOpen", setDaOutputOpen); apply("daIntakeValve", setDaIntakeValve); apply("daOuttakeValve", setDaOuttakeValve); apply("daIntakeDirection", setDaIntakeDirection); apply("daOuttakeDirection", setDaOuttakeDirection);
+      apply("recircPumpA", setRecircPumpA); apply("recircPumpB", setRecircPumpB); apply("recircSpeedA", setRecircSpeedA); apply("recircSpeedB", setRecircSpeedB); apply("selectedRodId", setSelectedRodId); apply("rodDirection", setRodDirection); apply("selectionScope", setSelectionScope); apply("autoEnabled", setAutoEnabled); apply("autoTarget", setAutoTarget); apply("autoSpeed", setAutoSpeed); apply("autoMode", setAutoMode);
+      apply("condensateFlow", setCondensateFlow); apply("condensatePumpBFlow", setCondensatePumpBFlow); apply("feedwaterFlow", setFeedwaterFlow); apply("feedwaterPumpBFlow", setFeedwaterPumpBFlow); apply("condenserPumpOn", setCondenserPumpOn); apply("condenserPumpB", setCondenserPumpB); apply("condenserValve", setCondenserValve); apply("condenserValveDirection", setCondenserValveDirection); apply("carAOn", setCarAOn); apply("carBOn", setCarBOn); apply("sjaeOn", setSjaeOn); apply("mccPumpOn", setMccPumpOn); apply("mccAutoOn", setMccAutoOn); apply("condenserCirculationPumpOn", setCondenserCirculationPumpOn);
+      apply("startupBusA", setStartupBusA); apply("turbineBusB", setTurbineBusB); apply("safetyBusS", setSafetyBusS); apply("rolldownProtection", setRolldownProtection); apply("cstLevel", setCstLevel); apply("cstMakeup", setCstMakeup); apply("cstDrain", setCstDrain); apply("hotwellMakeup", setHotwellMakeup); apply("hotwellDrain", setHotwellDrain);
+      apply("rcicValve", setRcicValve); apply("rcicFlow", setRcicFlow); apply("eccsPumpA", setEccsPumpA); apply("eccsPumpB", setEccsPumpB); apply("eccsPumpAMode", setEccsPumpAMode); apply("eccsPumpBMode", setEccsPumpBMode); apply("srvOpen", setSrvOpen); apply("adsActive", setAdsActive);
+      apply("lubePumpSource", setLubePumpSource); apply("hydraulicPumpSource", setHydraulicPumpSource); apply("coldOilValve", setColdOilValve); apply("warmOilValve", setWarmOilValve); apply("turningGear", setTurningGear); apply("preheatValve", setPreheatValve);
+    } catch {} finally { setSessionRestored(true); }
+  }, []);
+  useEffect(() => {
+    if (!sessionRestored) return;
+    sessionStorage.setItem(
+      "rbwr-live-plant-state",
+      JSON.stringify({
+        rods,
+        temperature,
+        pressure,
+        reactorLevel,
+        hotwellLevel,
+        deaeratorLevel,
+        condenserVacuum,
+        mode,
+        iprCycle,
+        isRunning,
+        bypassValve,
+        valveValue,
+        aprm,
+        turbineOutputMW,
+        physicsTuning,
+        controls: { mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, turbineBusB, safetyBusS, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve },
+        updatedAt: Date.now(),
+      }),
+    );
+  }, [
+    rods,
+    temperature,
+    pressure,
+    reactorLevel,
+    hotwellLevel,
+    deaeratorLevel,
+    condenserVacuum,
+    mode,
+    iprCycle,
+    isRunning,
+    bypassValve,
+    valveValue,
+    sessionRestored, aprm, physicsTuning,
+    turbineOutputMW, mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, turbineBusB, safetyBusS, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve,
+  ]);
+  useEffect(() => {
+    localStorage.setItem("rbwr-rps-trip-inhibit", String(rpsTripInhibit));
+  }, [rpsTripInhibit]);
 
-  const scram = (manual = false) => { const firstActuation = !scramPressed; setRods(previous => previous.map(rod => ({ ...rod, position: 100 }))); setMode("SD"); setAutoEnabled(false); setRodDirection(0); setRecircPumpA(false); setRecircPumpB(false); setRecircSpeedA(0); setRecircSpeedB(0); setPeriodRecirculationAprm(0); setScramPressed(true); if (manual) setRpsTrips(previous => ({ ...previous, "MANUAL TRIP": true })); if (firstActuation) { if (!tripAlarm.current) tripAlarm.current = new Audio("/sounds/shutdown_alarm.mp3"); tripAlarm.current.pause(); tripAlarm.current.currentTime = 0; tripAlarm.current.volume = .12; void tripAlarm.current.play().catch(() => {}); setEvent(manual ? "Manual SCRAM — rods inserted and recirculation dropped; unit remains started." : "Automatic SCRAM — rods inserted and recirculation dropped; unit remains started."); } };
-  useEffect(() => { const silenceTripAlarm = (event: Event) => { const detail = (event as CustomEvent<{ ids?: string[] }>).detail; if (!detail?.ids?.includes("reactor-trip")) return; if (tripAlarm.current) { tripAlarm.current.pause(); tripAlarm.current.currentTime = 0; } }; window.addEventListener("rbwr-annunciator-silence", silenceTripAlarm); window.addEventListener("rbwr-annunciator-ack", silenceTripAlarm); return () => { window.removeEventListener("rbwr-annunciator-silence", silenceTripAlarm); window.removeEventListener("rbwr-annunciator-ack", silenceTripAlarm); }; }, []);
+  const scram = (manual = false) => {
+    const firstActuation = !scramPressed;
+    setRods((previous) => previous.map((rod) => ({ ...rod, position: 100 })));
+    setMode("SD");
+    setAutoEnabled(false);
+    setRodDirection(0);
+    setRecircPumpA(false);
+    setRecircPumpB(false);
+    setRecircSpeedA(0);
+    setRecircSpeedB(0);
+    setPeriodRecirculationAprm(0);
+    setScramPressed(true);
+    if (manual)
+      setRpsTrips((previous) => ({ ...previous, "MANUAL TRIP": true }));
+    if (firstActuation) {
+      if (!tripAlarm.current)
+        tripAlarm.current = new Audio("/sounds/shutdown_alarm.mp3");
+      tripAlarm.current.pause();
+      tripAlarm.current.currentTime = 0;
+      tripAlarm.current.volume = 0.12;
+      void tripAlarm.current.play().catch(() => {});
+      setEvent(
+        manual
+          ? "Manual SCRAM — rods inserted and recirculation dropped; unit remains started."
+          : "Automatic SCRAM — rods inserted and recirculation dropped; unit remains started.",
+      );
+    }
+  };
+  useEffect(() => {
+    const silenceTripAlarm = (event: Event) => {
+      const detail = (event as CustomEvent<{ ids?: string[] }>).detail;
+      if (!detail?.ids?.includes("reactor-trip")) return;
+      if (tripAlarm.current) {
+        tripAlarm.current.pause();
+        tripAlarm.current.currentTime = 0;
+      }
+    };
+    window.addEventListener("rbwr-annunciator-silence", silenceTripAlarm);
+    window.addEventListener("rbwr-annunciator-ack", silenceTripAlarm);
+    return () => {
+      window.removeEventListener("rbwr-annunciator-silence", silenceTripAlarm);
+      window.removeEventListener("rbwr-annunciator-ack", silenceTripAlarm);
+    };
+  }, []);
 
   useEffect(() => {
     const tick = window.setInterval(() => {
-      setRods(previous => {
+      setRods((previous) => {
         let candidate = selectedRodId;
         let direction = rodDirection;
-        if (mode === "SD") return previous.map(rod => ({ ...rod, position: clamp(rod.position + 8, 0, 100) }));
+        if (mode === "SD")
+          return previous.map((rod) => ({
+            ...rod,
+            position: clamp(rod.position + 8, 0, 100),
+          }));
         if (autoEnabled && autoMode === "rods") {
-          if (mode === "SD") { setMode("SRM"); setAutoMessage("AUTO SELECTED SRM MODE."); return previous; }
-          if (mode === "SRM" && isCycleComplete(previous, "SRM", 1)) { setMode("IPR"); setIprCycle(1); setAutoMessage("AUTO SELECTED IPR CYCLE 1."); return previous; }
-          if (mode === "IPR" && isCycleComplete(previous, "IPR", iprCycle)) { if (iprCycle < 3) { setIprCycle(value => value + 1); setAutoMessage(`AUTO ADVANCED TO IPR CYCLE ${iprCycle + 1}.`); } else { setMode("RUN"); setAutoMessage("AUTO SELECTED RUN MODE."); } return previous; }
+          if (mode === "SD") {
+            setMode("SRM");
+            setAutoMessage("AUTO SELECTED SRM MODE.");
+            return previous;
+          }
+          if (mode === "SRM" && isCycleComplete(previous, "SRM", 1)) {
+            setMode("IPR");
+            setIprCycle(1);
+            setAutoMessage("AUTO SELECTED IPR CYCLE 1.");
+            return previous;
+          }
+          if (mode === "IPR" && isCycleComplete(previous, "IPR", iprCycle)) {
+            if (iprCycle < 3) {
+              setIprCycle((value) => value + 1);
+              setAutoMessage(`AUTO ADVANCED TO IPR CYCLE ${iprCycle + 1}.`);
+            } else {
+              setMode("RUN");
+              setAutoMessage("AUTO SELECTED RUN MODE.");
+            }
+            return previous;
+          }
           const difference = autoTarget - getAprm(previous);
-          if (Math.abs(difference) < 0.03) { setAutoMessage("Target held — monitoring APRM."); return previous; }
+          if (Math.abs(difference) < 0.03) {
+            setAutoMessage("Target held — monitoring APRM.");
+            return previous;
+          }
           direction = difference > 0 ? -1 : 1;
-          candidate = direction < 0 ? nextWithdrawableRod(previous, mode, iprCycle)?.id || "" : previous.filter(rod => rod.position < 99.5)[0]?.id || "";
-          if (!candidate) { setAutoMessage("AUTO PAUSED — no eligible rod in current mode/range."); return previous; }
-          setAutoMessage(`AUTO ${direction < 0 ? "WITHDRAWING" : "INSERTING"} ${candidate} at ${autoSpeed.toUpperCase()} rate.`);
+          candidate =
+            direction < 0
+              ? nextWithdrawableRod(previous, mode, iprCycle)?.id || ""
+              : previous.filter((rod) => rod.position < 99.5)[0]?.id || "";
+          if (!candidate) {
+            setAutoMessage(
+              "AUTO PAUSED — no eligible rod in current mode/range.",
+            );
+            return previous;
+          }
+          setAutoMessage(
+            `AUTO ${direction < 0 ? "WITHDRAWING" : "INSERTING"} ${candidate} at ${autoSpeed.toUpperCase()} rate.`,
+          );
         }
         if (!direction || !candidate) return previous;
-        const rod = previous.find(item => item.id === candidate); if (!rod) return previous;
+        const rod = previous.find((item) => item.id === candidate);
+        if (!rod) return previous;
         const limit = cycleLimit(mode, iprCycle);
-        if (direction < 0 && rod.position <= limit) { if (!autoEnabled) setAutoMessage("GROUP BLOCK — current startup cycle limit reached."); return previous; }
-        const speed = autoEnabled ? ({ slow: .5, medium: 1, fast: 2 }[autoSpeed]) : (mode === "RUN" ? WITHDRAWAL_RATES.run : WITHDRAWAL_RATES.startup) * MANUAL_ROD_RATES[autoSpeed === "medium" ? "normal" : autoSpeed];
-        const targets = autoEnabled ? [candidate] : selectionScope === "all" ? previous.map(item => item.id) : selectionScope === "group" ? previous.filter(item => item.group === rod.group).map(item => item.id) : [candidate];
-        return previous.map(item => targets.includes(item.id) ? { ...item, position: clamp(item.position + (direction < 0 ? -speed * .25 : speed * .25), direction < 0 ? limit : 0, 100), temperature: clamp(item.temperature + (direction < 0 ? .1 : -.05), 20, 900) } : item);
+        if (direction < 0 && rod.position <= limit) {
+          if (!autoEnabled)
+            setAutoMessage(
+              "GROUP BLOCK — current startup cycle limit reached.",
+            );
+          return previous;
+        }
+        const speed = autoEnabled
+          ? { slow: 0.5, medium: 1, fast: 2 }[autoSpeed]
+          : (mode === "RUN" ? WITHDRAWAL_RATES.run : WITHDRAWAL_RATES.startup) *
+            MANUAL_ROD_RATES[autoSpeed === "medium" ? "normal" : autoSpeed];
+        const targets = autoEnabled
+          ? [candidate]
+          : selectionScope === "all"
+            ? previous.map((item) => item.id)
+            : selectionScope === "group"
+              ? previous
+                  .filter((item) => item.group === rod.group)
+                  .map((item) => item.id)
+              : [candidate];
+        return previous.map((item) =>
+          targets.includes(item.id)
+            ? {
+                ...item,
+                position: clamp(
+                  item.position +
+                    (direction < 0 ? -speed * 0.25 : speed * 0.25),
+                  direction < 0 ? limit : 0,
+                  100,
+                ),
+                temperature: clamp(
+                  item.temperature + (direction < 0 ? 0.1 : -0.05),
+                  20,
+                  900,
+                ),
+              }
+            : item,
+        );
       });
     }, 250);
     return () => window.clearInterval(tick);
-  }, [selectedRodId, rodDirection, mode, autoEnabled, autoMode, autoTarget, autoSpeed, iprCycle, selectionScope]);
+  }, [
+    selectedRodId,
+    rodDirection,
+    mode,
+    autoEnabled,
+    autoMode,
+    autoTarget,
+    autoSpeed,
+    iprCycle,
+    selectionScope,
+  ]);
 
-  useEffect(() => { const tick = window.setInterval(() => setRecirculationAprm(previous => previous + clamp(recirculationTargetAprm - previous, -.18, .18)), 250); return () => window.clearInterval(tick); }, [recirculationTargetAprm]);
-  useEffect(() => { const tick = window.setInterval(() => setPeriodRecirculationAprm(previous => previous + clamp(recirculationAprm - previous, -.02, .02)), 1000); return () => window.clearInterval(tick); }, [recirculationAprm]);
-  useEffect(() => { if (!autoEnabled || autoMode !== "recirculation") return; const tick = window.setInterval(() => { const error = autoTarget - aprm; const step = autoSpeed === "fast" ? 1 : autoSpeed === "slow" ? .25 : .5; if (Math.abs(error) < .1) { setAutoMessage("Recirculation target held — monitoring APRM."); return; } const delta = error > 0 ? step : -step; if (!recircPumpA && !recircPumpB) { setAutoMessage("AUTO OUT OF REACH — no recirculation pumps available."); return; } if (recircPumpA) setRecircSpeedA(value => clamp(Math.round((value + delta) * 10) / 10, 0, 100)); if (recircPumpB) setRecircSpeedB(value => clamp(Math.round((value + delta) * 10) / 10, 0, 100)); if ((error > 0 && recircSpeedA >= 100 && (!recircPumpB || recircSpeedB >= 100)) || (error < 0 && recircSpeedA <= 0 && (!recircPumpB || recircSpeedB <= 0))) setAutoMessage("AUTO OUT OF REACH — recirculation at travel limit."); else setAutoMessage(`AUTO RECIRCULATION ${error > 0 ? "RAISING" : "LOWERING"} FLOW.`); }, 250); return () => window.clearInterval(tick); }, [autoEnabled, autoMode, autoTarget, autoSpeed, aprm, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB]);
-  useEffect(() => { const now = performance.now(); const previous = aprmSample.current; const elapsed = Math.max(.05, (now - previous.time) / 1000); const period = periodAprm > previous.value && previous.value >= .005 ? clamp(elapsed * Math.LN2 / Math.log(periodAprm / previous.value), 1, 999) : 999; setReactorPeriod(period); aprmSample.current = { value: periodAprm, time: now }; }, [periodAprm]);
-  useEffect(() => { const now = performance.now(); const elapsed = Math.max(.05, (now - pressureSample.current.time) / 1000); setPressureRate((pressure - pressureSample.current.value) / elapsed); pressureSample.current = { value: pressure, time: now }; }, [pressure]);
-  useEffect(() => { const timer = window.setInterval(() => { if (valveDirection) setValveValue(value => clamp(value + valveDirection * .75, 0, 100)); if (bypassDirection) setBypassValve(value => clamp(value + bypassDirection * .75, 0, 100)); if (condenserValveDirection) setCondenserValve(value => clamp(value + condenserValveDirection, 0, 100)); if (daIntakeDirection) setDaIntakeValve(value => { const next = clamp(value + daIntakeDirection, 0, 100); setDaIntakeOpen(next > 0); return next; }); if (daOuttakeDirection) setDaOuttakeValve(value => { const next = clamp(value + daOuttakeDirection, 0, 100); setDaOutputOpen(next > 0); return next; }); }, 250); return () => window.clearInterval(timer); }, [valveDirection, bypassDirection, condenserValveDirection, daIntakeDirection, daOuttakeDirection]);
-  useEffect(() => { if (!daFastCloseHeld) return; setDaIntakeDirection(0); const timer = window.setInterval(() => setDaIntakeValve(value => { const next = clamp(value - 2.5, 0, 100); setDaIntakeOpen(next > 0); return next; }), 250); return () => window.clearInterval(timer); }, [daFastCloseHeld]);
-  useEffect(() => { const player = daFastCloseAudio.current; const stopLoop = () => { player.source?.stop(); player.source?.disconnect(); player.source = null; }; const playEndingCue = () => { if (!player.context || !player.buffer) return; const source = player.context.createBufferSource(); const gain = player.context.createGain(); const duration = Math.min(.8, player.buffer.duration); source.buffer = player.buffer; gain.gain.value = .28; source.connect(gain).connect(player.context.destination); source.start(0, Math.max(0, player.buffer.duration - duration), duration); }; if (!daFastCloseHeld) { stopLoop(); if (player.wasHeld) playEndingCue(); player.wasHeld = false; return; } player.wasHeld = true; if (player.source) return; let cancelled = false; void (async () => { try { if (!player.context) player.context = new AudioContext(); if (player.context.state === "suspended") await player.context.resume(); if (!player.buffer) { const response = await fetch("/sounds/da-fastclose.mp3"); player.buffer = await player.context.decodeAudioData(await response.arrayBuffer()); } if (cancelled || !daFastCloseHeld || !player.buffer) return; const buffer = player.buffer; const limit = Math.floor((buffer.duration - .8) * buffer.sampleRate); const samples = buffer.getChannelData(0); let first = 0; let last = Math.max(0, limit - 1); while (first < last && Math.abs(samples[first]) < .0015) first++; while (last > first && Math.abs(samples[last]) < .0015) last--; const source = player.context.createBufferSource(); const gain = player.context.createGain(); source.buffer = buffer; source.loop = true; source.loopStart = first / buffer.sampleRate; source.loopEnd = Math.max((first + 1) / buffer.sampleRate, (last + 1) / buffer.sampleRate); gain.gain.value = .28; source.connect(gain).connect(player.context.destination); player.source = source; source.start(); } catch {} })(); return () => { cancelled = true; }; }, [daFastCloseHeld]);
-  useEffect(() => () => { const player = daFastCloseAudio.current; player.source?.stop(); player.source?.disconnect(); player.source = null; }, []);
+  useEffect(() => {
+    const tick = window.setInterval(
+      () =>
+        setRecirculationAprm(
+          (previous) =>
+            previous + clamp(recirculationTargetAprm - previous, -0.18, 0.18),
+        ),
+      250,
+    );
+    return () => window.clearInterval(tick);
+  }, [recirculationTargetAprm]);
+  useEffect(() => {
+    const tick = window.setInterval(
+      () =>
+        setPeriodRecirculationAprm(
+          (previous) =>
+            previous + clamp(recirculationAprm - previous, -0.02, 0.02),
+        ),
+      1000,
+    );
+    return () => window.clearInterval(tick);
+  }, [recirculationAprm]);
+  useEffect(() => {
+    if (!autoEnabled || autoMode !== "recirculation") return;
+    const tick = window.setInterval(() => {
+      const error = autoTarget - aprm;
+      const step = autoSpeed === "fast" ? 1 : autoSpeed === "slow" ? 0.25 : 0.5;
+      if (Math.abs(error) < 0.1) {
+        setAutoMessage("Recirculation target held — monitoring APRM.");
+        return;
+      }
+      const delta = error > 0 ? step : -step;
+      if (!recircPumpA && !recircPumpB) {
+        setAutoMessage("AUTO OUT OF REACH — no recirculation pumps available.");
+        return;
+      }
+      if (recircPumpA)
+        setRecircSpeedA((value) =>
+          clamp(Math.round((value + delta) * 10) / 10, 0, 100),
+        );
+      if (recircPumpB)
+        setRecircSpeedB((value) =>
+          clamp(Math.round((value + delta) * 10) / 10, 0, 100),
+        );
+      if (
+        (error > 0 &&
+          recircSpeedA >= 100 &&
+          (!recircPumpB || recircSpeedB >= 100)) ||
+        (error < 0 && recircSpeedA <= 0 && (!recircPumpB || recircSpeedB <= 0))
+      )
+        setAutoMessage("AUTO OUT OF REACH — recirculation at travel limit.");
+      else
+        setAutoMessage(
+          `AUTO RECIRCULATION ${error > 0 ? "RAISING" : "LOWERING"} FLOW.`,
+        );
+    }, 250);
+    return () => window.clearInterval(tick);
+  }, [
+    autoEnabled,
+    autoMode,
+    autoTarget,
+    autoSpeed,
+    aprm,
+    recircPumpA,
+    recircPumpB,
+    recircSpeedA,
+    recircSpeedB,
+  ]);
+  useEffect(() => {
+    const now = performance.now();
+    const previous = aprmSample.current;
+    const elapsed = Math.max(0.05, (now - previous.time) / 1000);
+    const period =
+      periodAprm > previous.value && previous.value >= 0.005
+        ? clamp(
+            (elapsed * Math.LN2) / Math.log(periodAprm / previous.value),
+            1,
+            999,
+          )
+        : 999;
+    setReactorPeriod(period);
+    aprmSample.current = { value: periodAprm, time: now };
+  }, [periodAprm]);
+  useEffect(() => {
+    const now = performance.now();
+    const elapsed = Math.max(0.05, (now - pressureSample.current.time) / 1000);
+    setPressureRate((pressure - pressureSample.current.value) / elapsed);
+    pressureSample.current = { value: pressure, time: now };
+  }, [pressure]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (valveDirection)
+        setValveValue((value) => clamp(value + valveDirection * 0.75, 0, 100));
+      if (bypassDirection)
+        setBypassValve((value) =>
+          clamp(value + bypassDirection * 0.75, 0, 100),
+        );
+      if (condenserValveDirection)
+        setCondenserValve((value) =>
+          clamp(value + condenserValveDirection, 0, 100),
+        );
+      if (daIntakeDirection)
+        setDaIntakeValve((value) => {
+          const next = clamp(value + daIntakeDirection, 0, 100);
+          setDaIntakeOpen(next > 0);
+          return next;
+        });
+      if (daOuttakeDirection)
+        setDaOuttakeValve((value) => {
+          const next = clamp(value + daOuttakeDirection, 0, 100);
+          setDaOutputOpen(next > 0);
+          return next;
+        });
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [
+    valveDirection,
+    bypassDirection,
+    condenserValveDirection,
+    daIntakeDirection,
+    daOuttakeDirection,
+  ]);
+  useEffect(() => {
+    if (!daFastCloseHeld) return;
+    setDaIntakeDirection(0);
+    const timer = window.setInterval(
+      () =>
+        setDaIntakeValve((value) => {
+          const next = clamp(value - 2.5, 0, 100);
+          setDaIntakeOpen(next > 0);
+          return next;
+        }),
+      250,
+    );
+    return () => window.clearInterval(timer);
+  }, [daFastCloseHeld]);
+  useEffect(() => {
+    const player = daFastCloseAudio.current;
+    const stopLoop = () => {
+      player.source?.stop();
+      player.source?.disconnect();
+      player.source = null;
+    };
+    const playEndingCue = () => {
+      if (!player.context || !player.buffer) return;
+      const source = player.context.createBufferSource();
+      const gain = player.context.createGain();
+      const duration = Math.min(0.8, player.buffer.duration);
+      source.buffer = player.buffer;
+      gain.gain.value = 0.28;
+      source.connect(gain).connect(player.context.destination);
+      source.start(0, Math.max(0, player.buffer.duration - duration), duration);
+    };
+    if (!daFastCloseHeld) {
+      stopLoop();
+      if (player.wasHeld) playEndingCue();
+      player.wasHeld = false;
+      return;
+    }
+    player.wasHeld = true;
+    if (player.source) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (!player.context) player.context = new AudioContext();
+        if (player.context.state === "suspended") await player.context.resume();
+        if (!player.buffer) {
+          const response = await fetch("/sounds/da-fastclose.mp3");
+          player.buffer = await player.context.decodeAudioData(
+            await response.arrayBuffer(),
+          );
+        }
+        if (cancelled || !daFastCloseHeld || !player.buffer) return;
+        const buffer = player.buffer;
+        const limit = Math.floor((buffer.duration - 0.8) * buffer.sampleRate);
+        const samples = buffer.getChannelData(0);
+        let first = 0;
+        let last = Math.max(0, limit - 1);
+        while (first < last && Math.abs(samples[first]) < 0.0015) first++;
+        while (last > first && Math.abs(samples[last]) < 0.0015) last--;
+        const source = player.context.createBufferSource();
+        const gain = player.context.createGain();
+        source.buffer = buffer;
+        source.loop = true;
+        source.loopStart = first / buffer.sampleRate;
+        source.loopEnd = Math.max(
+          (first + 1) / buffer.sampleRate,
+          (last + 1) / buffer.sampleRate,
+        );
+        gain.gain.value = 0.28;
+        source.connect(gain).connect(player.context.destination);
+        player.source = source;
+        source.start();
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [daFastCloseHeld]);
+  useEffect(
+    () => () => {
+      const player = daFastCloseAudio.current;
+      player.source?.stop();
+      player.source?.disconnect();
+      player.source = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     const tick = window.setInterval(() => {
       const activeCars = (carAOn ? 1 : 0) + (carBOn ? 1 : 0);
-      setCondenserVacuum(value => {
+      setCondenserVacuum((value) => {
         /* The valve is always live, independent of reactor steam pressure.
            40% opening targets approximately 50 mbar. */
-        const valveTarget = clamp(1 - condenserValve * .02375, .01, 1);
-        const carTarget = activeCars > 0 && value > .85 ? .85 : 1;
-        const target = condenserCirculationPumpOn ? Math.min(valveTarget, carTarget) : 1;
+        const valveTarget = clamp(1 - condenserValve * 0.02375, 0.01, 1);
+        const carTarget = activeCars > 0 && value > 0.85 ? 0.85 : 1;
+        const target = condenserCirculationPumpOn
+          ? Math.min(valveTarget, carTarget)
+          : 1;
         condenserTargetRef.current = target;
-        return clamp(value + clamp(target - value, -.18, .18), .01, 1.05);
+        return clamp(value + clamp(target - value, -0.18, 0.18), 0.01, 1.05);
       });
     }, 1000);
     return () => window.clearInterval(tick);
@@ -199,17 +1289,42 @@ export default function ReactorSimulator() {
     const tick = window.setInterval(() => {
       const process = mccProcessRef.current;
       if (!process.mccPumpOn) return;
-      const hotwellDelta = clamp((process.steamFlow - process.hotwellOutflowKgS) / 5000, -.2, .2);
-      const reactorDelta = clamp((process.daOutflowKgS - process.steamFlow) / 10000, -.2, .2);
-      const deaeratorDelta = clamp((process.hotwellOutflowKgS - process.daOutflowKgS) / 10000, -.2, .2);
-      setHotwellLevel(value => clamp(value + hotwellDelta, -5, 6));
+      const hotwellDelta = clamp(
+        (process.steamFlow - process.hotwellOutflowKgS) / 5000,
+        -0.2,
+        0.2,
+      );
+      const reactorDelta = clamp(
+        (process.daOutflowKgS - process.steamFlow) / 10000,
+        -0.2,
+        0.2,
+      );
+      const deaeratorDelta = clamp(
+        (process.hotwellOutflowKgS - process.daOutflowKgS) / 10000,
+        -0.2,
+        0.2,
+      );
+      setHotwellLevel((value) => clamp(value + hotwellDelta, -5, 6));
       if (process.daIntakeOpen && process.daOutputOpen) {
-        setDeaeratorLevel(value => clamp(value + deaeratorDelta, -5, 6));
-        setReactorLevel(value => clamp(value + reactorDelta, -5, 6));
+        setDeaeratorLevel((value) => clamp(value + deaeratorDelta, -5, 6));
+        setReactorLevel((value) => clamp(value + reactorDelta, -5, 6));
       } else {
-        setReactorLevel(value => clamp(value + clamp((process.hotwellOutflowKgS - process.steamFlow) / 10000, -.2, .2), -5, 6));
+        setReactorLevel((value) =>
+          clamp(
+            value +
+              clamp(
+                (process.hotwellOutflowKgS - process.steamFlow) / 10000,
+                -0.2,
+                0.2,
+              ),
+            -5,
+            6,
+          ),
+        );
       }
-      setMccLevel(value => clamp(value - (process.isRunning ? .08 : 0), 0, 100));
+      setMccLevel((value) =>
+        clamp(value - (process.isRunning ? 0.08 : 0), 0, 100),
+      );
     }, 1000);
     return () => window.clearInterval(tick);
   }, []);
@@ -221,14 +1336,31 @@ export default function ReactorSimulator() {
       const clampFlow = (flow: number) => Math.max(0, Math.min(2000, flow));
       // Reactor error drives feedwater; DA error balances the two transfer legs;
       // Hotwell error trims condensate. No inventory values are modified here.
-      const feedTarget = clampFlow(steamFlow - reactorLevel * 140 + deaeratorLevel * 70);
-      const condensateTarget = clampFlow(feedTarget - deaeratorLevel * 150 + hotwellLevel * 140);
-      const dispatch = (target: number, setA: (value: number) => void, setB: (value: number) => void) => {
-        setA(Math.round(Math.min(1000, target) / 10 * 10) / 10);
-        setB(busBAvailable ? Math.round(Math.max(0, target - 1000) / 10 * 10) / 10 : 0);
+      const feedTarget = clampFlow(
+        steamFlow - reactorLevel * 140 + deaeratorLevel * 70,
+      );
+      const condensateTarget = clampFlow(
+        feedTarget - deaeratorLevel * 150 + hotwellLevel * 140,
+      );
+      const dispatch = (
+        target: number,
+        setA: (value: number) => void,
+        setB: (value: number) => void,
+      ) => {
+        setA(Math.round((Math.min(1000, target) / 10) * 10) / 10);
+        setB(
+          busBAvailable
+            ? Math.round((Math.max(0, target - 1000) / 10) * 10) / 10
+            : 0,
+        );
       };
-      setMccPumpOn(true); setCondenserPumpOn(true); setPump1Online(true);
-      if (safetyBusS) { setHotwellMakeup(hotwellLevel < -.15); setHotwellDrain(hotwellLevel > .15); }
+      setMccPumpOn(true);
+      setCondenserPumpOn(true);
+      setPump1Online(true);
+      if (safetyBusS) {
+        setHotwellMakeup(hotwellLevel < -0.15);
+        setHotwellDrain(hotwellLevel > 0.15);
+      }
       dispatch(condensateTarget, setCondensateFlow, setCondensatePumpBFlow);
       dispatch(feedTarget, setFeedwaterFlow, setFeedwaterPumpBFlow);
       if (busBAvailable && condensateTarget > 1000) setCondenserPumpB(true);
@@ -237,70 +1369,1046 @@ export default function ReactorSimulator() {
     applyTargets();
     const tick = window.setInterval(applyTargets, 150);
     return () => window.clearInterval(tick);
-  }, [mccAutoOn, steamFlow, reactorLevel, hotwellLevel, deaeratorLevel, turbineBusB, isLocked, safetyBusS]);
+  }, [
+    mccAutoOn,
+    steamFlow,
+    reactorLevel,
+    hotwellLevel,
+    deaeratorLevel,
+    turbineBusB,
+    isLocked,
+    safetyBusS,
+  ]);
   const lpciSelected = eccsPumpAMode === "LPCI" || eccsPumpBMode === "LPCI";
-  const activeLpciPumps = (eccsPumpA && eccsPumpAMode === "LPCI" ? 1 : 0) + (eccsPumpB && eccsPumpBMode === "LPCI" ? 1 : 0);
-  const activeRhrPumps = (eccsPumpA && eccsPumpAMode === "RHR" ? 1 : 0) + (eccsPumpB && eccsPumpBMode === "RHR" ? 1 : 0);
-  useEffect(() => { if (lpciSelected && reactorLevel <= -4.5 && !adsActive) { setAdsActive(true); setSrvOpen(Array(6).fill(true)); scram(); setEvent("ADS ACTUATED — reactor SCRAMMED; all SRVs open and waiting for RPV pressure below 3500 kPa."); } }, [lpciSelected, reactorLevel, adsActive]);
-  useEffect(() => { if (adsActive && pressure < 3500) { if (eccsPumpAMode === "LPCI") setEccsPumpA(true); if (eccsPumpBMode === "LPCI") setEccsPumpB(true); setEvent("ADS DEPRESSURIZATION COMPLETE — selected LPCI trains enabled; MCC circulation remains under operator control."); } }, [adsActive, pressure, eccsPumpAMode, eccsPumpBMode]);
-  useEffect(() => { const tick = window.setInterval(() => { if (safetyBusS) { if (cstMakeup) setCstLevel(value => clamp(value + .8, 0, 10)); if (cstDrain) setCstLevel(value => clamp(value - .8, 0, 10)); if (hotwellMakeup) { setCstLevel(value => clamp(value - .5, 0, 10)); setHotwellLevel(value => clamp(value + .5, -5, 6)); } if (hotwellDrain) { setCstLevel(value => clamp(value + .5, 0, 10)); setHotwellLevel(value => clamp(value - .5, -5, 6)); } } const rcic = safetyBusS && rcicValve && rcicFlow > 0; const lpciInjection = safetyBusS && pressure < 3500 ? activeLpciPumps * .5 : 0; const injectionRate = Math.min(1, (rcic ? rcicFlow * .01 : 0) + lpciInjection); if (injectionRate > 0) setReactorLevel(value => clamp(value + injectionRate, -5, 6)); if ((!isRunning || scramPressed) && safetyBusS && activeRhrPumps) setTemperature(value => clamp(value - activeRhrPumps * .45, 25, 900)); }, 1000); return () => window.clearInterval(tick); }, [cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, safetyBusS, rcicValve, rcicFlow, activeLpciPumps, activeRhrPumps, pressure, isRunning, scramPressed]);
-  useEffect(() => { const tick = window.setInterval(() => { setDaTemperature(value => clamp(value + ((108 + daIntakeValve / 100 * 5) - value) * .12, 100, 120)); setDaPressure(value => clamp(value + ((1.2 + daOuttakeValve / 100 * .8) - value) * .12, 1, 2.2)); }, 1000); return () => window.clearInterval(tick); }, [daIntakeValve, daOuttakeValve]);
+  const activeLpciPumps =
+    (eccsPumpA && eccsPumpAMode === "LPCI" ? 1 : 0) +
+    (eccsPumpB && eccsPumpBMode === "LPCI" ? 1 : 0);
+  const activeRhrPumps =
+    (eccsPumpA && eccsPumpAMode === "RHR" ? 1 : 0) +
+    (eccsPumpB && eccsPumpBMode === "RHR" ? 1 : 0);
+  useEffect(() => {
+    if (lpciSelected && reactorLevel <= -4.5 && !adsActive) {
+      setAdsActive(true);
+      setSrvOpen(Array(6).fill(true));
+      scram();
+      setEvent(
+        "ADS ACTUATED — reactor SCRAMMED; all SRVs open and waiting for RPV pressure below 3500 kPa.",
+      );
+    }
+  }, [lpciSelected, reactorLevel, adsActive]);
+  useEffect(() => {
+    if (adsActive && pressure < 3500) {
+      if (eccsPumpAMode === "LPCI") setEccsPumpA(true);
+      if (eccsPumpBMode === "LPCI") setEccsPumpB(true);
+      setEvent(
+        "ADS DEPRESSURIZATION COMPLETE — selected LPCI trains enabled; MCC circulation remains under operator control.",
+      );
+    }
+  }, [adsActive, pressure, eccsPumpAMode, eccsPumpBMode]);
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      if (safetyBusS) {
+        if (cstMakeup) setCstLevel((value) => clamp(value + 0.8, 0, 10));
+        if (cstDrain) setCstLevel((value) => clamp(value - 0.8, 0, 10));
+        if (hotwellMakeup) {
+          setCstLevel((value) => clamp(value - 0.5, 0, 10));
+          setHotwellLevel((value) => clamp(value + 0.5, -5, 6));
+        }
+        if (hotwellDrain) {
+          setCstLevel((value) => clamp(value + 0.5, 0, 10));
+          setHotwellLevel((value) => clamp(value - 0.5, -5, 6));
+        }
+      }
+      const rcic = safetyBusS && rcicValve && rcicFlow > 0;
+      const lpciInjection =
+        safetyBusS && pressure < 3500 ? activeLpciPumps * 0.5 : 0;
+      const injectionRate = Math.min(
+        1,
+        (rcic ? rcicFlow * 0.01 : 0) + lpciInjection,
+      );
+      if (injectionRate > 0)
+        setReactorLevel((value) => clamp(value + injectionRate, -5, 6));
+      if ((!isRunning || scramPressed) && safetyBusS && activeRhrPumps)
+        setTemperature((value) =>
+          clamp(value - activeRhrPumps * 0.45, 25, 900),
+        );
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [
+    cstMakeup,
+    cstDrain,
+    hotwellMakeup,
+    hotwellDrain,
+    safetyBusS,
+    rcicValve,
+    rcicFlow,
+    activeLpciPumps,
+    activeRhrPumps,
+    pressure,
+    isRunning,
+    scramPressed,
+  ]);
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      setDaTemperature((value) =>
+        clamp(
+          value + (108 + (daIntakeValve / 100) * 5 - value) * 0.12,
+          100,
+          120,
+        ),
+      );
+      setDaPressure((value) =>
+        clamp(
+          value + (1.2 + (daOuttakeValve / 100) * 0.8 - value) * 0.12,
+          1,
+          2.2,
+        ),
+      );
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [daIntakeValve, daOuttakeValve]);
   const startupLoad = 18 + (pump1Online ? 2 : 0);
   const busBLoad = (turbineBusB && isLocked ? 18 : 0) + (pump2Online ? 3 : 0);
-  const safetyLoad = (cstMakeup ? 15 : 0) + (cstDrain ? 15 : 0) + (hotwellMakeup ? 10 : 0) + (hotwellDrain ? 10 : 0) + (rcicFlow > 0 ? 8 : 0) + (eccsPumpA ? 8 : 0) + (eccsPumpB ? 8 : 0);
-  useEffect(() => { if (startupBusA && startupLoad > 30) { setStartupBusA(false); setEvent("STARTUP TRANSFORMER OVERLOAD — BUS A TRIPPED."); } if (turbineBusB && busBLoad > 60) { setTurbineBusB(false); setIsLocked(false); setEvent("BUS B OVERLOAD — GENERATOR TRIPPED."); } if (safetyBusS && safetyLoad > 30) { setSafetyBusS(false); setEvent("SAFETY BUS OVERLOAD — BUS S TRIPPED."); } }, [startupBusA, turbineBusB, safetyBusS, startupLoad, busBLoad, safetyLoad]);
+  const safetyLoad =
+    (cstMakeup ? 15 : 0) +
+    (cstDrain ? 15 : 0) +
+    (hotwellMakeup ? 10 : 0) +
+    (hotwellDrain ? 10 : 0) +
+    (rcicFlow > 0 ? 8 : 0) +
+    (eccsPumpA ? 8 : 0) +
+    (eccsPumpB ? 8 : 0);
+  useEffect(() => {
+    if (startupBusA && startupLoad > 30) {
+      setStartupBusA(false);
+      setEvent("STARTUP TRANSFORMER OVERLOAD — BUS A TRIPPED.");
+    }
+    if (turbineBusB && busBLoad > 60) {
+      setTurbineBusB(false);
+      setIsLocked(false);
+      setEvent("BUS B OVERLOAD — GENERATOR TRIPPED.");
+    }
+    if (safetyBusS && safetyLoad > 30) {
+      setSafetyBusS(false);
+      setEvent("SAFETY BUS OVERLOAD — BUS S TRIPPED.");
+    }
+  }, [startupBusA, turbineBusB, safetyBusS, startupLoad, busBLoad, safetyLoad]);
 
-  useEffect(() => { const active = { "REACTOR LEVEL": reactorLevel <= -5 || reactorLevel >= 6, "MANUAL TRIP": false, "LOOP TRIP": mccLevel < 15, "CORE TEMPERATURE": temperature > 900, "RPV PRESSURE": pressure > 9500, "LOW REACTOR PERIOD": reactorPeriod < 20 }; if (!rpsTripInhibit && Object.values(active).some(Boolean)) { setRpsTrips(previous => Object.fromEntries(Object.keys({ ...previous, ...active }).map(key => [key, previous[key] || active[key]]))); if (isRunning) scram(); } }, [reactorLevel, mccLevel, temperature, pressure, isRunning, reactorPeriod, rpsTripInhibit]);
-  useEffect(() => { if (!rpsTripInhibit && isRunning && valveValue > 15 && condenserVacuum > .25) { setRpsTrips(previous => ({ ...previous, "TURBINE VACUUM": true })); if (rolldownProtection) { setIsLocked(false); setEvent("CHANNEL B TURBINE VACUUM TRIP — generator unsynchronized."); } else setEvent("CHANNEL B TURBINE VACUUM ALARM — roll-down protection bypassed."); } }, [isRunning, valveValue, condenserVacuum, rolldownProtection, rpsTripInhibit]);
+  useEffect(() => {
+    const active = {
+      "REACTOR LEVEL": reactorLevel <= -5 || reactorLevel >= 6,
+      "MANUAL TRIP": false,
+      "LOOP TRIP": mccLevel < 15,
+      "CORE TEMPERATURE": temperature > 900,
+      "RPV PRESSURE": pressure > 9500,
+      "LOW REACTOR PERIOD": reactorPeriod < 20,
+    };
+    if (!rpsTripInhibit && Object.values(active).some(Boolean)) {
+      setRpsTrips((previous) =>
+        Object.fromEntries(
+          Object.keys({ ...previous, ...active }).map((key) => [
+            key,
+            previous[key] || active[key],
+          ]),
+        ),
+      );
+      if (isRunning) scram();
+    }
+  }, [
+    reactorLevel,
+    mccLevel,
+    temperature,
+    pressure,
+    isRunning,
+    reactorPeriod,
+    rpsTripInhibit,
+  ]);
+  useEffect(() => {
+    if (
+      !rpsTripInhibit &&
+      isRunning &&
+      valveValue > 15 &&
+      condenserVacuum > 0.25
+    ) {
+      setRpsTrips((previous) => ({ ...previous, "TURBINE VACUUM": true }));
+      if (rolldownProtection) {
+        setIsLocked(false);
+        setEvent("CHANNEL B TURBINE VACUUM TRIP — generator unsynchronized.");
+      } else
+        setEvent(
+          "CHANNEL B TURBINE VACUUM ALARM — roll-down protection bypassed.",
+        );
+    }
+  }, [
+    isRunning,
+    valveValue,
+    condenserVacuum,
+    rolldownProtection,
+    rpsTripInhibit,
+  ]);
 
-  useReactorPhysics({ isRunning, temperature, mainValve: valveValue, mainSteamInletOpen, bypassValve, reliefOpen: srvOpen.some(Boolean), reliefValvesOpen: srvOpen.filter(Boolean).length, turbineSteamFlow, bypassSteamFlow, aprm, pump1Online, pump2Online, isLocked, targetTurbineSpeed, thermalResponse: physicsTuning.thermalResponse, steamProductionMultiplier: physicsTuning.steamProduction, steamRemovalMultiplier: physicsTuning.steamRemoval, automaticScramTemperature: physicsTuning.tripTemperature, onTemperatureChange: setTemperature, onPressureChange: setPressure, onFuelLevelChange: setFuelLevel, onGridSyncChange: setGridSync, onTurbineSpeedChange: setTurbineSpeed, onAutomaticScram: () => scram() });
+  useReactorPhysics({
+    isRunning,
+    temperature,
+    mainValve: valveValue,
+    mainSteamInletOpen,
+    bypassValve,
+    reliefOpen: srvOpen.some(Boolean),
+    reliefValvesOpen: srvOpen.filter(Boolean).length,
+    turbineSteamFlow,
+    bypassSteamFlow,
+    aprm,
+    pump1Online,
+    pump2Online,
+    isLocked,
+    targetTurbineSpeed,
+    thermalResponse: physicsTuning.thermalResponse,
+    steamProductionMultiplier: physicsTuning.steamProduction,
+    steamRemovalMultiplier: physicsTuning.steamRemoval,
+    automaticScramTemperature: physicsTuning.tripTemperature,
+    onTemperatureChange: setTemperature,
+    onPressureChange: setPressure,
+    onFuelLevelChange: setFuelLevel,
+    onGridSyncChange: setGridSync,
+    onTurbineSpeedChange: setTurbineSpeed,
+    onAutomaticScram: () => scram(),
+  });
   useEffect(() => {
     if (isRunning && !isLocked) {
       // Before synchronization the shaft accelerates only as admitted steam flow rises.
-      setTargetTurbineSpeed(mainSteamInletOpen ? clamp(turbineSteamFlow / 3, 0, 80) : 0);
+      setTargetTurbineSpeed(
+        mainSteamInletOpen ? clamp(turbineSteamFlow / 3, 0, 80) : 0,
+      );
     }
   }, [isRunning, isLocked, mainSteamInletOpen, turbineSteamFlow]);
   useEffect(() => {
-    if (!isRunning || !isLocked || !mainSteamInletOpen || valveDirection) return;
+    if (!isRunning || !isLocked || !mainSteamInletOpen || valveDirection)
+      return;
     const governor = window.setInterval(() => {
       // A deliberately slow pressure governor: rising reactor power opens the
       // valve to hold main steam near nominal without fighting an operator move.
-      setValveValue(value => clamp(value + clamp((pressure - 7100) * .0015, -1.25, 1.25), 0, 100));
+      setValveValue((value) =>
+        clamp(value + clamp((pressure - 7100) * 0.0015, -1.25, 1.25), 0, 100),
+      );
     }, 1000);
     return () => window.clearInterval(governor);
   }, [isRunning, isLocked, mainSteamInletOpen, valveDirection, pressure]);
-  const { actualRPM, targetRPM, isSynchronized } = calculateTurbineData(turbineSpeed, targetTurbineSpeed, isLocked);
-  const lubePressure = lubePumpSource === "aux" || (lubePumpSource === "emergency" && safetyBusS) || (lubePumpSource === "off" && actualRPM >= 1800) ? 100 : 0;
-  const hydraulicPressure = hydraulicPumpSource === "aux" || (hydraulicPumpSource === "emergency" && safetyBusS) || (hydraulicPumpSource === "off" && actualRPM >= 1800) ? 100 : 0;
-  const turbineReadiness = { "MAIN STEAM PRESSURE": pressure >= 5500 && pressure <= 8500, "MAIN STEAM TEMPERATURE": temperature >= 250 && temperature <= 330, "CONDENSER VACUUM": condenserVacuum >= .04 && condenserVacuum <= .07, "HYDRAULIC PUMP PRESSURE": hydraulicPressure >= 80, "LUBRICATION PUMP PRESSURE": lubePressure >= 80, "TURNING GEAR OFF": !turningGear, "LUBRICATION OIL TEMPERATURE": oilTemperature >= 35 && oilTemperature <= 65 };
+  const { actualRPM, targetRPM, isSynchronized } = calculateTurbineData(
+    turbineSpeed,
+    targetTurbineSpeed,
+    isLocked,
+  );
+  const lubePressure =
+    lubePumpSource === "aux" ||
+    (lubePumpSource === "emergency" && safetyBusS) ||
+    (lubePumpSource === "off" && actualRPM >= 1800)
+      ? 100
+      : 0;
+  const hydraulicPressure =
+    hydraulicPumpSource === "aux" ||
+    (hydraulicPumpSource === "emergency" && safetyBusS) ||
+    (hydraulicPumpSource === "off" && actualRPM >= 1800)
+      ? 100
+      : 0;
+  const turbineReadiness = {
+    "MAIN STEAM PRESSURE": pressure >= 5500 && pressure <= 8500,
+    "MAIN STEAM TEMPERATURE": temperature >= 250 && temperature <= 330,
+    "CONDENSER VACUUM": condenserVacuum >= 0.04 && condenserVacuum <= 0.07,
+    "HYDRAULIC PUMP PRESSURE": hydraulicPressure >= 80,
+    "LUBRICATION PUMP PRESSURE": lubePressure >= 80,
+    "TURNING GEAR OFF": !turningGear,
+    "LUBRICATION OIL TEMPERATURE": oilTemperature >= 35 && oilTemperature <= 65,
+  };
   const turbineReady = Object.values(turbineReadiness).every(Boolean);
-  useEffect(() => { const tick = window.setInterval(() => { const oilTarget = clamp(72 - coldOilValve * .42 + warmOilValve * .18 + (actualRPM >= 1800 ? 5 : 0), 5, 105); setOilTemperature(value => clamp(value + (oilTarget - value) * .08, 5, 105)); const metalTarget = turningGear && preheatValve ? clamp(temperature * .82, 25, 320) : 25; setTurbineMetalTemperature(value => clamp(value + (metalTarget - value) * (turningGear && preheatValve ? .035 : .008), 20, 350)); }, 1000); return () => window.clearInterval(tick); }, [coldOilValve, warmOilValve, actualRPM, turningGear, preheatValve, temperature]);
-  useEffect(() => { if (!isLocked && actualRPM > 1800 && oilTemperature < 25) { setTargetTurbineSpeed(0); setEvent("TURBINE TRIP — lubrication oil temperature entered the danger zone."); } }, [actualRPM, oilTemperature, isLocked]);
-  useEffect(() => { if (turbineSmoke !== "idle" || actualRPM <= 3000 || lubePressure >= 80) return; const chance = window.setInterval(() => { if (Math.random() < .002) { setTurbineSmoke("countdown"); setAgentSeconds(10); setEvent("TURBINE SMOKE — agent release is available."); } }, 1000); return () => window.clearInterval(chance); }, [turbineSmoke, actualRPM, lubePressure]);
-  useEffect(() => { if (turbineSmoke !== "countdown") return; if (agentSeconds <= 0) { setTurbineSmoke("released"); setIsLocked(false); setTargetTurbineSpeed(0); setEvent("FIRE AGENT RELEASED — turbine tripped."); return; } const timer = window.setTimeout(() => setAgentSeconds(value => value - 1), 1000); return () => window.clearTimeout(timer); }, [turbineSmoke, agentSeconds]);
-  const alarms = Object.values(rpsTrips).some(Boolean) ? "RPS TRIP NODE LATCHED" : reactorLevel < -1.5 ? "REACTOR LEVEL LOW" : "All plant systems nominal.";
-  const start = () => { if (Object.values(rpsTrips).some(Boolean)) { setEvent("START INHIBITED — reset RPS nodes first."); return; } setIsRunning(true); setScramPressed(false); setEvent("Reactor criticality sequence started."); };
-  const instantStartup = () => { if (Object.values(rpsTrips).some(Boolean)) { setEvent("INSTANT STARTUP INHIBITED — reset RPS nodes first."); return; } setRods(previous => previous.map(rod => ({ ...rod, position: 80, temperature: Math.max(rod.temperature, 45) }))); setMode("RUN"); setIprCycle(3); setAutoEnabled(false); setRodDirection(0); setSelectedRodId("A1"); setIsRunning(true); setScramPressed(false); setEvent("INSTANT STARTUP COMPLETE — SRM and IPR programme set to RUN handoff position."); };
-  const resetTrips = () => { if (reactorLevel <= -5 || reactorLevel >= 6 || mccLevel < 15 || temperature > 900 || pressure > 9500 || reactorPeriod < 20) { setEvent("RPS RESET REJECTED — unsafe process condition remains."); return; } setRpsTrips(Object.fromEntries(Object.keys(rpsTrips).map(key => [key, false]))); setScramPressed(false); setEvent("RPS nodes reset."); };
-  const reset = () => { localStorage.removeItem(STORAGE); setPhysicsTuning({ thermalResponse: 1, steamProduction: 1, steamRemoval: 1, tripTemperature: 1100 }); setRods(createInitialRods()); setMode("SD"); setIprCycle(1); setReactorLevel(0); setHotwellLevel(0); setDeaeratorLevel(0); setBypassValve(100); setBypassDirection(0); setCondenserVacuum(1); condenserTargetRef.current = 1; condenserPhaseRef.current = 0; setCondenserValve(0); setCarAOn(false); setCarBOn(false); setMccAutoOn(false); setRecircPumpA(false); setRecircPumpB(false); setRecircSpeedA(0); setRecircSpeedB(0); setPeriodRecirculationAprm(0); setRcicValve(false); setRcicFlow(0); setEccsPumpA(false); setEccsPumpB(false); setEccsPumpAMode("RHR"); setEccsPumpBMode("RHR"); setSrvOpen(Array(6).fill(false)); setAdsActive(false); setLubePumpSource("off"); setHydraulicPumpSource("off"); setColdOilValve(0); setWarmOilValve(0); setTurningGear(false); setPreheatValve(false); setOilTemperature(25); setTurbineMetalTemperature(25); setTurbineSmoke("idle"); setAgentSeconds(10); setIsRunning(false); setScramPressed(false); setRpsTrips(Object.fromEntries(Object.keys(rpsTrips).map(key => [key, false]))); setEvent("Simulator reset to cold shutdown."); };
-  useEffect(() => { if ((!turbineBusB || !isLocked) && pump2Online) setPump2Online(false); }, [turbineBusB, isLocked, pump2Online]);
-  useEffect(() => { if ((!turbineBusB || !isLocked) && condenserPumpB) setCondenserPumpB(false); }, [turbineBusB, isLocked, condenserPumpB]);
-  useEffect(() => { if (previousSync.current && !isLocked && turbineBusB && rolldownProtection) { setTurbineBusB(false); setRpsTrips(previous => ({ ...previous, "TURBINE ROLLDOWN": true })); setEvent("ROLLDOWN PROTECTION OPENED BUS B AND TRIPPED TURBINE PROTECTION."); } previousSync.current = isLocked; }, [isLocked, turbineBusB, rolldownProtection]);
-  const runConsoleCommand = (raw: string) => { const [target, verb, rawValue] = raw.toLowerCase().trim().split(/\s+/); const value = Number(rawValue); if (target === "help") return "Commands: reactor.aprm set <0-100>, reactor.pressure set <kPa>, reactor.level set|add <m>, rods.withdraw set <0-100>, physics.thermal|steam|removal set <0-3>, turbine.smoke trigger, scram."; if (target === "scram") { scram(true); return "Manual SCRAM actuated."; } if (target === "turbine.smoke" && verb === "trigger") { setTurbineSmoke("countdown"); setAgentSeconds(10); setEvent("CONSOLE EVENT — turbine smoke triggered."); return "Turbine smoke triggered; agent release countdown available."; } if (!Number.isFinite(value)) return "Invalid value. Use HELP for syntax."; if (target === "reactor.aprm" && verb === "set") { const withdrawn = clamp(value, 0, 100); setRods(previous => previous.map(rod => ({ ...rod, position: 100 - withdrawn }))); return `All rods set to ${withdrawn.toFixed(1)}% withdrawn.`; } if (target === "reactor.pressure" && verb === "set") { setPressure(clamp(value, 101, 12000)); return `RPV pressure set to ${value.toFixed(0)} kPa.`; } if (target === "reactor.level" && (verb === "set" || verb === "add")) { setReactorLevel(current => clamp(verb === "add" ? current + value : value, -5, 6)); return "Reactor level override accepted."; } if (target === "rods.withdraw" && verb === "set") { const withdrawn = clamp(value, 0, 100); setRods(previous => previous.map(rod => ({ ...rod, position: 100 - withdrawn }))); return `Rods set to ${withdrawn.toFixed(1)}% withdrawn.`; } if (target.startsWith("physics.") && verb === "set") { const key = target.slice(8); if (key === "thermal") setPhysicsTuning(current => ({ ...current, thermalResponse: clamp(value, 0, 3) })); if (key === "steam") setPhysicsTuning(current => ({ ...current, steamProduction: clamp(value, 0, 3) })); if (key === "removal") setPhysicsTuning(current => ({ ...current, steamRemoval: clamp(value, 0, 3) })); return `Physics ${key} multiplier set to ${clamp(value, 0, 3).toFixed(2)}.`; } return "Unknown command. Type HELP."; };
-  useEffect(() => { const pending = sessionStorage.getItem("rbwr-pending-console-command"); if (!pending) return; sessionStorage.removeItem("rbwr-pending-console-command"); runConsoleCommand(pending); }, []);
-  const consoleContent = <SimulatorConsolePanel temperature={temperature} pressure={pressure} reactorLevel={reactorLevel} hotwellLevel={hotwellLevel} deaeratorLevel={deaeratorLevel} condenserPressure={condenserVacuum} rodsWithdrawn={rods.reduce((sum, rod) => sum + (100 - rod.position), 0) / rods.length} physics={physicsTuning} onTemperatureChange={setTemperature} onPressureChange={setPressure} onReactorLevelChange={setReactorLevel} onHotwellLevelChange={setHotwellLevel} onDeaeratorLevelChange={setDeaeratorLevel} onCondenserPressureChange={setCondenserVacuum} onRodsWithdrawnChange={value => { setRods(previous => previous.map(rod => ({ ...rod, position: 100 - value }))); setEvent(`CONSOLE OVERRIDE — all rods set to ${value.toFixed(1)}% withdrawn.`); }} onPhysicsChange={setPhysicsTuning} onScram={() => scram(true)} onResetTrips={resetTrips} onCommand={runConsoleCommand} onEvent={eventType => { if (eventType === "level-up") setReactorLevel(value => clamp(value + 1, -5, 6)); if (eventType === "level-down") setReactorLevel(value => clamp(value - 1, -5, 6)); if (eventType === "pressure-up") setPressure(value => clamp(value + 1000, 101, 12000)); if (eventType === "pressure-down") setPressure(value => clamp(value - 1000, 101, 12000)); setEvent(`CONSOLE EVENT INJECTED — ${eventType.replace("-", " ").toUpperCase()}.`); }}/>;
-  const tabbedShell = (content: ReactNode) => <div className="min-h-screen bg-[#07111d] text-slate-100"><main className="mx-auto max-w-7xl p-3 sm:p-4 md:p-7"><header className="mb-5 flex flex-col gap-3 border-b border-cyan-500/20 pb-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold tracking-[.3em] text-cyan-400">RBWR // UNIT 02 SIMULATOR</p><h1 className="text-2xl font-black sm:text-3xl">Boiling Water Reactor Control Room</h1></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => window.location.assign("/mainframe")} className="min-h-11 border-fuchsia-400/70 text-fuchsia-200 hover:bg-fuchsia-950">ADVANCED CONSOLE</Button><Button variant="outline" onClick={reset} className="min-h-11"> <RotateCcw className="mr-2 h-4 w-4"/>Reset</Button></div></header><AnnunciatorPanel annunciators={annunciators}/><section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-slate-900/70 p-3 text-sm"><span className={alarms === "All plant systems nominal." ? "text-slate-300" : "text-red-300"}><BellRing className="mr-2 inline h-4 w-4"/>{alarms === "All plant systems nominal." ? event : alarms}</span><Button size="sm" className="min-h-11 bg-red-700 hover:bg-red-600" onClick={() => scram(true)}><ShieldAlert className="mr-2 h-4 w-4"/>SCRAM</Button></section><nav aria-label="Simulator panels" className="mb-5 -mx-3 flex snap-x gap-2 overflow-x-auto border-y border-slate-700 bg-slate-900/80 px-3 py-2 sm:mx-0 sm:rounded-xl sm:border">{panels.map(panel => <Button key={panel} size="sm" variant={active === panel ? "default" : "ghost"} onClick={() => setActive(panel)} className={`min-h-11 shrink-0 snap-start ${active === panel ? "bg-cyan-500 text-slate-950" : "text-slate-300"}`}>{names[panel]}</Button>)}</nav><div className="rounded-xl border border-slate-700 bg-slate-900/75 p-3 sm:rounded-2xl sm:p-4 md:p-6">{content}</div></main></div>;
-  if (active === "status") return tabbedShell(<ReactorStatusPanel temperature={temperature} pressure={pressure} fuelLevel={fuelLevel} turbineOutputMW={turbineOutputMW} valveValue={valveValue} isRunning={isRunning} aprm={aprm} rodAprm={rodAprm} recirculationAprm={recirculationAprm} recircPumpA={recircPumpA} recircPumpB={recircPumpB} recircSpeedA={recircSpeedA} recircSpeedB={recircSpeedB} onRecircPumpAChange={setRecircPumpA} onRecircPumpBChange={setRecircPumpB} onRecircSpeedAChange={setRecircSpeedA} onRecircSpeedBChange={setRecircSpeedB} getStatusColor={() => Object.values(rpsTrips).some(Boolean) ? "destructive" : "default"} getStatusText={() => Object.values(rpsTrips).some(Boolean) ? "ALARM" : isRunning ? "OPERATIONAL" : "STANDBY"}/>);
-  if (active === "rps") return tabbedShell(<RpsPanel trips={rpsTrips} rolldownProtection={rolldownProtection} tripInhibit={rpsTripInhibit} turbineReadiness={turbineReadiness} onTripInhibitChange={value => { setRpsTripInhibit(value); setEvent(value ? "RPS TRIP INHIBIT ENABLED — automatic protection bypassed." : "RPS TRIP INHIBIT REMOVED — automatic protection armed."); }} onReset={resetTrips}/>);
-  if (active === "startup-shutdown") return tabbedShell(<StartupShutdownPanel isRunning={isRunning} temperature={temperature} scramPressed={scramPressed} onStartReactor={start} onInstantStartup={instantStartup} onStopReactor={() => setIsRunning(false)} onEmergencyShutdown={() => scram(true)}/>);
-  const mccPanel = <div className="space-y-6"><PlantSystemsPanel panel="mcc" condenserVacuum={condenserVacuum} condenserPumpOn={condenserPumpOn} condenserPumpB={condenserPumpB} condenserValve={condenserValve} busBAvailable={turbineBusB && isLocked} sjaeOn={sjaeOn} deaeratorLevel={deaeratorLevel} feedwaterDemand={feedwaterFlow} feedwaterPumpBFlow={feedwaterPumpBFlow} pump1Online={pump1Online} pump2Online={pump2Online} mccLevel={mccLevel} mccPumpOn={mccPumpOn} mccAutoOn={mccAutoOn} rpsTrips={rpsTrips} reactorLevel={reactorLevel} hotwellLevel={hotwellLevel} condensateFlow={condensateFlow} condensatePumpBFlow={condensatePumpBFlow} hotwellOutflowKgS={hotwellOutflowKgS} daOutflowKgS={daOutflowKgS} steamFlow={steamFlow} onCondenserPumpChange={setCondenserPumpOn} onCondenserPumpBChange={setCondenserPumpB} onCondenserValveChange={setCondenserValve} onSjaeChange={setSjaeOn} onFeedwaterDemandChange={setFeedwaterFlow} onFeedwaterPumpBFlowChange={setFeedwaterPumpBFlow} onPump1Change={setPump1Online} onPump2Change={setPump2Online} onCondensateFlowChange={setCondensateFlow} onCondensatePumpBFlowChange={setCondensatePumpBFlow} onMccPumpChange={setMccPumpOn} onMccAutoChange={setMccAutoOn} onManualTrip={() => scram(true)} onResetTrips={resetTrips}/><WaterManagementPanel cstLevel={cstLevel} hotwellLevel={hotwellLevel} cstMakeup={cstMakeup} cstDrain={cstDrain} hotwellMakeup={hotwellMakeup} hotwellDrain={hotwellDrain} busS={safetyBusS} daIntakeValve={daIntakeValve} daOuttakeValve={daOuttakeValve} daTemperature={daTemperature} daPressure={daPressure} daIntakeDirection={daIntakeDirection} daOuttakeDirection={daOuttakeDirection} daFastCloseHeld={daFastCloseHeld} onCstMakeup={setCstMakeup} onCstDrain={setCstDrain} onHotwellMakeup={setHotwellMakeup} onHotwellDrain={setHotwellDrain} onDaIntakeDirection={setDaIntakeDirection} onDaOuttakeDirection={setDaOuttakeDirection} onDaFastCloseHeld={setDaFastCloseHeld}/></div>;
-  if (active === "control-rods") return tabbedShell(<ControlRodsPanel rods={rods} selectedRodId={selectedRodId} mode={mode} iprCycle={iprCycle} aprm={aprm} srmCount={srmCount} direction={rodDirection} autoEnabled={autoEnabled} autoTarget={autoTarget} autoSpeed={autoSpeed} autoMode={autoMode} autoMessage={autoMessage} nextRodId={nextRod?.id} selectionScope={selectionScope} reactorPeriod={reactorPeriod} recirculationAprm={recirculationAprm} recircPumpA={recircPumpA} recircPumpB={recircPumpB} recircSpeedA={recircSpeedA} recircSpeedB={recircSpeedB} onRecircPumpAChange={value => { setRecircPumpA(value); if (value) setRecircSpeedA(speed => speed || 25); }} onRecircPumpBChange={value => { setRecircPumpB(value); if (value) setRecircSpeedB(speed => speed || 25); }} onRecircSpeedAChange={setRecircSpeedA} onRecircSpeedBChange={setRecircSpeedB} onSelectRod={setSelectedRodId} onModeChange={next => { if (next === "IPR" && !isCycleComplete(rods, "SRM", 1)) { setAutoMessage("SRM BLOCK — complete the 5% SRM cycle before selecting IPR."); return; } setMode(next); if (next === "SD") setAutoEnabled(false); }} onDirectionChange={setRodDirection} onAdvanceCycle={() => { if (isCycleComplete(rods, mode, iprCycle)) { setIprCycle(value => Math.min(3, value + 1)); setEvent("IPR cycle advanced."); } else setAutoMessage("GROUP BLOCK — complete the current withdrawal cycle first."); }} onAutoEnabledChange={setAutoEnabled} onAutoTargetChange={value => setAutoTarget(clamp(value, 0, 100))} onAutoSpeedChange={setAutoSpeed} onAutoModeChange={setAutoMode} onSelectionScopeChange={setSelectionScope}/>);
-  if (active === "safety") return tabbedShell(<SafetySystemsPanel pressure={pressure} reactorLevel={reactorLevel} busS={safetyBusS} isRunning={isRunning && !scramPressed} rcicValve={rcicValve} rcicFlow={rcicFlow} pumpAOn={eccsPumpA} pumpBOn={eccsPumpB} pumpAMode={eccsPumpAMode} pumpBMode={eccsPumpBMode} srvOpen={srvOpen} adsActive={adsActive} onRcicValve={setRcicValve} onRcicFlow={setRcicFlow} onPumpAOn={setEccsPumpA} onPumpBOn={setEccsPumpB} onPumpAMode={setEccsPumpAMode} onPumpBMode={setEccsPumpBMode} onSrvChange={(index, value) => setSrvOpen(previous => previous.map((open, current) => current === index ? value : open))} onAdsActuate={() => { if (adsActive) { setAdsActive(false); setSrvOpen(Array(6).fill(false)); setEvent("ADS RESET — automatic depressurization valves closed. It will actuate again if the low-level condition persists."); return; } setAdsActive(true); setSrvOpen(Array(6).fill(true)); scram(); setEvent("ADS MANUALLY ACTUATED — reactor SCRAMMED; all SRVs open and waiting for RPV pressure below 3500 kPa."); }}/>);
-  if (active === "condenser") return tabbedShell(<PlantSystemsPanel panel="condenser" condenserVacuum={condenserVacuum} condenserPumpOn={condenserPumpOn} condenserPumpB={condenserPumpB} condenserValve={condenserValve} condenserValveDirection={condenserValveDirection} condenserCirculationPumpOn={condenserCirculationPumpOn} onCondenserCirculationPumpChange={setCondenserCirculationPumpOn} busBAvailable={turbineBusB && isLocked} sjaeOn={sjaeOn} carAOn={carAOn} carBOn={carBOn} deaeratorLevel={deaeratorLevel} feedwaterDemand={feedwaterFlow} mccLevel={mccLevel} mccPumpOn={mccPumpOn} rpsTrips={rpsTrips} reactorLevel={reactorLevel} hotwellLevel={hotwellLevel} condensateFlow={condensateFlow} steamFlow={steamFlow} onCondenserPumpChange={setCondenserPumpOn} onCondenserPumpBChange={setCondenserPumpB} onCondenserValveChange={setCondenserValve} onCondenserValveDirectionChange={setCondenserValveDirection} onSjaeChange={setSjaeOn} onCarAChange={setCarAOn} onCarBChange={setCarBOn} onFeedwaterDemandChange={setFeedwaterFlow} onCondensateFlowChange={setCondensateFlow} onMccPumpChange={setMccPumpOn} onManualTrip={() => scram(true)} onResetTrips={resetTrips}/>);
-  if (active === "power-grid") return tabbedShell(<div className="space-y-6"><PowerGridPanel actualRPM={actualRPM} targetRPM={targetRPM} isSynchronized={isSynchronized} gridBreakerClosed={isLocked} exciterOn={exciterOn} mainSteamInletOpen={mainSteamInletOpen} mainValve={valveValue} bypassValve={bypassValve} mainValveDirection={valveDirection} bypassValveDirection={bypassDirection} turbineOutputMW={turbineOutputMW} turbineSteamFlow={turbineSteamFlow} pressure={pressure} pressureRate={pressureRate} onMainSteamInletChange={setMainSteamInletOpen} onMainValveDirection={setValveDirection} onBypassValveDirection={setBypassDirection} onExciterChange={value => { setExciterOn(value); if (!value) setIsLocked(false); }} onGridBreaker={() => { if (isLocked) { setIsLocked(false); return; } if (!turbineReady) { setEvent("SYNCHRONIZATION BLOCKED — turbine run-up checklist is not clear."); return; } if (exciterOn && isSynchronized) setIsLocked(true); }}/><TurbineAuxPanel rpm={actualRPM} busS={safetyBusS} lubeSource={lubePumpSource} hydraulicSource={hydraulicPumpSource} coldValve={coldOilValve} warmValve={warmOilValve} turningGear={turningGear} preheatValve={preheatValve} oilTemperature={oilTemperature} turbineTemperature={turbineMetalTemperature} smokeState={turbineSmoke} agentSeconds={agentSeconds} onLubeSource={setLubePumpSource} onHydraulicSource={setHydraulicPumpSource} onColdValve={setColdOilValve} onWarmValve={setWarmOilValve} onTurningGear={setTurningGear} onPreheatValve={setPreheatValve} onAgentRelease={() => { setTurbineSmoke("countdown"); setAgentSeconds(10); }} onAgentAbort={() => { setTurbineSmoke("aborted"); setEvent("FIRE AGENT RELEASE ABORTED — system may be re-armed."); }}/></div>);
-  if (active === "electrical") return tabbedShell(<ElectricalPanel startupBusA={startupBusA} turbineBusB={turbineBusB} safetyBusS={safetyBusS} rolldownProtection={rolldownProtection} turbineOnline={isLocked} startupLoad={startupLoad} busBLoad={busBLoad} safetyLoad={safetyLoad} onStartupBusAChange={setStartupBusA} onTurbineBusBChange={setTurbineBusB} onSafetyBusSChange={setSafetyBusS} onRolldownProtectionChange={value => { setRolldownProtection(value); setEvent(value ? "ROLLDOWN PROTECTION ENABLED." : "ROLLDOWN PROTECTION BYPASSED — RPS turbine trip disabled."); }}/>);
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      const oilTarget = clamp(
+        72 -
+          coldOilValve * 0.42 +
+          warmOilValve * 0.18 +
+          (actualRPM >= 1800 ? 5 : 0),
+        5,
+        105,
+      );
+      setOilTemperature((value) =>
+        clamp(value + (oilTarget - value) * 0.08, 5, 105),
+      );
+      const metalTarget =
+        turningGear && preheatValve ? clamp(temperature * 0.82, 25, 320) : 25;
+      setTurbineMetalTemperature((value) =>
+        clamp(
+          value +
+            (metalTarget - value) *
+              (turningGear && preheatValve ? 0.035 : 0.008),
+          20,
+          350,
+        ),
+      );
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [
+    coldOilValve,
+    warmOilValve,
+    actualRPM,
+    turningGear,
+    preheatValve,
+    temperature,
+  ]);
+  useEffect(() => {
+    if (!isLocked && actualRPM > 1800 && oilTemperature < 25) {
+      setTargetTurbineSpeed(0);
+      setEvent(
+        "TURBINE TRIP — lubrication oil temperature entered the danger zone.",
+      );
+    }
+  }, [actualRPM, oilTemperature, isLocked]);
+  useEffect(() => {
+    if (turbineSmoke !== "idle" || actualRPM <= 3000 || lubePressure >= 80)
+      return;
+    const chance = window.setInterval(() => {
+      if (Math.random() < 0.002) {
+        setTurbineSmoke("countdown");
+        setAgentSeconds(10);
+        setEvent("TURBINE SMOKE — agent release is available.");
+      }
+    }, 1000);
+    return () => window.clearInterval(chance);
+  }, [turbineSmoke, actualRPM, lubePressure]);
+  useEffect(() => {
+    if (turbineSmoke !== "countdown") return;
+    if (agentSeconds <= 0) {
+      setTurbineSmoke("released");
+      setIsLocked(false);
+      setTargetTurbineSpeed(0);
+      setEvent("FIRE AGENT RELEASED — turbine tripped.");
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setAgentSeconds((value) => value - 1),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [turbineSmoke, agentSeconds]);
+  const alarms = Object.values(rpsTrips).some(Boolean)
+    ? "RPS TRIP NODE LATCHED"
+    : reactorLevel < -1.5
+      ? "REACTOR LEVEL LOW"
+      : "All plant systems nominal.";
+  const start = () => {
+    if (Object.values(rpsTrips).some(Boolean)) {
+      setEvent("START INHIBITED — reset RPS nodes first.");
+      return;
+    }
+    setIsRunning(true);
+    setScramPressed(false);
+    setEvent("Reactor criticality sequence started.");
+  };
+  const instantStartup = () => {
+    if (Object.values(rpsTrips).some(Boolean)) {
+      setEvent("INSTANT STARTUP INHIBITED — reset RPS nodes first.");
+      return;
+    }
+    setRods((previous) =>
+      previous.map((rod) => ({
+        ...rod,
+        position: 80,
+        temperature: Math.max(rod.temperature, 45),
+      })),
+    );
+    setMode("RUN");
+    setIprCycle(3);
+    setAutoEnabled(false);
+    setRodDirection(0);
+    setSelectedRodId("A1");
+    setIsRunning(true);
+    setScramPressed(false);
+    setEvent(
+      "INSTANT STARTUP COMPLETE — SRM and IPR programme set to RUN handoff position.",
+    );
+  };
+  const resetTrips = () => {
+    if (
+      reactorLevel <= -5 ||
+      reactorLevel >= 6 ||
+      mccLevel < 15 ||
+      temperature > 900 ||
+      pressure > 9500 ||
+      reactorPeriod < 20
+    ) {
+      setEvent("RPS RESET REJECTED — unsafe process condition remains.");
+      return;
+    }
+    setRpsTrips(
+      Object.fromEntries(Object.keys(rpsTrips).map((key) => [key, false])),
+    );
+    setScramPressed(false);
+    setEvent("RPS nodes reset.");
+  };
+  const reset = () => {
+    localStorage.removeItem(STORAGE);
+    setPhysicsTuning({
+      thermalResponse: 1,
+      steamProduction: 1,
+      steamRemoval: 1,
+      tripTemperature: 1100,
+    });
+    setRods(createInitialRods());
+    setMode("SD");
+    setIprCycle(1);
+    setReactorLevel(0);
+    setHotwellLevel(0);
+    setDeaeratorLevel(0);
+    setBypassValve(100);
+    setBypassDirection(0);
+    setCondenserVacuum(1);
+    condenserTargetRef.current = 1;
+    condenserPhaseRef.current = 0;
+    setCondenserValve(0);
+    setCarAOn(false);
+    setCarBOn(false);
+    setMccAutoOn(false);
+    setRecircPumpA(false);
+    setRecircPumpB(false);
+    setRecircSpeedA(0);
+    setRecircSpeedB(0);
+    setPeriodRecirculationAprm(0);
+    setRcicValve(false);
+    setRcicFlow(0);
+    setEccsPumpA(false);
+    setEccsPumpB(false);
+    setEccsPumpAMode("RHR");
+    setEccsPumpBMode("RHR");
+    setSrvOpen(Array(6).fill(false));
+    setAdsActive(false);
+    setLubePumpSource("off");
+    setHydraulicPumpSource("off");
+    setColdOilValve(0);
+    setWarmOilValve(0);
+    setTurningGear(false);
+    setPreheatValve(false);
+    setOilTemperature(25);
+    setTurbineMetalTemperature(25);
+    setTurbineSmoke("idle");
+    setAgentSeconds(10);
+    setIsRunning(false);
+    setScramPressed(false);
+    setRpsTrips(
+      Object.fromEntries(Object.keys(rpsTrips).map((key) => [key, false])),
+    );
+    setEvent("Simulator reset to cold shutdown.");
+  };
+  useEffect(() => {
+    if ((!turbineBusB || !isLocked) && pump2Online) setPump2Online(false);
+  }, [turbineBusB, isLocked, pump2Online]);
+  useEffect(() => {
+    if ((!turbineBusB || !isLocked) && condenserPumpB) setCondenserPumpB(false);
+  }, [turbineBusB, isLocked, condenserPumpB]);
+  useEffect(() => {
+    if (
+      previousSync.current &&
+      !isLocked &&
+      turbineBusB &&
+      rolldownProtection
+    ) {
+      setTurbineBusB(false);
+      setRpsTrips((previous) => ({ ...previous, "TURBINE ROLLDOWN": true }));
+      setEvent(
+        "ROLLDOWN PROTECTION OPENED BUS B AND TRIPPED TURBINE PROTECTION.",
+      );
+    }
+    previousSync.current = isLocked;
+  }, [isLocked, turbineBusB, rolldownProtection]);
+  const runConsoleCommand = (raw: string) => {
+    const [target, verb, rawValue] = raw.toLowerCase().trim().split(/\s+/);
+    const value = Number(rawValue);
+    if (target === "help")
+      return "Commands: reactor.aprm set <0-100>, reactor.pressure set <kPa>, reactor.level set|add <m>, rods.withdraw set <0-100>, physics.thermal|steam|removal set <0-3>, turbine.smoke trigger, scram.";
+    if (target === "scram") {
+      scram(true);
+      return "Manual SCRAM actuated.";
+    }
+    if (target === "turbine.smoke" && verb === "trigger") {
+      setTurbineSmoke("countdown");
+      setAgentSeconds(10);
+      setEvent("CONSOLE EVENT — turbine smoke triggered.");
+      return "Turbine smoke triggered; agent release countdown available.";
+    }
+    if (!Number.isFinite(value)) return "Invalid value. Use HELP for syntax.";
+    if (target === "reactor.aprm" && verb === "set") {
+      const withdrawn = clamp(value, 0, 100);
+      setRods((previous) =>
+        previous.map((rod) => ({ ...rod, position: 100 - withdrawn })),
+      );
+      return `All rods set to ${withdrawn.toFixed(1)}% withdrawn.`;
+    }
+    if (target === "reactor.pressure" && verb === "set") {
+      setPressure(clamp(value, 101, 12000));
+      return `RPV pressure set to ${value.toFixed(0)} kPa.`;
+    }
+    if (target === "reactor.level" && (verb === "set" || verb === "add")) {
+      setReactorLevel((current) =>
+        clamp(verb === "add" ? current + value : value, -5, 6),
+      );
+      return "Reactor level override accepted.";
+    }
+    if (target === "rods.withdraw" && verb === "set") {
+      const withdrawn = clamp(value, 0, 100);
+      setRods((previous) =>
+        previous.map((rod) => ({ ...rod, position: 100 - withdrawn })),
+      );
+      return `Rods set to ${withdrawn.toFixed(1)}% withdrawn.`;
+    }
+    if (target.startsWith("physics.") && verb === "set") {
+      const key = target.slice(8);
+      if (key === "thermal")
+        setPhysicsTuning((current) => ({
+          ...current,
+          thermalResponse: clamp(value, 0, 3),
+        }));
+      if (key === "steam")
+        setPhysicsTuning((current) => ({
+          ...current,
+          steamProduction: clamp(value, 0, 3),
+        }));
+      if (key === "removal")
+        setPhysicsTuning((current) => ({
+          ...current,
+          steamRemoval: clamp(value, 0, 3),
+        }));
+      return `Physics ${key} multiplier set to ${clamp(value, 0, 3).toFixed(2)}.`;
+    }
+    return "Unknown command. Type HELP.";
+  };
+  useEffect(() => {
+    const pending = sessionStorage.getItem("rbwr-pending-console-command");
+    if (!pending) return;
+    sessionStorage.removeItem("rbwr-pending-console-command");
+    runConsoleCommand(pending);
+  }, []);
+  const consoleContent = (
+    <SimulatorConsolePanel
+      temperature={temperature}
+      pressure={pressure}
+      reactorLevel={reactorLevel}
+      hotwellLevel={hotwellLevel}
+      deaeratorLevel={deaeratorLevel}
+      condenserPressure={condenserVacuum}
+      rodsWithdrawn={
+        rods.reduce((sum, rod) => sum + (100 - rod.position), 0) / rods.length
+      }
+      physics={physicsTuning}
+      onTemperatureChange={setTemperature}
+      onPressureChange={setPressure}
+      onReactorLevelChange={setReactorLevel}
+      onHotwellLevelChange={setHotwellLevel}
+      onDeaeratorLevelChange={setDeaeratorLevel}
+      onCondenserPressureChange={setCondenserVacuum}
+      onRodsWithdrawnChange={(value) => {
+        setRods((previous) =>
+          previous.map((rod) => ({ ...rod, position: 100 - value })),
+        );
+        setEvent(
+          `CONSOLE OVERRIDE — all rods set to ${value.toFixed(1)}% withdrawn.`,
+        );
+      }}
+      onPhysicsChange={setPhysicsTuning}
+      onScram={() => scram(true)}
+      onResetTrips={resetTrips}
+      onCommand={runConsoleCommand}
+      onEvent={(eventType) => {
+        if (eventType === "level-up")
+          setReactorLevel((value) => clamp(value + 1, -5, 6));
+        if (eventType === "level-down")
+          setReactorLevel((value) => clamp(value - 1, -5, 6));
+        if (eventType === "pressure-up")
+          setPressure((value) => clamp(value + 1000, 101, 12000));
+        if (eventType === "pressure-down")
+          setPressure((value) => clamp(value - 1000, 101, 12000));
+        setEvent(
+          `CONSOLE EVENT INJECTED — ${eventType.replace("-", " ").toUpperCase()}.`,
+        );
+      }}
+    />
+  );
+  const tabbedShell = (content: ReactNode) => (
+    <div className="min-h-screen bg-[#07111d] text-slate-100">
+      <main className="mx-auto max-w-7xl p-3 sm:p-4 md:p-7">
+        <header className="mb-5 flex flex-col gap-3 border-b border-cyan-500/20 pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold tracking-[.3em] text-cyan-400">
+              UNIT 2 // THE BWR SIM
+            </p>
+            <h1 className="text-2xl font-black sm:text-3xl">
+              Unit 2 Reactor Control Room
+            </h1>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => window.location.assign("/mainframe")}
+              className="min-h-11 border-fuchsia-400/70 text-fuchsia-200 hover:bg-fuchsia-950"
+            >
+              ADVANCED CONSOLE
+            </Button>
+            <Button variant="outline" onClick={reset} className="min-h-11">
+              {" "}
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset
+            </Button>
+          </div>
+        </header>
+        <AnnunciatorPanel annunciators={annunciators} />
+        <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-slate-900/70 p-3 text-sm">
+          <span
+            className={
+              alarms === "All plant systems nominal."
+                ? "text-slate-300"
+                : "text-red-300"
+            }
+          >
+            <BellRing className="mr-2 inline h-4 w-4" />
+            {alarms === "All plant systems nominal." ? event : alarms}
+          </span>
+          <Button
+            size="sm"
+            className="min-h-11 bg-red-700 hover:bg-red-600"
+            onClick={() => scram(true)}
+          >
+            <ShieldAlert className="mr-2 h-4 w-4" />
+            SCRAM
+          </Button>
+        </section>
+        <nav
+          aria-label="Simulator panels"
+          className="mb-5 -mx-3 flex snap-x gap-2 overflow-x-auto border-y border-slate-700 bg-slate-900/80 px-3 py-2 sm:mx-0 sm:rounded-xl sm:border"
+        >
+          {panels.map((panel) => (
+            <Button
+              key={panel}
+              size="sm"
+              variant={active === panel ? "default" : "ghost"}
+              onClick={() => setActive(panel)}
+              className={`min-h-11 shrink-0 snap-start ${active === panel ? "bg-cyan-500 text-slate-950" : "text-slate-300"}`}
+            >
+              {names[panel]}
+            </Button>
+          ))}
+        </nav>
+        <div className="rounded-xl border border-slate-700 bg-slate-900/75 p-3 sm:rounded-2xl sm:p-4 md:p-6">
+          {content}
+        </div>
+      </main>
+    </div>
+  );
+  if (active === "status")
+    return tabbedShell(
+      <ReactorStatusPanel
+        temperature={temperature}
+        pressure={pressure}
+        fuelLevel={fuelLevel}
+        turbineOutputMW={turbineOutputMW}
+        valveValue={valveValue}
+        isRunning={isRunning}
+        aprm={aprm}
+        rodAprm={rodAprm}
+        recirculationAprm={recirculationAprm}
+        recircPumpA={recircPumpA}
+        recircPumpB={recircPumpB}
+        recircSpeedA={recircSpeedA}
+        recircSpeedB={recircSpeedB}
+        onRecircPumpAChange={setRecircPumpA}
+        onRecircPumpBChange={setRecircPumpB}
+        onRecircSpeedAChange={setRecircSpeedA}
+        onRecircSpeedBChange={setRecircSpeedB}
+        getStatusColor={() =>
+          Object.values(rpsTrips).some(Boolean) ? "destructive" : "default"
+        }
+        getStatusText={() =>
+          Object.values(rpsTrips).some(Boolean)
+            ? "ALARM"
+            : isRunning
+              ? "OPERATIONAL"
+              : "STANDBY"
+        }
+      />,
+    );
+  if (active === "rps")
+    return tabbedShell(
+      <RpsPanel
+        trips={rpsTrips}
+        rolldownProtection={rolldownProtection}
+        tripInhibit={rpsTripInhibit}
+        turbineReadiness={turbineReadiness}
+        onTripInhibitChange={(value) => {
+          setRpsTripInhibit(value);
+          setEvent(
+            value
+              ? "RPS TRIP INHIBIT ENABLED — automatic protection bypassed."
+              : "RPS TRIP INHIBIT REMOVED — automatic protection armed.",
+          );
+        }}
+        onReset={resetTrips}
+      />,
+    );
+  if (active === "startup-shutdown")
+    return tabbedShell(
+      <StartupShutdownPanel
+        isRunning={isRunning}
+        temperature={temperature}
+        scramPressed={scramPressed}
+        onStartReactor={start}
+        onInstantStartup={instantStartup}
+        onStopReactor={() => setIsRunning(false)}
+        onEmergencyShutdown={() => scram(true)}
+      />,
+    );
+  const mccPanel = (
+    <div className="space-y-6">
+      <PlantSystemsPanel
+        panel="mcc"
+        condenserVacuum={condenserVacuum}
+        condenserPumpOn={condenserPumpOn}
+        condenserPumpB={condenserPumpB}
+        condenserValve={condenserValve}
+        busBAvailable={turbineBusB && isLocked}
+        sjaeOn={sjaeOn}
+        deaeratorLevel={deaeratorLevel}
+        feedwaterDemand={feedwaterFlow}
+        feedwaterPumpBFlow={feedwaterPumpBFlow}
+        pump1Online={pump1Online}
+        pump2Online={pump2Online}
+        mccLevel={mccLevel}
+        mccPumpOn={mccPumpOn}
+        mccAutoOn={mccAutoOn}
+        rpsTrips={rpsTrips}
+        reactorLevel={reactorLevel}
+        hotwellLevel={hotwellLevel}
+        condensateFlow={condensateFlow}
+        condensatePumpBFlow={condensatePumpBFlow}
+        hotwellOutflowKgS={hotwellOutflowKgS}
+        daOutflowKgS={daOutflowKgS}
+        steamFlow={steamFlow}
+        onCondenserPumpChange={setCondenserPumpOn}
+        onCondenserPumpBChange={setCondenserPumpB}
+        onCondenserValveChange={setCondenserValve}
+        onSjaeChange={setSjaeOn}
+        onFeedwaterDemandChange={setFeedwaterFlow}
+        onFeedwaterPumpBFlowChange={setFeedwaterPumpBFlow}
+        onPump1Change={setPump1Online}
+        onPump2Change={setPump2Online}
+        onCondensateFlowChange={setCondensateFlow}
+        onCondensatePumpBFlowChange={setCondensatePumpBFlow}
+        onMccPumpChange={setMccPumpOn}
+        onMccAutoChange={setMccAutoOn}
+        onManualTrip={() => scram(true)}
+        onResetTrips={resetTrips}
+      />
+      <WaterManagementPanel
+        cstLevel={cstLevel}
+        hotwellLevel={hotwellLevel}
+        cstMakeup={cstMakeup}
+        cstDrain={cstDrain}
+        hotwellMakeup={hotwellMakeup}
+        hotwellDrain={hotwellDrain}
+        busS={safetyBusS}
+        daIntakeValve={daIntakeValve}
+        daOuttakeValve={daOuttakeValve}
+        daTemperature={daTemperature}
+        daPressure={daPressure}
+        daIntakeDirection={daIntakeDirection}
+        daOuttakeDirection={daOuttakeDirection}
+        daFastCloseHeld={daFastCloseHeld}
+        onCstMakeup={setCstMakeup}
+        onCstDrain={setCstDrain}
+        onHotwellMakeup={setHotwellMakeup}
+        onHotwellDrain={setHotwellDrain}
+        onDaIntakeDirection={setDaIntakeDirection}
+        onDaOuttakeDirection={setDaOuttakeDirection}
+        onDaFastCloseHeld={setDaFastCloseHeld}
+      />
+    </div>
+  );
+  if (active === "control-rods")
+    return tabbedShell(
+      <ControlRodsPanel
+        rods={rods}
+        selectedRodId={selectedRodId}
+        mode={mode}
+        iprCycle={iprCycle}
+        aprm={aprm}
+        srmCount={srmCount}
+        direction={rodDirection}
+        autoEnabled={autoEnabled}
+        autoTarget={autoTarget}
+        autoSpeed={autoSpeed}
+        autoMode={autoMode}
+        autoMessage={autoMessage}
+        nextRodId={nextRod?.id}
+        selectionScope={selectionScope}
+        reactorPeriod={reactorPeriod}
+        recirculationAprm={recirculationAprm}
+        recircPumpA={recircPumpA}
+        recircPumpB={recircPumpB}
+        recircSpeedA={recircSpeedA}
+        recircSpeedB={recircSpeedB}
+        onRecircPumpAChange={(value) => {
+          setRecircPumpA(value);
+          if (value) setRecircSpeedA((speed) => speed || 25);
+        }}
+        onRecircPumpBChange={(value) => {
+          setRecircPumpB(value);
+          if (value) setRecircSpeedB((speed) => speed || 25);
+        }}
+        onRecircSpeedAChange={setRecircSpeedA}
+        onRecircSpeedBChange={setRecircSpeedB}
+        onSelectRod={setSelectedRodId}
+        onModeChange={(next) => {
+          if (next === "IPR" && !isCycleComplete(rods, "SRM", 1)) {
+            setAutoMessage(
+              "SRM BLOCK — complete the 5% SRM cycle before selecting IPR.",
+            );
+            return;
+          }
+          setMode(next);
+          if (next === "SD") setAutoEnabled(false);
+        }}
+        onDirectionChange={setRodDirection}
+        onAdvanceCycle={() => {
+          if (isCycleComplete(rods, mode, iprCycle)) {
+            setIprCycle((value) => Math.min(3, value + 1));
+            setEvent("IPR cycle advanced.");
+          } else
+            setAutoMessage(
+              "GROUP BLOCK — complete the current withdrawal cycle first.",
+            );
+        }}
+        onAutoEnabledChange={setAutoEnabled}
+        onAutoTargetChange={(value) => setAutoTarget(clamp(value, 0, 100))}
+        onAutoSpeedChange={setAutoSpeed}
+        onAutoModeChange={setAutoMode}
+        onSelectionScopeChange={setSelectionScope}
+      />,
+    );
+  if (active === "safety")
+    return tabbedShell(
+      <SafetySystemsPanel
+        pressure={pressure}
+        reactorLevel={reactorLevel}
+        busS={safetyBusS}
+        isRunning={isRunning && !scramPressed}
+        rcicValve={rcicValve}
+        rcicFlow={rcicFlow}
+        pumpAOn={eccsPumpA}
+        pumpBOn={eccsPumpB}
+        pumpAMode={eccsPumpAMode}
+        pumpBMode={eccsPumpBMode}
+        srvOpen={srvOpen}
+        adsActive={adsActive}
+        onRcicValve={setRcicValve}
+        onRcicFlow={setRcicFlow}
+        onPumpAOn={setEccsPumpA}
+        onPumpBOn={setEccsPumpB}
+        onPumpAMode={setEccsPumpAMode}
+        onPumpBMode={setEccsPumpBMode}
+        onSrvChange={(index, value) =>
+          setSrvOpen((previous) =>
+            previous.map((open, current) => (current === index ? value : open)),
+          )
+        }
+        onAdsActuate={() => {
+          if (adsActive) {
+            setAdsActive(false);
+            setSrvOpen(Array(6).fill(false));
+            setEvent(
+              "ADS RESET — automatic depressurization valves closed. It will actuate again if the low-level condition persists.",
+            );
+            return;
+          }
+          setAdsActive(true);
+          setSrvOpen(Array(6).fill(true));
+          scram();
+          setEvent(
+            "ADS MANUALLY ACTUATED — reactor SCRAMMED; all SRVs open and waiting for RPV pressure below 3500 kPa.",
+          );
+        }}
+      />,
+    );
+  if (active === "condenser")
+    return tabbedShell(
+      <PlantSystemsPanel
+        panel="condenser"
+        condenserVacuum={condenserVacuum}
+        condenserPumpOn={condenserPumpOn}
+        condenserPumpB={condenserPumpB}
+        condenserValve={condenserValve}
+        condenserValveDirection={condenserValveDirection}
+        condenserCirculationPumpOn={condenserCirculationPumpOn}
+        onCondenserCirculationPumpChange={setCondenserCirculationPumpOn}
+        busBAvailable={turbineBusB && isLocked}
+        sjaeOn={sjaeOn}
+        carAOn={carAOn}
+        carBOn={carBOn}
+        deaeratorLevel={deaeratorLevel}
+        feedwaterDemand={feedwaterFlow}
+        mccLevel={mccLevel}
+        mccPumpOn={mccPumpOn}
+        rpsTrips={rpsTrips}
+        reactorLevel={reactorLevel}
+        hotwellLevel={hotwellLevel}
+        condensateFlow={condensateFlow}
+        steamFlow={steamFlow}
+        onCondenserPumpChange={setCondenserPumpOn}
+        onCondenserPumpBChange={setCondenserPumpB}
+        onCondenserValveChange={setCondenserValve}
+        onCondenserValveDirectionChange={setCondenserValveDirection}
+        onSjaeChange={setSjaeOn}
+        onCarAChange={setCarAOn}
+        onCarBChange={setCarBOn}
+        onFeedwaterDemandChange={setFeedwaterFlow}
+        onCondensateFlowChange={setCondensateFlow}
+        onMccPumpChange={setMccPumpOn}
+        onManualTrip={() => scram(true)}
+        onResetTrips={resetTrips}
+      />,
+    );
+  if (active === "power-grid")
+    return tabbedShell(
+      <div className="space-y-6">
+        <PowerGridPanel
+          actualRPM={actualRPM}
+          targetRPM={targetRPM}
+          isSynchronized={isSynchronized}
+          gridBreakerClosed={isLocked}
+          exciterOn={exciterOn}
+          mainSteamInletOpen={mainSteamInletOpen}
+          mainValve={valveValue}
+          bypassValve={bypassValve}
+          mainValveDirection={valveDirection}
+          bypassValveDirection={bypassDirection}
+          turbineOutputMW={turbineOutputMW}
+          turbineSteamFlow={turbineSteamFlow}
+          pressure={pressure}
+          pressureRate={pressureRate}
+          onMainSteamInletChange={setMainSteamInletOpen}
+          onMainValveDirection={setValveDirection}
+          onBypassValveDirection={setBypassDirection}
+          onExciterChange={(value) => {
+            setExciterOn(value);
+            if (!value) setIsLocked(false);
+          }}
+          onGridBreaker={() => {
+            if (isLocked) {
+              setIsLocked(false);
+              return;
+            }
+            if (!turbineReady) {
+              setEvent(
+                "SYNCHRONIZATION BLOCKED — turbine run-up checklist is not clear.",
+              );
+              return;
+            }
+            if (exciterOn && isSynchronized) setIsLocked(true);
+          }}
+        />
+        <TurbineAuxPanel
+          rpm={actualRPM}
+          busS={safetyBusS}
+          lubeSource={lubePumpSource}
+          hydraulicSource={hydraulicPumpSource}
+          coldValve={coldOilValve}
+          warmValve={warmOilValve}
+          turningGear={turningGear}
+          preheatValve={preheatValve}
+          oilTemperature={oilTemperature}
+          turbineTemperature={turbineMetalTemperature}
+          smokeState={turbineSmoke}
+          agentSeconds={agentSeconds}
+          onLubeSource={setLubePumpSource}
+          onHydraulicSource={setHydraulicPumpSource}
+          onColdValve={setColdOilValve}
+          onWarmValve={setWarmOilValve}
+          onTurningGear={setTurningGear}
+          onPreheatValve={setPreheatValve}
+          onAgentRelease={() => {
+            setTurbineSmoke("countdown");
+            setAgentSeconds(10);
+          }}
+          onAgentAbort={() => {
+            setTurbineSmoke("aborted");
+            setEvent("FIRE AGENT RELEASE ABORTED — system may be re-armed.");
+          }}
+        />
+      </div>,
+    );
+  if (active === "electrical")
+    return tabbedShell(
+      <ElectricalPanel
+        startupBusA={startupBusA}
+        turbineBusB={turbineBusB}
+        safetyBusS={safetyBusS}
+        rolldownProtection={rolldownProtection}
+        turbineOnline={isLocked}
+        startupLoad={startupLoad}
+        busBLoad={busBLoad}
+        safetyLoad={safetyLoad}
+        onStartupBusAChange={setStartupBusA}
+        onTurbineBusBChange={setTurbineBusB}
+        onSafetyBusSChange={setSafetyBusS}
+        onRolldownProtectionChange={(value) => {
+          setRolldownProtection(value);
+          setEvent(
+            value
+              ? "ROLLDOWN PROTECTION ENABLED."
+              : "ROLLDOWN PROTECTION BYPASSED — RPS turbine trip disabled.",
+          );
+        }}
+      />,
+    );
   if (active === "mcc") return tabbedShell(mccPanel);
-  if (active === "mcc") return tabbedShell(<div className="space-y-6"><PlantSystemsPanel panel="mcc" condenserVacuum={condenserVacuum} condenserPumpOn={condenserPumpOn} condenserPumpB={condenserPumpB} condenserValve={condenserValve} busBAvailable={turbineBusB && isLocked} sjaeOn={sjaeOn} deaeratorLevel={deaeratorLevel} feedwaterDemand={feedwaterFlow} mccLevel={mccLevel} mccPumpOn={mccPumpOn} rpsTrips={rpsTrips} reactorLevel={reactorLevel} hotwellLevel={hotwellLevel} condensateFlow={condensateFlow} steamFlow={steamFlow} onCondenserPumpChange={setCondenserPumpOn} onCondenserPumpBChange={setCondenserPumpB} onCondenserValveChange={setCondenserValve} onSjaeChange={setSjaeOn} onFeedwaterDemandChange={setFeedwaterFlow} onCondensateFlowChange={setCondensateFlow} onMccPumpChange={setMccPumpOn} onManualTrip={() => scram(true)} onResetTrips={resetTrips}/><WaterManagementPanel cstLevel={cstLevel} hotwellLevel={hotwellLevel} cstMakeup={cstMakeup} cstDrain={cstDrain} hotwellMakeup={hotwellMakeup} hotwellDrain={hotwellDrain} busS={safetyBusS} onCstMakeup={setCstMakeup} onCstDrain={setCstDrain} onHotwellMakeup={setHotwellMakeup} onHotwellDrain={setHotwellDrain}/></div>);
+  if (active === "mcc")
+    return tabbedShell(
+      <div className="space-y-6">
+        <PlantSystemsPanel
+          panel="mcc"
+          condenserVacuum={condenserVacuum}
+          condenserPumpOn={condenserPumpOn}
+          condenserPumpB={condenserPumpB}
+          condenserValve={condenserValve}
+          busBAvailable={turbineBusB && isLocked}
+          sjaeOn={sjaeOn}
+          deaeratorLevel={deaeratorLevel}
+          feedwaterDemand={feedwaterFlow}
+          mccLevel={mccLevel}
+          mccPumpOn={mccPumpOn}
+          rpsTrips={rpsTrips}
+          reactorLevel={reactorLevel}
+          hotwellLevel={hotwellLevel}
+          condensateFlow={condensateFlow}
+          steamFlow={steamFlow}
+          onCondenserPumpChange={setCondenserPumpOn}
+          onCondenserPumpBChange={setCondenserPumpB}
+          onCondenserValveChange={setCondenserValve}
+          onSjaeChange={setSjaeOn}
+          onFeedwaterDemandChange={setFeedwaterFlow}
+          onCondensateFlowChange={setCondensateFlow}
+          onMccPumpChange={setMccPumpOn}
+          onManualTrip={() => scram(true)}
+          onResetTrips={resetTrips}
+        />
+        <WaterManagementPanel
+          cstLevel={cstLevel}
+          hotwellLevel={hotwellLevel}
+          cstMakeup={cstMakeup}
+          cstDrain={cstDrain}
+          hotwellMakeup={hotwellMakeup}
+          hotwellDrain={hotwellDrain}
+          busS={safetyBusS}
+          onCstMakeup={setCstMakeup}
+          onCstDrain={setCstDrain}
+          onHotwellMakeup={setHotwellMakeup}
+          onHotwellDrain={setHotwellDrain}
+        />
+      </div>,
+    );
   /* Legacy fallback routes below are superseded by the tabbed routes above.
   if (active === "power-coolant") return <div className="min-h-screen bg-[#07111d] p-4 text-slate-100"><main className="mx-auto max-w-7xl py-4"><div className="mb-5 flex justify-between"><h1 className="text-3xl font-black">CRD Cooling / DA Feedwater</h1><Button variant="outline" onClick={() => setActive("status")}>RETURN TO OVERVIEW</Button></div><PowerCoolantPanel pump1Online={pump1Online} pump2Online={pump2Online} busBAvailable={turbineBusB && isLocked} daIntakeOpen={daIntakeOpen} daOutputOpen={daOutputOpen} onPump1Change={setPump1Online} onPump2Change={setPump2Online} onDaIntakeChange={setDaIntakeOpen} onDaOutputChange={setDaOutputOpen}/></main></div>;
   if (active === "rps") return <div className="min-h-screen bg-[#07111d] p-4 text-slate-100"><main className="mx-auto max-w-7xl py-4"><div className="mb-5 flex justify-between"><h1 className="text-3xl font-black">Reactor Protection System</h1><Button variant="outline" onClick={() => setActive("status")}>RETURN TO OVERVIEW</Button></div><RpsPanel trips={rpsTrips} rolldownProtection={rolldownProtection}/></main></div>;
