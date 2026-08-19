@@ -5,7 +5,9 @@ const SYNC_TURBINE_SPEED = SYNC_RPM / TURBINE_RPM_SCALE;
 export const calculateTurbineData = (turbineSpeed: number, targetTurbineSpeed: number, isLocked: boolean) => {
   const actualRPM = turbineSpeed * TURBINE_RPM_SCALE;
   const targetRPM = targetTurbineSpeed * TURBINE_RPM_SCALE;
-  const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= 3;
+  // The generator breaker may close inside a tight ±5 RPM window around
+  // nominal frequency. Keep this source of truth shared by every panel.
+  const isSynchronized = Math.abs(actualRPM - SYNC_RPM) <= 5;
   const syncDeviation = actualRPM - SYNC_RPM;
   
   return {

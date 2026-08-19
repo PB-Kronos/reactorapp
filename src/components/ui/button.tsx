@@ -41,14 +41,21 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, title, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
+    const textLabel = React.Children.toArray(children)
+      .filter((child): child is string => typeof child === "string")
+      .join(" ")
+      .trim();
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        data-tooltip-title={title ?? (textLabel ? textLabel : undefined)}
         {...props}
-      />
+      >
+        {children}
+      </Comp>
     );
   },
 );

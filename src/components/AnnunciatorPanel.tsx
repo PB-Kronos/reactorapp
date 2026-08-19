@@ -3,12 +3,12 @@ import { BellRing, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type Annunciator = { id: string; label: string; active: boolean; priority: "amber" | "red" | "blue"; tone: "low" | "high" | "pulse" | "warble" | "chime" | "double"; pan?: "left" | "center" | "right"; page?: string; sample?: string; endingCueSeconds?: number };
-interface Props { annunciators: Annunciator[]; page?: string; }
+interface Props { annunciators: Annunciator[]; page?: string; enabled?: boolean; }
 type WindowState = { active: boolean; acknowledged: boolean; silenced: boolean };
 
 const toneMap: Record<Annunciator["tone"], number[]> = { low: [330], high: [880], pulse: [540, 540, 540], warble: [620, 780, 620, 780], chime: [740, 988], double: [420, 420] };
 
-export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rbwrPanel || "status" }: Props) => {
+export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rbwrPanel || "status", enabled = true }: Props) => {
   const context = useRef<AudioContext | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [ambienceEnabled, setAmbienceEnabled] = useState(() => localStorage.getItem("rbwr-ambience-enabled") === "true");
@@ -48,7 +48,7 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
     const stopSample = (item: Annunciator) => { pendingSamples.current.delete(item.id); const source = sampleSources.current.get(item.id); if (source) { source.stop(); source.disconnect(); sampleSources.current.delete(item.id); if (item.endingCueSeconds) playEndingCue(item); } };
     annunciators.forEach(item => {
       const state = windows[item.id];
-      const shouldLoop = Boolean(item.priority !== "blue" && audioEnabled && item.sample && item.active && state && !state.acknowledged && !state.silenced);
+      const shouldLoop = Boolean(enabled && item.priority !== "blue" && audioEnabled && item.sample && item.active && state && !state.acknowledged && !state.silenced);
       if (!shouldLoop) { stopSample(item); return; }
       if (sampleSources.current.has(item.id) || pendingSamples.current.has(item.id)) return;
       const request = Symbol(item.id); pendingSamples.current.set(item.id, request);
@@ -71,17 +71,17 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
       })();
     });
     return () => {};
-  }, [annunciators, windows, audioEnabled]);
+  }, [annunciators, windows, audioEnabled, enabled]);
   useEffect(() => () => { pendingSamples.current.clear(); sampleSources.current.forEach(source => { source.stop(); source.disconnect(); }); sampleSources.current.clear(); }, []);
   useEffect(() => {
     localStorage.setItem("rbwr-ambience-enabled", String(ambienceEnabled));
     ambienceSource.current?.stop(); ambienceSource.current = null;
-    if (!ambienceEnabled) return;
+    if (!ambienceEnabled || !enabled) return;
     let cancelled = false;
     const startGaplessHum = async () => { try { if (!context.current) context.current = new AudioContext(); const audio = context.current; if (audio.state === "suspended") await audio.resume(); const response = await fetch("/sounds/control-room-hum.mp3"); const buffer = await audio.decodeAudioData(await response.arrayBuffer()); if (cancelled) return; const source = audio.createBufferSource(); const gain = audio.createGain(); source.buffer = buffer; source.loop = true; source.loopStart = 0; source.loopEnd = buffer.duration; gain.gain.value = .16; source.connect(gain).connect(audio.destination); source.start(); ambienceSource.current = source; } catch {} };
     void startGaplessHum();
     return () => { cancelled = true; ambienceSource.current?.stop(); ambienceSource.current = null; };
-  }, [ambienceEnabled]);
+  }, [ambienceEnabled, enabled]);
   useEffect(() => () => { ambienceSource.current?.stop(); ambienceSource.current = null; }, []);
 
   const localAnnunciators = useMemo(() => annunciators.filter(item => (item.page || "status") === page), [annunciators, page]);
@@ -89,11 +89,11 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
   const hornAlarms = useMemo(() => annunciators.filter(item => { const state = windows[item.id]; return item.priority !== "blue" && !item.sample && item.active && state && !state.acknowledged && !state.silenced; }), [annunciators, windows]);
   const localAudibleAlarms = useMemo(() => localAnnunciators.filter(item => { const state = windows[item.id]; return item.priority !== "blue" && item.active && state && !state.acknowledged && !state.silenced; }), [localAnnunciators, windows]);
   useEffect(() => {
-    if (!audioEnabled || !hornAlarms.length) return;
+    if (!enabled || !audioEnabled || !hornAlarms.length) return;
     sound(hornAlarms[0]);
     const timer = window.setInterval(() => sound(hornAlarms[0]), 1200);
     return () => window.clearInterval(timer);
-  }, [audioEnabled, hornAlarms]);
+  }, [audioEnabled, hornAlarms, enabled]);
 
   const acknowledge = () => { window.dispatchEvent(new CustomEvent("rbwr-annunciator-ack", { detail: { page, ids: [...localIds] } })); setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, localIds.has(id) ? { ...state, acknowledged: true, silenced: false } : state]))); };
   const silence = () => { window.dispatchEvent(new CustomEvent("rbwr-annunciator-silence", { detail: { page, ids: [...localIds] } })); setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, localIds.has(id) && state.active && !state.acknowledged ? { ...state, silenced: true } : state]))); };
@@ -104,6 +104,7 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
   const unacknowledged = localAnnunciators.filter(item => !(windows[item.id]?.acknowledged ?? true)).length;
 
   const windowClass = (item: Annunciator) => {
+    if (!enabled) return "border-slate-800 bg-black text-slate-700";
     const state = windows[item.id] ?? { active: item.active, acknowledged: true, silenced: false };
     const color = item.priority === "red" ? "border-red-400 bg-red-600 text-white" : item.priority === "blue" ? "border-sky-300 bg-sky-500 text-slate-950" : "border-amber-300 bg-amber-400 text-slate-950";
     if (lampTest) return `${color} annunciator-steady`;
@@ -114,5 +115,5 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
     return "border-slate-700 bg-slate-950 text-slate-500";
   };
 
-  return <section className="mb-5 rounded-xl border border-amber-500/30 bg-slate-900/80 p-3"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><div className="flex items-center gap-2 font-bold text-amber-100"><BellRing className="h-4 w-4"/>ANNUNCIATOR WINDOW</div><p className="text-[10px] text-slate-400">Local windows shown · all plant sensors remain live and audible</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setAmbienceEnabled(value => !value)}>{ambienceEnabled ? <Volume2 className="mr-1 h-4 w-4"/> : <VolumeX className="mr-1 h-4 w-4"/>}{ambienceEnabled ? "HUM ON" : "HUM OFF"}</Button><Button size="sm" variant="outline" onClick={() => { setAudioEnabled(value => !value); if (!audioEnabled) sound({ id: "test", label: "TEST", active: true, priority: "amber", tone: "chime", pan: "center" }); }}>{audioEnabled ? <Volume2 className="mr-1 h-4 w-4"/> : <VolumeX className="mr-1 h-4 w-4"/>}{audioEnabled ? "AUDIO ENABLED" : "ENABLE AUDIO"}</Button><Button size="sm" variant="outline" disabled={!localAudibleAlarms.length} onClick={silence}>SILENCE</Button><Button size="sm" variant="outline" disabled={!unacknowledged} onClick={acknowledge}>ACK</Button><Button size="sm" variant="secondary" disabled={!hornAlarms.length && !annunciators.some(item => { const state = windows[item.id]; return Boolean(item.sample && item.priority !== "blue" && item.active && state && !state.acknowledged && !state.silenced); })} onClick={masterSilence}>MASTER SILENCE</Button><Button size="sm" variant="secondary" disabled={!Object.values(windows).some(state => !state.acknowledged)} onClick={masterAcknowledge}>MASTER ACK</Button><Button size="sm" variant="outline" onClick={testLamps}>LAMP TEST</Button></div></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">{annunciators.map(item => <div key={item.id} data-annunciator-page={item.page || "status"} className={`rbwr-annunciator rounded border px-2 py-2 text-center text-[10px] font-black tracking-wide ${windowClass(item)}`}>{item.label}</div>)}</div><p className="mt-2 text-xs text-slate-300">{activeCount ? `${activeCount} local active · ${unacknowledged} local unacknowledged. SILENCE and ACK affect this panel only.` : unacknowledged ? `${unacknowledged} local cleared, unacknowledged window(s) flashing slowly — press ACK to reset.` : "All local annunciator windows normal."}</p></section>;
+  return <section className={`mb-5 rounded-xl border p-3 ${enabled ? "border-amber-500/30 bg-slate-900/80" : "border-slate-800 bg-black/80"}`}><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><div className={`flex items-center gap-2 font-bold ${enabled ? "text-amber-100" : "text-slate-600"}`}><BellRing className="h-4 w-4"/>ANNUNCIATOR WINDOW</div><p className="text-[10px] text-slate-400">{enabled ? "Local windows shown · all plant sensors remain live and audible" : "BUS E UNAVAILABLE — annunciator power lost"}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={!enabled} onClick={() => setAmbienceEnabled(value => !value)}>{ambienceEnabled ? <Volume2 className="mr-1 h-4 w-4"/> : <VolumeX className="mr-1 h-4 w-4"/>}{ambienceEnabled ? "HUM ON" : "HUM OFF"}</Button><Button size="sm" variant="outline" disabled={!enabled} onClick={() => { setAudioEnabled(value => !value); if (!audioEnabled) sound({ id: "test", label: "TEST", active: true, priority: "amber", tone: "chime", pan: "center" }); }}>{audioEnabled ? <Volume2 className="mr-1 h-4 w-4"/> : <VolumeX className="mr-1 h-4 w-4"/>}{audioEnabled ? "AUDIO ENABLED" : "ENABLE AUDIO"}</Button><Button size="sm" variant="outline" disabled={!enabled || !localAudibleAlarms.length} onClick={silence}>SILENCE</Button><Button size="sm" variant="outline" disabled={!enabled || !unacknowledged} onClick={acknowledge}>ACK</Button><Button size="sm" variant="secondary" disabled={!enabled || (!hornAlarms.length && !annunciators.some(item => { const state = windows[item.id]; return Boolean(item.sample && item.priority !== "blue" && item.active && state && !state.acknowledged && !state.silenced); }))} onClick={masterSilence}>MASTER SILENCE</Button><Button size="sm" variant="secondary" disabled={!enabled || !Object.values(windows).some(state => !state.acknowledged)} onClick={masterAcknowledge}>MASTER ACK</Button><Button size="sm" variant="outline" disabled={!enabled} onClick={testLamps}>LAMP TEST</Button></div></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">{localAnnunciators.map(item => <div key={item.id} data-annunciator-page={item.page || "status"} className={`rbwr-annunciator rounded border px-2 py-2 text-center text-[10px] font-black tracking-wide ${windowClass(item)}`}>{item.label}</div>)}</div><p className="mt-2 text-xs text-slate-300">{enabled ? activeCount ? `${activeCount} local active · ${unacknowledged} local unacknowledged. SILENCE and ACK affect this panel only.` : unacknowledged ? `${unacknowledged} local cleared, unacknowledged window(s) flashing slowly — press ACK to reset.` : "All local annunciator windows normal." : "Annunciators and audio will restore when Bus E is energized."}</p></section>;
 };

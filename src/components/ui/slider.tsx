@@ -6,13 +6,13 @@ import { cn } from "@/lib/utils";
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
->(({ className, value, defaultValue, min = 0, max = 100, step = 1, onValueChange, onValueCommit, onPointerDown, disabled, ...props }, ref) => {
+>(({ className, value, defaultValue, min = 0, max = 100, step = 1, onValueChange, onValueCommit, onPointerDown, disabled, title, ...props }, ref) => {
   const currentValue = value?.[0] ?? defaultValue?.[0] ?? min;
   const changeBy = (amount: number) => onValueChange?.([Math.max(min, Math.min(max, currentValue + amount))]);
 
   return (
     <div className="flex items-center gap-3" data-slider-control>
-      <button type="button" aria-label="Decrease value" disabled={disabled || currentValue <= min} onClick={() => changeBy(-step)} className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-slate-600 bg-slate-800 text-xl font-bold text-slate-100 active:bg-slate-700 disabled:opacity-40">−</button>
+      <button type="button" data-tooltip-title="Decrease value" data-tooltip-description="Decrease this setting by one step." aria-label="Decrease value" disabled={disabled || currentValue <= min} onClick={() => changeBy(-step)} className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-slate-600 bg-slate-800 text-xl font-bold text-slate-100 active:bg-slate-700 disabled:opacity-40">−</button>
       <SliderPrimitive.Root
         ref={ref}
         value={value}
@@ -24,6 +24,8 @@ const Slider = React.forwardRef<
         onValueChange={onValueChange}
         onValueCommit={(nextValue) => { onValueCommit?.(nextValue); window.dispatchEvent(new Event("rbwr-slider-adjust-end")); }}
         onPointerDown={(event) => { window.dispatchEvent(new Event("rbwr-slider-adjust-start")); onPointerDown?.(event); }}
+        data-tooltip-title={props["aria-label"] ?? "Adjust value"}
+        data-tooltip-description={title ?? "Drag, tap, or use the plus/minus buttons to adjust this value."}
         className={cn("relative flex min-h-11 w-full touch-none select-none items-center", className)}
         {...props}
       >
@@ -32,7 +34,7 @@ const Slider = React.forwardRef<
         </SliderPrimitive.Track>
         <SliderPrimitive.Thumb className="block h-7 w-7 rounded-full border-2 border-primary bg-background shadow-md ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50" />
       </SliderPrimitive.Root>
-      <button type="button" aria-label="Increase value" disabled={disabled || currentValue >= max} onClick={() => changeBy(step)} className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-slate-600 bg-slate-800 text-xl font-bold text-slate-100 active:bg-slate-700 disabled:opacity-40">+</button>
+      <button type="button" data-tooltip-title="Increase value" data-tooltip-description="Increase this setting by one step." aria-label="Increase value" disabled={disabled || currentValue >= max} onClick={() => changeBy(step)} className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-slate-600 bg-slate-800 text-xl font-bold text-slate-100 active:bg-slate-700 disabled:opacity-40">+</button>
     </div>
   );
 });

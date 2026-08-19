@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ensureLeaderboardPlayer, getLeaderboard } from "@/lib/leaderboard";
 import { Button } from "@/components/ui/button";
 import {
   GREETING_HELP,
@@ -13,9 +14,17 @@ const Index = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [history, setHistory] = useState<string[]>([
     "UNIT 2: THE BWR SIM // OPERATOR ACCESS TERMINAL",
-    "Type HELP for available commands.",
+    "Use LOGIN <yourname> to register before entering the reactor. Type HELP for commands.",
   ]);
+  const [operatorName, setOperatorName] = useState(
+    () => localStorage.getItem("unit2-operator-name") || "",
+  );
   const introStarted = useRef(false);
+  const terminalOutputRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const output = terminalOutputRef.current;
+    if (output) output.scrollTop = output.scrollHeight;
+  }, [booting, lines, history]);
   useEffect(() => {
     const boot = [
       "[ OK ] Loading Unit 2 kernel",
@@ -93,6 +102,28 @@ const Index = () => {
       return;
     }
   };
+  const greetingHelp = (topic: string) => {
+    const details: Record<string, string> = {
+      login: "LOGIN <yourname>\nRegisters your public operator name in this browser. Login is required before REACTOR can be opened and lets the leaderboard track your score.\nExample: LOGIN UnitOperator",
+      logout: "LOGOUT\nEnds the local greeting-terminal operator session. You will need to LOGIN again before entering the reactor.",
+      reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Requires LOGIN <yourname> first.",
+      console: "CONSOLE\nOpens the advanced Mainframe terminal. Use LOGIN SUPERVISOR there for full simulator command access.",
+      status: "STATUS\nDisplays the basic public system state and the current greeting-terminal operator name.",
+      leaderboard: "LEADERBOARD\nShows the top five locally stored operators plus your score and ranking after you login.",
+      url: "URL <address>\nNavigates this tab to the provided full address, such as https://example.com.",
+      google: "GOOGLE <https://url>\nOpens a full HTTP(S) URL in a new tab. It is named for convenience; it does not perform a search.",
+      github: "GITHUB\nOpens the Unit 2 project repository in a new tab.",
+      contact: "CONTACT [discord]\nShows the available contact method. Use CONTACT DISCORD to open the current Discord link.",
+      time: "TIME\nDisplays the local date and time from your device.",
+      date: "DATE\nAlias for TIME; displays your device's local date and time.",
+      whoami: "WHOAMI\nDisplays the currently registered greeting-terminal operator name.",
+      uptime: "UPTIME\nDisplays the elapsed time since this browser page was opened.",
+      echo: "ECHO <text>\nPrints text back into the terminal. Example: ECHO systems nominal",
+      fortune: "FORTUNE\nDisplays a random Unit 2 operator message.",
+      clear: "CLEAR\nClears the visible terminal history and restores the greeting banner.",
+    };
+    return details[topic] || `No detailed entry for ${topic.toUpperCase()}.\n\n${GREETING_HELP}`;
+  };
   const run = async () => {
     const command = input.trim();
     if (!command) return;
@@ -102,19 +133,75 @@ const Index = () => {
     let response = "Unknown command. Type HELP.";
     if (GREETING_TERMINAL_RESPONSES[lower])
       response = GREETING_TERMINAL_RESPONSES[lower];
-    else if (lower === "help") response = GREETING_HELP;
-    else if (lower === "login" || lower === "logout")
-      response = "Authentication is managed by the advanced console. Use CONSOLE, then LOGIN <account>.";
+    else if (lower === "help")
+      response = argument ? greetingHelp(argument.toLowerCase()) : GREETING_HELP;
+    else if (lower === "login") {
+      const name = argument.replace(/[^a-z0-9 _-]/gi, "").trim().slice(0, 24);
+      if (!name) response = "Usage: LOGIN <yourname>\nExample: LOGIN UnitOperator";
+      else {
+        try {
+          await ensureLeaderboardPlayer(name);
+        } catch (error) {
+          const detail = error instanceof Error
+            ? error.message
+            : typeof error === "object" && error && "message" in error
+              ? String((error as { message: unknown }).message)
+              : String(error || "unable to create the persistent score profile");
+          response = `LOGIN REJECTED — ${detail}`;
+          setHistory(previous => [...previous, `> ${command}`, response]);
+          setInput("");
+          return;
+        }
+        localStorage.setItem("unit2-operator-name", name);
+        try {
+          const scores = JSON.parse(localStorage.getItem("unit2-operator-scores") || "{}");
+          if (!scores[name]) scores[name] = { points: 0, lastSeen: Date.now() };
+          localStorage.setItem("unit2-operator-scores", JSON.stringify(scores));
+        } catch { /* A malformed old score store is safely replaced on scoring. */ }
+        setOperatorName(name);
+        response = `LOGIN ACCEPTED — ${name}\nOperator score profile registered. You may now use REACTOR.`;
+      }
+    } else if (lower === "logout") {
+      localStorage.removeItem("unit2-operator-name");
+      setOperatorName("");
+      response = "LOGOUT COMPLETE — LOGIN <yourname> is required before entering the reactor.";
+    }
     else if (lower === "status")
-      response = "System bus: ONLINE\nRPS: ARMED\nECCS: AVAILABLE\nConsole login: managed at /mainframe";
+      response = `System bus: ONLINE\nRPS: ARMED\nECCS: AVAILABLE\nOperator: ${operatorName || "LOGIN REQUIRED"}`;
+    else if (lower === "leaderboard") {
+      try {
+        const remote = await getLeaderboard();
+        const scores = remote.length ? Object.fromEntries(remote.map(entry => [entry.display_name, { points: entry.points }])) : JSON.parse(localStorage.getItem("unit2-operator-scores") || "{}");
+        const ranked = Object.entries(scores)
+          .map(([name, entry]: [string, any]) => [name, Number((entry as any)?.points || 0)] as const)
+          .sort(([, left], [, right]) => right - left);
+        const topFive = ranked.slice(0, 5);
+        const rows = topFive.length
+          ? topFive.map(([name, points], index) => `${index + 1}. ${name} — ${points.toFixed(1)} pts`).join("\n")
+          : "No scored operators yet.";
+        const rank = operatorName ? ranked.findIndex(([name]) => name === operatorName) + 1 : 0;
+        const ownPoints = operatorName ? Number(scores[operatorName]?.points || 0) : 0;
+        response = `UNIT 2 ${remote.length ? "GLOBAL" : "LOCAL"} LEADERBOARD\n${rows}\n\n${operatorName ? `YOUR POSITION: #${rank || "—"} / ${ranked.length || "—"}\nYOUR SCORE: ${ownPoints.toFixed(1)} pts` : "LOGIN <yourname> to view your personal score and rank."}`;
+      } catch {
+        response = "Leaderboard data is unavailable. Log in again to create a new operator profile.";
+      }
+    }
     else if (lower === "reactor") {
+      if (!operatorName) {
+        response = "LOGIN REQUIRED — use LOGIN <yourname> before entering the reactor.";
+      } else {
       await fullscreen();
       navigate("/reactor");
       return;
+      }
     } else if (lower === "console") {
-      await fullscreen();
-      navigate("/mainframe");
-      return;
+      if (!operatorName) {
+        response = "LOGIN REQUIRED — use LOGIN <yourname> before opening the advanced console.";
+      } else {
+        await fullscreen();
+        navigate("/mainframe");
+        return;
+      }
     } else if (lower === "url") {
       if (argument) {
         window.location.assign(argument);
@@ -150,7 +237,7 @@ const Index = () => {
         timeStyle: "medium",
       }).format(new Date());
     else if (lower === "whoami")
-      response = localStorage.getItem("unit2-console-role") || "GUEST — login is managed at the advanced console";
+      response = operatorName || "GUEST — use LOGIN <yourname> to register.";
     else if (lower === "uptime")
       response = `Terminal session: ${Math.floor(performance.now() / 1000)} seconds`;
     else if (lower === "echo") response = argument || "";
@@ -165,7 +252,7 @@ const Index = () => {
     } else if (lower === "clear") {
       setHistory([
         "UNIT 2: THE BWR SIM // OPERATOR ACCESS TERMINAL",
-        "Type HELP for available commands.",
+        "Use LOGIN <yourname> to register before entering the reactor. Type HELP for commands.",
       ]);
       setInput("");
       return;
@@ -192,7 +279,7 @@ const Index = () => {
         </header>
         <div className="grid flex-1 gap-8 lg:grid-cols-[1.5fr_1fr]">
           <section className="flex flex-col justify-center">
-            <pre className="min-h-72 whitespace-pre-wrap border-l-2 border-emerald-400 bg-emerald-950/20 p-5 text-sm leading-7 text-emerald-200 sm:text-base">
+            <pre ref={terminalOutputRef} className="min-h-72 max-h-[52vh] overflow-y-auto whitespace-pre-wrap border-l-2 border-emerald-400 bg-emerald-950/20 p-5 text-sm leading-7 text-emerald-200 sm:text-base">
               {booting ? lines.join("\n") : history.join("\n")}
               {booting && "\n_"}
             </pre>
@@ -219,7 +306,13 @@ const Index = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void fullscreen().then(() => navigate("/reactor"))}
+                    onClick={() => {
+                      if (!operatorName) {
+                        setHistory((current) => [...current.slice(-18), "LOGIN REQUIRED — use LOGIN <yourname> before entering the reactor."]);
+                        return;
+                      }
+                      void fullscreen().then(() => navigate("/reactor"));
+                    }}
                     className="h-7 border-emerald-600 bg-emerald-950/30 px-2 text-[10px] tracking-wide text-emerald-200 hover:bg-emerald-500 hover:text-black"
                   >
                     GO TO REACTOR
@@ -227,7 +320,13 @@ const Index = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void fullscreen().then(() => navigate("/mainframe"))}
+                    onClick={() => {
+                      if (!operatorName) {
+                        setHistory((current) => [...current.slice(-18), "LOGIN REQUIRED — use LOGIN <yourname> before opening the advanced console."]);
+                        return;
+                      }
+                      void fullscreen().then(() => navigate("/mainframe"));
+                    }}
                     className="h-7 border-cyan-700 bg-cyan-950/20 px-2 text-[10px] tracking-wide text-cyan-200 hover:bg-cyan-400 hover:text-black"
                   >
                     GO TO CONSOLE

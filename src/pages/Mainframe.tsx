@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { MAINFRAME_TERMINAL_RESPONSES } from "@/lib/terminalCommands";
@@ -14,13 +14,36 @@ const ACCOUNTS: Record<Role, { label: string; scopes: string[] }> = {
   SUPERVISOR: { label: "Plant supervisor — all systems", scopes: ["*"] },
 };
 const HELP =
-  "PUBLIC: HELP · ACCOUNTS · LOGIN <account> · LOGOUT · STATUS · ABOUT · CHANGELOG · CLEAR\nREACTOR: reactor.pressure|temp|level set <value> · rods.withdraw set <0-100> · mode set SD|SRM|IPR|RUN · start · stop · scram\nMCC: hotwell.level|da.level|reactor.level set|add <m> · condenser.pressure set <bar> · mcc.pump on|off · mcc.auto on|off\nTURBINE: turbine.mainvalve|bypass set <0-100> · turbine.smoke trigger\nSUPERVISOR: physics.thermal|steam|removal|triptemp set <value>\nRole access is required for all simulation commands.";
+  "PUBLIC: HELP · ACCOUNTS · LOGIN <account> · LOGOUT · STATUS · VALUES · GET <value> · ABOUT · CHANGELOG · CLEAR\nREACTOR: reactor.temp|pressure|level set <value> · reactor.aprm set <0-100> · rods.withdraw set <0-100> · recirc.a|b set <0-100> · mode set SD|SRM|IPR|RUN · start · stop · scram\nMCC: hotwell.level|da.level|temp|pressure|cst.level set <value> · condenser.pressure|valve set <value> · condensate.a|b set <kg/s> · feedwater.a|b set <kg/s> · mcc.pump|auto on|off\nTURBINE: turbine.mainvalve|bypass set <0-100> · turbine.inlet|rpmauto|pressureauto on|off · turbine.smoke trigger\nECCS: rcic.valve on|off · eccs.a|b on|off · ads on|off\nELECTRICAL: electrical.busa|busatransformer|busb|buss on|off\nSUPERVISOR: physics.thermal|steam|removal|triptemp set <value> · tooltip list · tooltip set <control> | <title> | <explanation> · tooltip reset <control|all>\nSimulation commands are accepted here and applied as soon as the Control Room is active.";
+const COMMAND_HELP: Record<string, string> = {
+  values: "VALUES\nShows the current status summary for your logged-in role. Use GET <value> for one reading.",
+  get: "GET <value>\nReads one live/saved measurement without changing the simulator.\n\nAvailable values:\nREACTOR.TEMP · REACTOR.PRESSURE · REACTOR.LEVEL\nHOTWELL.LEVEL · DA.LEVEL · DA.TEMP · DA.PRESSURE · CST.LEVEL\nCONDENSER.PRESSURE · CONDENSER.VALVE · CONDENSATE.A|B · FEEDWATER.A|B\nRECIRC.A|B · TURBINE.RPM · TURBINE.MAINVALVE · TURBINE.BYPASS · AUTO.APRM\n\nExample: GET REACTOR.PRESSURE",
+  login: "LOGIN <account>\nSigns into a simulated operator role. Accounts: MCC, REACTOR, TURBINE, ECCS, ELECTRICAL, SUPERVISOR.\nExample: LOGIN SUPERVISOR",
+  status: "STATUS\nShows the concise status display for the currently logged-in operator role.",
+  reactor: "REACTOR\nOpens the Control Room. A Mainframe login is required before access is granted.",
+  scram: "SCRAM\nInserts the control rods when applied in the Control Room. Restricted to REACTOR or SUPERVISOR.",
+  mode: "MODE SET SD|SRM|IPR|RUN\nSelects the reactor rod-control operating mode. Example: MODE SET RUN",
+  "reactor.temp": "REACTOR.TEMP SET <°C>\nOverrides reactor temperature for testing. Range: 20–1800 °C.",
+  "reactor.pressure": "REACTOR.PRESSURE SET <kPa>\nOverrides RPV pressure. Range: 101–12000 kPa.",
+  "reactor.level": "REACTOR.LEVEL SET <m> or ADD <m>\nSets or offsets vessel level. Range: −5 to +6 m.",
+  "rods.withdraw": "RODS.WITHDRAW SET <percent>\nMoves all rods to the requested withdrawn position. Range: 0–100%.",
+  "recirc.a": "RECIRC.A SET <percent>\nSets recirculation pump A valve position. Range: 0–100%.",
+  "recirc.b": "RECIRC.B SET <percent>\nSets recirculation pump B valve position. Range: 0–100%.",
+  "mcc.auto": "MCC.AUTO ON|OFF\nEnables or disables automatic MCC water-inventory control.",
+  "condenser.auto": "CONDENSER.AUTO ON|OFF\nEnables or disables automatic condenser vacuum control.",
+  "turbine.rpmauto": "TURBINE.RPMAUTO ON|OFF\nAutomatically positions the main steam valve to approach 3000 RPM before synchronization.",
+  "turbine.pressureauto": "TURBINE.PRESSUREAUTO ON|OFF\nAutomatically balances main and bypass steam valves around the pressure target.",
+  physics: "PHYSICS.<thermal|steam|removal|triptemp> SET <value>\nSupervisor tuning overrides. Thermal, steam and removal range 0–3; TRIPTEMP is 100–1800 °C.",
+  tooltip: "TOOLTIP LIST\nTOOLTIP SET <control> | <title> | <explanation>\nTOOLTIP RESET <control|all>\nSupervisor-only editing for website control guidance.",
+};
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+const tooltipKey = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
 
 const Mainframe = () => {
   const navigate = useNavigate();
   const [command, setCommand] = useState("");
+  const terminalOutputRef = useRef<HTMLPreElement>(null);
   const [history, setHistory] = useState<string[]>([
     "UNIT 2: THE BWR SIM // ADVANCED CONSOLE v2.0",
     "Authentication required for simulation controls.",
@@ -30,6 +53,9 @@ const Mainframe = () => {
     const stored = localStorage.getItem("unit2-console-role") as Role | null;
     return stored && ACCOUNTS[stored] ? stored : null;
   });
+  const [operatorName] = useState(
+    () => localStorage.getItem("unit2-operator-name") || "",
+  );
   const [saved, setSaved] = useState<Record<string, any>>(() => {
     try {
       return JSON.parse(
@@ -103,9 +129,32 @@ const Mainframe = () => {
       loop.currentTime = 0;
     };
   }, []);
+  useEffect(() => {
+    if (operatorName) return;
+    navigate("/", { replace: true });
+  }, [navigate, operatorName]);
   const append = (text: string, response: string) => {
     setHistory((previous) => [...previous.slice(-54), `> ${text}`, response]);
     setCommand("");
+  };
+  useEffect(() => {
+    const output = terminalOutputRef.current;
+    if (output) output.scrollTop = output.scrollHeight;
+  }, [history]);
+  const queueLiveCommand = (text: string) => {
+    let commands: string[] = [];
+    try {
+      const stored = JSON.parse(
+        sessionStorage.getItem("rbwr-pending-console-commands") || "[]",
+      );
+      commands = Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === "string") : [];
+    } catch {
+      commands = [];
+    }
+    sessionStorage.setItem(
+      "rbwr-pending-console-commands",
+      JSON.stringify([...commands.slice(-49), text]),
+    );
   };
   const run = () => {
     const text = command.trim();
@@ -117,7 +166,15 @@ const Mainframe = () => {
       setCommand("");
       return;
     }
-    if (target === "help") return append(text, HELP);
+    if (target === "help")
+      return append(
+        text,
+        verb
+          ? COMMAND_HELP[verb] ||
+              COMMAND_HELP[verb.split(".")[0]] ||
+              `No detailed entry for ${verb.toUpperCase()}.\n\n${HELP}`
+          : HELP,
+      );
     if (target === "accounts")
       return append(
         text,
@@ -144,6 +201,11 @@ const Mainframe = () => {
     if (MAINFRAME_TERMINAL_RESPONSES[target])
       return append(text, MAINFRAME_TERMINAL_RESPONSES[target]);
     if (target === "status") return append(text, statusLines.join("\n"));
+    if (target === "values")
+      return append(
+        text,
+        `${statusLines.join("\n")}\n\nUse GET <value> for an individual reading.`,
+      );
     if (target === "home") {
       navigate("/");
       return;
@@ -162,6 +224,75 @@ const Mainframe = () => {
         text,
         "LOGIN REQUIRED. Use ACCOUNTS, then LOGIN <account>.",
       );
+    if (target === "get") {
+      const controls = saved.controls || {};
+      const readings: Record<string, number | string | undefined> = {
+        "reactor.temp": saved.temperature,
+        "reactor.pressure": saved.pressure,
+        "reactor.level": saved.reactorLevel,
+        "hotwell.level": saved.hotwellLevel,
+        "da.level": saved.deaeratorLevel,
+        "da.temp": saved.daTemperature,
+        "da.pressure": saved.daPressure,
+        "cst.level": saved.cstLevel,
+        "condenser.pressure": saved.condenserVacuum,
+        "condenser.valve": controls.condenserValve,
+        "condensate.a": controls.condensateFlow,
+        "condensate.b": controls.condensatePumpBFlow,
+        "feedwater.a": controls.feedwaterFlow,
+        "feedwater.b": controls.feedwaterPumpBFlow,
+        "recirc.a": controls.recircSpeedA,
+        "recirc.b": controls.recircSpeedB,
+        "turbine.rpm": saved.actualRPM,
+        "turbine.mainvalve": saved.valveValue,
+        "turbine.bypass": saved.bypassValve,
+        "auto.aprm": controls.autoTarget,
+      };
+      if (!verb || !(verb in readings))
+        return append(text, "Unknown monitor point. Use VALUES for a summary or HELP for available names.");
+      const reading = readings[verb];
+      return append(
+        text,
+        `${verb.toUpperCase()} = ${typeof reading === "number" ? reading.toFixed(3) : reading ?? "UNAVAILABLE"}`,
+      );
+    }
+    if (target === "tooltip") {
+      if (!allowed("*"))
+        return append(text, "ACCESS DENIED — SUPERVISOR authority is required to edit operator guidance.");
+      const readOverrides = () => {
+        try {
+          return JSON.parse(localStorage.getItem("unit2-tooltip-overrides") || "{}") as Record<string, { title: string; description: string }>;
+        } catch {
+          return {};
+        }
+      };
+      if (verb === "list") {
+        const entries = Object.entries(readOverrides());
+        return append(text, entries.length ? entries.map(([key, value]) => `${key}\n  TITLE: ${value.title}\n  TEXT: ${value.description}`).join("\n") : "No custom tooltips. Built-in guidance is active.");
+      }
+      const setMatch = text.match(/^tooltip\s+set\s+(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)$/i);
+      if (setMatch) {
+        const [, control, title, description] = setMatch;
+        const overrides = readOverrides();
+        overrides[tooltipKey(control)] = { title: title.trim(), description: description.trim() };
+        localStorage.setItem("unit2-tooltip-overrides", JSON.stringify(overrides));
+        window.dispatchEvent(new Event("unit2-tooltip-overrides"));
+        return append(text, `Tooltip override saved for ${control.trim().toUpperCase()}.`);
+      }
+      const resetMatch = text.match(/^tooltip\s+reset\s+(.+)$/i);
+      if (resetMatch) {
+        const control = resetMatch[1].trim();
+        if (control.toLowerCase() === "all") localStorage.removeItem("unit2-tooltip-overrides");
+        else {
+          const overrides = readOverrides();
+          delete overrides[tooltipKey(control)];
+          localStorage.setItem("unit2-tooltip-overrides", JSON.stringify(overrides));
+        }
+        window.dispatchEvent(new Event("unit2-tooltip-overrides"));
+        return append(text, control.toLowerCase() === "all" ? "All custom tooltips reset to built-in guidance." : `Tooltip reset for ${control.toUpperCase()}.`);
+      }
+      return append(text, "Usage:\nTOOLTIP LIST\nTOOLTIP SET <control> | <title> | <explanation>\nTOOLTIP RESET <control|all>");
+    }
     const scope =
       target === "reactor.level"
         ? allowed("mcc")
@@ -170,20 +301,39 @@ const Mainframe = () => {
         : target.startsWith("mcc") ||
       target.startsWith("hotwell") ||
       target.startsWith("da") ||
-      target.startsWith("condenser")
+      target.startsWith("condenser") ||
+      target.startsWith("cst") ||
+      target.startsWith("condensate") ||
+      target.startsWith("feedwater")
         ? "mcc"
         : target.startsWith("turbine")
           ? "turbine"
-          : target.startsWith("eccs")
+          : target.startsWith("eccs") || target.startsWith("rcic") || target === "ads"
             ? "eccs"
             : target.startsWith("electrical")
               ? "electrical"
+              : target.startsWith("physics")
+                ? "supervisor"
               : "reactor";
     if (!allowed(scope))
       return append(
         text,
         `ACCESS DENIED — ${scope.toUpperCase()} authority required. Login as ${scope.toUpperCase()} or SUPERVISOR.`,
       );
+    const liveCommand =
+      target === "start" ||
+      target === "stop" ||
+      target === "scram" ||
+      target === "mode" ||
+      target === "ads" ||
+      /^(reactor\.|rods\.|hotwell\.|da\.|cst\.|condenser\.|condensate\.|feedwater\.|recirc\.|turbine\.|auto\.|mcc\.|electrical\.|rcic\.|eccs\.|physics\.)/.test(target);
+    if (liveCommand) {
+      queueLiveCommand(text);
+      return append(
+        text,
+        "COMMAND ACCEPTED — queued for the shared live simulator. It is applied immediately when the Control Room is active.",
+      );
+    }
     if (target === "scram") {
       sessionStorage.setItem("rbwr-pending-console-command", "scram");
       return append(
@@ -338,7 +488,7 @@ const Mainframe = () => {
       </header>
       <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1.65fr_.8fr]">
         <section className="border border-emerald-600/50 bg-black p-4 shadow-[0_0_35px_rgba(16,185,129,.14)]">
-          <pre className="h-[55vh] overflow-y-auto whitespace-pre-wrap text-sm leading-6">
+          <pre ref={terminalOutputRef} className="h-[55vh] overflow-y-auto whitespace-pre-wrap text-sm leading-6">
             {history.join("\n")}
           </pre>
           <div className="mt-4 flex gap-2 border-t border-emerald-900 pt-3">

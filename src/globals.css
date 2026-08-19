@@ -113,6 +113,34 @@
     -webkit-touch-callout: none;
   }
 
+  /* Plant controls are frequently press-and-hold operated on touch screens.
+     Preventing selection on the control-room surface keeps a held lever from
+     selecting its neighbouring legend. Copyable information opts back in. */
+  .rbwr-control-room,
+  .rbwr-control-room * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none;
+  }
+
+  .rbwr-control-room input,
+  .rbwr-control-room textarea,
+  .rbwr-control-room [contenteditable="true"],
+  .rbwr-control-room .rbwr-selectable,
+  .rbwr-control-room pre,
+  .rbwr-control-room code {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default;
+  }
+
+  /* The Overview is primarily a readout, so all of its status text remains
+     copyable without re-enabling selection for the operating panels. */
+  body[data-rbwr-panel="status"] .rbwr-control-room {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+  }
+
   input {
     touch-action: manipulation;
   }
@@ -150,6 +178,8 @@
 /* The advanced console is now the dedicated /mainframe workspace. */
 button[aria-expanded],
 aside[aria-label="Simulator console"] { display: none !important; }
+
+button.operator-manual-trigger { display: inline-flex !important; }
 
 /* The annunciator hardware always monitors every sensor, but each panel shows
    the windows assigned to its local operating area. */
