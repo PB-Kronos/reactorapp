@@ -1,23 +1,61 @@
 export type ThermalOutput = { mw: number; steamKgS: number };
-type ThermalRow = ThermalOutput & { thermal: number };
+type ThermalRow = ThermalOutput & { aprm: number };
 
-// U2 v1.7.5 measurements: thermal/APRM %, turbine MW, total steam kg/s.
-const U2_TABLE: ThermalRow[] = [
-  { thermal: 0, mw: 0, steamKgS: 0 }, { thermal: 20, mw: 106.54, steamKgS: 361 },
-  { thermal: 25.014, mw: 166.61, steamKgS: 426 }, { thermal: 30.008, mw: 227.77, steamKgS: 490 },
-  { thermal: 35.009, mw: 289.11, steamKgS: 554 }, { thermal: 40.066, mw: 351.4, steamKgS: 618 },
-  { thermal: 45.066, mw: 413.06, steamKgS: 685 }, { thermal: 50.016, mw: 474.44, steamKgS: 749 },
-  { thermal: 55.115, mw: 537.78, steamKgS: 817 }, { thermal: 60.161, mw: 600.82, steamKgS: 882 },
-  { thermal: 65.159, mw: 663.46, steamKgS: 949 }, { thermal: 70.157, mw: 726.33, steamKgS: 1016 },
-  { thermal: 75.205, mw: 760.64, steamKgS: 1083 }, { thermal: 80.002, mw: 851.47, steamKgS: 1147 },
-  { thermal: 85.152, mw: 900.6, steamKgS: 1223 }, { thermal: 90.277, mw: 964.89, steamKgS: 1294 },
+/*
+ * Unit 2 load calibration. These are the supplied MW <-> APRM conversion
+ * points stored in the direction the simulator needs (APRM -> load). The old
+ * table ended at 90.277% APRM, so it understated high-power operation.
+ *
+ * Steam is calibrated so 100% APRM produces the Unit 2 full-load target of
+ * about 1,200 MW with a fully-open main valve at nominal pressure. The
+ * published 1,145.52 MW point remains the APRM/load reference; the small
+ * normalization factor represents the simulator's nominal generator output.
+ */
+const NOMINAL_TURBINE_MW_PER_KG_S = 1.8 * 0.34191;
+const FULL_LOAD_REFERENCE_MW = 1145.52;
+const FULL_LOAD_GENERATOR_MW = 1200;
+const GENERATOR_NORMALIZATION = FULL_LOAD_GENERATOR_MW / FULL_LOAD_REFERENCE_MW;
+// The automatic governor normally holds roughly 73.5% admission at rated
+// pressure. This converts the reference curve to usable plant flow so rated
+// APRM produces rated load during normal, regulated operation.
+export const U2_OPERATING_FLOW_NORMALIZATION = 1 / 0.735;
+const steamForMw = (mw: number) =>
+  (mw * GENERATOR_NORMALIZATION * U2_OPERATING_FLOW_NORMALIZATION) /
+  NOMINAL_TURBINE_MW_PER_KG_S;
+
+const U2_LOAD_TABLE: ThermalRow[] = [
+  { aprm: 0, mw: 0, steamKgS: 0 },
+  { aprm: 12.34, mw: 0, steamKgS: 0 },
+  { aprm: 20.1, mw: 100, steamKgS: steamForMw(100) },
+  { aprm: 20.87, mw: 110, steamKgS: steamForMw(110) },
+  { aprm: 50, mw: 484.86, steamKgS: steamForMw(484.86) },
+  { aprm: 89.32, mw: 1000, steamKgS: steamForMw(1000) },
+  { aprm: 100, mw: 1145.52, steamKgS: steamForMw(1145.52) },
 ];
 
-export const getU2ThermalOutput = (thermal: number): ThermalOutput => {
-  const value = Math.max(0, Math.min(90.277, thermal));
-  const upper = U2_TABLE.findIndex(row => (row.thermal ?? 0) >= value);
+export const getU2ThermalOutput = (aprm: number): ThermalOutput => {
+  const value = Math.max(0, Math.min(100, aprm));
+  const upper = U2_LOAD_TABLE.findIndex(row => row.aprm >= value);
   if (upper <= 0) return { mw: 0, steamKgS: 0 };
-  const low = U2_TABLE[upper - 1]; const high = U2_TABLE[upper];
-  const fraction = (value - (low.thermal ?? 0)) / ((high.thermal ?? 1) - (low.thermal ?? 0));
-  return { mw: low.mw + (high.mw - low.mw) * fraction, steamKgS: low.steamKgS + (high.steamKgS - low.steamKgS) * fraction };
+
+  const low = U2_LOAD_TABLE[upper - 1];
+  const high = U2_LOAD_TABLE[upper];
+  const fraction = (value - low.aprm) / (high.aprm - low.aprm);
+  return {
+    mw: low.mw + (high.mw - low.mw) * fraction,
+    steamKgS: low.steamKgS + (high.steamKgS - low.steamKgS) * fraction,
+  };
+};
+
+/** Inverse of the calibrated steam/APRM curve, for operator planning tools. */
+export const getAprmForSteamKgS = (steamKgS: number): number => {
+  const required = Math.max(0, steamKgS);
+  const upper = U2_LOAD_TABLE.findIndex(row => row.steamKgS >= required);
+  if (upper <= 0) return 0;
+  if (upper === -1) return 100 + (required - U2_LOAD_TABLE.at(-1)!.steamKgS) / Math.max(1, U2_LOAD_TABLE.at(-1)!.steamKgS) * 100;
+
+  const low = U2_LOAD_TABLE[upper - 1];
+  const high = U2_LOAD_TABLE[upper];
+  const fraction = (required - low.steamKgS) / Math.max(.000001, high.steamKgS - low.steamKgS);
+  return low.aprm + (high.aprm - low.aprm) * fraction;
 };

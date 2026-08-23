@@ -26,6 +26,8 @@ import {
 import { SimulatorCliMode } from "@/components/SimulatorCliMode";
 import { TurbineAuxPanel } from "@/components/TurbineAuxPanel";
 import { OperatorManual } from "@/components/OperatorManual";
+import { TutorialCoach } from "@/components/TutorialCoach";
+import { TUTORIAL_LEVELS } from "@/lib/tutorialProgram";
 import { SystemsPanel, type Malfunctions } from "@/components/SystemsPanel";
 import {
   AnnunciatorPanel,
@@ -46,7 +48,7 @@ import {
   RodSelectionScope,
   WITHDRAWAL_RATES,
 } from "@/lib/rodProgram";
-import { getU2ThermalOutput } from "@/lib/thermalOutput";
+import { getAprmForSteamKgS, getU2ThermalOutput } from "@/lib/thermalOutput";
 import { addLeaderboardPoints, ensureLeaderboardPlayer, getLeaderboard } from "@/lib/leaderboard";
 
 type Panel =
@@ -96,11 +98,19 @@ export default function ReactorSimulator() {
   const [active, setActive] = useState<Panel>("status");
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [simulationPaused, setSimulationPaused] = useState(false);
-  const simulationPausedRef = useRef(false);
+  // Keep every simulation clock dormant until durable plant state has hydrated.
+  // This prevents a refresh from running cold-default physics for a tick.
+  const simulationPausedRef = useRef(true);
   const [sessionRestored, setSessionRestored] = useState(false);
-  const [simpleMode, setSimpleMode] = useState(
-    () => localStorage.getItem("unit2-simple-mode") === "true",
+  const [tutorialEnabled, setTutorialEnabled] = useState(
+    () => localStorage.getItem("unit2-tutorial-enabled") === "true",
   );
+  const [tutorialLevel, setTutorialLevel] = useState(() =>
+    Math.max(1, Math.min(TUTORIAL_LEVELS.length, Number(localStorage.getItem("unit2-tutorial-level") || 1))),
+  );
+  // Early lessons use the previous safe bypasses; later lessons progressively
+  // expose the full plant instead of offering a separate Simple Mode.
+  const simpleMode = tutorialEnabled && tutorialLevel === 6;
   useEffect(() => {
     document.body.dataset.rbwrPanel = active;
     return () => {
@@ -108,8 +118,8 @@ export default function ReactorSimulator() {
     };
   }, [active]);
   useEffect(() => {
-    simulationPausedRef.current = simulationPaused;
-  }, [simulationPaused]);
+    simulationPausedRef.current = simulationPaused || !sessionRestored;
+  }, [simulationPaused, sessionRestored]);
   const [temperature, setTemperature] = useState(25);
   const [pressure, setPressure] = useState(101);
   const [fuelLevel, setFuelLevel] = useState(100);
@@ -152,8 +162,14 @@ export default function ReactorSimulator() {
   const [gridDemandMW, setGridDemandMW] = useState(newGridDemand);
   const [nextGridDemandMW, setNextGridDemandMW] = useState(newGridDemand);
   const [secondsToDemandChange, setSecondsToDemandChange] = useState(newDemandInterval);
-  const [automationCooldowns, setAutomationCooldowns] = useState({ aprm: 0, mcc: 0 });
-  const [operatorName] = useState(() => localStorage.getItem("unit2-operator-name") || "");
+  const [randomEventsEnabled, setRandomEventsEnabled] = useState(false);
+  const [pendingGridEvent, setPendingGridEvent] = useState<"loop" | null>(null);
+  const [offsitePowerAvailable, setOffsitePowerAvailable] = useState(true);
+  const [offsiteCountdown, setOffsiteCountdown] = useState<number | null>(null);
+  const randomEventsEnabledRef = useRef(randomEventsEnabled);
+  const pendingGridEventRef = useRef<"loop" | null>(pendingGridEvent);
+  const [automationCooldowns, setAutomationCooldowns] = useState({ aprm: 0, mcc: 0, pressure: 0, condenser: 0 });
+  const [operatorName, setOperatorName] = useState(() => localStorage.getItem("unit2-operator-name") || "");
   const [leaderboard, setLeaderboard] = useState<Record<string, { points: number; lastSeen: number }>>(() => {
     try { return JSON.parse(localStorage.getItem("unit2-operator-scores") || "{}"); } catch { return {}; }
   });
@@ -162,6 +178,9 @@ export default function ReactorSimulator() {
   const [selectedRodId, setSelectedRodId] = useState("A1");
   const [mode, setMode] = useState<ReactorMode>("SD");
   const [iprCycle, setIprCycle] = useState(1);
+  // The IRM range lever only changes the monitor scale. iprCycle remains the
+  // independent physical startup programme that establishes the withdrawal block.
+  const [irmRange, setIrmRange] = useState(1);
   const [rodDirection, setRodDirection] = useState(0);
   const [rodBlockAlarm, setRodBlockAlarm] = useState<"SRM" | "IPR" | null>(null);
   const [selectionScope, setSelectionScope] =
@@ -296,9 +315,12 @@ export default function ReactorSimulator() {
   });
   const aprmSample = useRef({ value: 0, time: performance.now(), logRate: 0 });
   const periodAprmRef = useRef(0);
+  const rodAprmRef = useRef(0);
+  const rodKineticsRef = useRef({ observed: 0, target: 0, startedAt: 0, intensity: 0, origin: 0 });
   const rodBlockTimer = useRef<number | null>(null);
   const rpmAutoSteamReadyRef = useRef(false);
   const rpmAutoInPhaseSinceRef = useRef<number | null>(null);
+  const islandGovernorHoldRef = useRef(false);
   const turbineAuxRef = useRef({
     coldOilValve: 0,
     warmOilValve: 0,
@@ -346,7 +368,11 @@ export default function ReactorSimulator() {
     () => rods.reduce((sum, rod) => sum + rod.position, 0) / rods.length,
     [rods],
   );
-  const rodAprm = useMemo(() => getAprm(rods), [rods]);
+  // Rod position is reactivity demand, not instant thermal power. Keep the
+  // commanded value separate from rod-derived APRM so startup power builds as
+  // the core responds instead of jumping at the instant a drive begins moving.
+  const rodReactivityAprm = useMemo(() => getAprm(rods), [rods]);
+  const [rodAprm, setRodAprm] = useState(0);
   // Electrical availability is deliberately derived before process flow. A
   // commanded pump remains shown as requested, but it cannot move water or
   // add load until its supplying bus is energized.
@@ -356,7 +382,7 @@ export default function ReactorSimulator() {
   const turbineBusEligible =
     isLocked || Math.abs(turbineSpeed * 45 - 3000) <= 50;
   const startupBusAvailable =
-    startupBusA || (busATransformer && turbineBusEligible);
+    (offsitePowerAvailable && startupBusA) || (busATransformer && turbineBusEligible);
   const busBAvailable = turbineBusB && turbineBusEligible;
   // With both turbine-fed auxiliaries closed, Bus A and Bus B are supplied
   // from one generator auxiliary pool instead of two isolated 60 kW limits.
@@ -399,7 +425,20 @@ export default function ReactorSimulator() {
   // The two 2,000 kg/s recirculation pumps supply 50 APRM points at full
   // flow. Combined output remains bounded by the 115% APRM protection cap.
   const recirculationTargetAprm = (recircAFlow + recircBFlow) * 0.0125;
-  const aprm = clamp(rodAprm + recirculationAprm, 0, 115);
+  const tutorialAprmHold = tutorialEnabled && (tutorialLevel === 5 || tutorialLevel === 6 || tutorialLevel === 7) ? 20 : null;
+  const aprm = tutorialAprmHold ?? clamp(
+    (Number.isFinite(rodAprm) ? rodAprm : 0) +
+      (Number.isFinite(recirculationAprm) ? recirculationAprm : 0),
+    0,
+    115,
+  );
+  // The rod-drive clock must not be recreated whenever delayed thermal
+  // feedback changes APRM. Keep those live physics values in a ref for the
+  // auto-controller, leaving the physical drive clock uninterrupted.
+  const rodDrivePhysicsRef = useRef({ aprm, recirculationAprm, recirculationTargetAprm });
+  useEffect(() => {
+    rodDrivePhysicsRef.current = { aprm, recirculationAprm, recirculationTargetAprm };
+  }, [aprm, recirculationAprm, recirculationTargetAprm]);
   // Failure modes are armed by the Systems page but only become possible
   // during actual pump operation. This makes them training scenarios rather
   // than instantaneous operator-injected faults.
@@ -431,6 +470,68 @@ export default function ReactorSimulator() {
   const periodAprm = rodAprm + periodRecirculationAprm;
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (simulationPausedRef.current) return;
+      const now = performance.now();
+      const kinetics = rodKineticsRef.current;
+      // HMR/restored sessions can retain an older kinetics-ref shape. Reset
+      // it before it can propagate an undefined origin into plant readings.
+      if (!Number.isFinite(rodReactivityAprm)) {
+        rodKineticsRef.current = { observed: 0, target: 0, startedAt: 0, intensity: 0, origin: 0 };
+        rodAprmRef.current = 0;
+        setRodAprm(0);
+        return;
+      }
+      if (!Number.isFinite(kinetics.observed) || !Number.isFinite(kinetics.target) || !Number.isFinite(kinetics.origin) || !Number.isFinite(kinetics.startedAt)) {
+        kinetics.observed = 0;
+        kinetics.target = 0;
+        kinetics.startedAt = 0;
+        kinetics.intensity = 0;
+        kinetics.origin = Number.isFinite(rodAprmRef.current) ? rodAprmRef.current : 0;
+      }
+      const change = rodReactivityAprm - kinetics.observed;
+      if (Math.abs(change) > 0.00001) {
+        const rising = change > 0;
+        kinetics.intensity = kinetics.intensity * 0.78 + Math.min(1, Math.abs(change) * 4) * 0.22;
+        kinetics.observed = rodReactivityAprm;
+        kinetics.target = rodReactivityAprm;
+        if (!rising || mode === "SD" || !kinetics.startedAt || !Number.isFinite(kinetics.origin)) {
+          kinetics.startedAt = now;
+          kinetics.origin = rodAprmRef.current;
+        }
+      } else {
+        kinetics.intensity *= 0.94;
+      }
+
+      const risingDemand = kinetics.target > rodAprmRef.current + 0.0001;
+      // Source and early intermediate range have deliberately slow neutron
+      // response. This is a kinetic ramp, not a dead time: indication starts
+      // moving immediately, builds toward its fastest change, then eases into
+      // the final stable flux/APRM value.
+      const averageWithdrawn = 100 - averageInsertion;
+      const transitionSeconds = risingDemand && mode !== "RUN"
+        ? averageWithdrawn <= 5
+          ? 90
+          : averageWithdrawn < 10
+          ? 90 - (averageWithdrawn - 5) * 14
+          : Math.max(8, 20 - (averageWithdrawn - 10) * 0.6)
+        : mode === "SD" ? 1.2 : mode === "RUN" ? 2.2 : 5;
+      const progress = clamp((now - kinetics.startedAt) / (transitionSeconds * 1000), 0, 1);
+      // Cubic smoothstep has zero slope at both ends: no artificial dead-time
+      // and no abrupt stop when the indicated reactor response settles.
+      const response = progress * progress * (3 - 2 * progress);
+      setRodAprm((previous) => {
+        const next = Number.isFinite(kinetics.origin + (kinetics.target - kinetics.origin) * response)
+          ? kinetics.origin + (kinetics.target - kinetics.origin) * response
+          : 0;
+        rodAprmRef.current = next;
+        if (progress >= 1 || Math.abs(kinetics.target - next) < 0.0002) kinetics.startedAt = 0;
+        return next;
+      });
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [rodReactivityAprm, mode, averageInsertion]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
       setMainBatteryCharge((charge) => {
         if (safetyBusAvailable) return Math.min(100, charge + 0.35);
         // Bus E carries the control room after a loss of Safety Bus power.
@@ -441,7 +542,7 @@ export default function ReactorSimulator() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [safetyBusAvailable, dcBusAvailable, dcConsumerCommanded]);
-  const srmCount = 10 + aprm * 50000;
+  const srmCount = 10 + (Number.isFinite(aprm) ? aprm : 0) * 50000;
   const nextRod = useMemo(
     () => nextWithdrawableRod(rods, mode, iprCycle),
     [rods, mode, iprCycle],
@@ -460,20 +561,44 @@ export default function ReactorSimulator() {
     ? thermalOutput.steamKgS * steamPathCapacity * (bypassValve / 100) * steamPressureFactor
     : 0;
   const steamFlow = turbineSteamFlow + bypassSteamFlow;
-  const condenserEfficiency = clamp((0.28 - condenserVacuum) / 0.23, 0, 1);
+  // The condenser is at its best around 52 mbar.  Keep the specified
+  // 40–70 mbar operating band close to rated performance, then apply a
+  // progressively stronger exhaust-loss penalty as back-pressure rises.
+  const condenserOffsetFromOptimum = Math.abs(condenserVacuum - 0.052);
+  const condenserEfficiency = clamp(
+    1 - Math.pow(condenserOffsetFromOptimum / 0.24, 1.25),
+    0,
+    1,
+  );
   // Turbine work follows admitted steam mass flow. Pressure raises flow through
   // the valve; it is not an independent valve-position multiplier.
   const turbineSteamQuality = clamp(pressure / 7100, 0.35, 1.12);
   const turbineOutputMW =
     isRunning && isLocked && exciterOn && turbineSteamFlow > 1
-      ? turbineSteamFlow * 0.93 * turbineSteamQuality * condenserEfficiency
+      ? turbineSteamFlow * 0.34191 * turbineSteamQuality * condenserEfficiency
       : 0;
+  const calculateAprmForMw = (targetMw: number) => {
+    const admission = mainSteamInletOpen ? valveValue / 100 : 0;
+    const outputPerThermalSteam = steamPathCapacity * admission * steamPressureFactor * .34191 * turbineSteamQuality * condenserEfficiency;
+    const available = isRunning && isLocked && exciterOn && outputPerThermalSteam > .00001;
+    if (!available) return { aprm: 0, maxMw: 0, available: false, message: "Unavailable: synchronize the generator, close the grid breaker, energize the exciter, open the main-steam inlet, and admit steam through the main valve." };
+    const maxMw = getU2ThermalOutput(100).steamKgS * outputPerThermalSteam;
+    const aprmRequired = getAprmForSteamKgS(Math.max(0, targetMw) / outputPerThermalSteam);
+    return {
+      aprm: aprmRequired,
+      maxMw,
+      available: true,
+      message: aprmRequired <= 100
+        ? `At the current steam path, ${targetMw.toFixed(0)} MW requires about ${aprmRequired.toFixed(2)}% APRM. Maximum available output is ${maxMw.toFixed(1)} MW.`
+        : `${targetMw.toFixed(0)} MW is not reachable at the current conditions. Even 100% APRM provides about ${maxMw.toFixed(1)} MW; improve main-valve admission, pressure, or condenser efficiency.`,
+    };
+  };
   const hotwellOutflowKgS =
     (condenserPumpOn && startupBusAvailable ? condensateFlow * 20 : 0) +
     (condenserPumpB && busBAvailable ? condensatePumpBFlow * 20 : 0);
   const daOutflowKgS =
-    (pump1Online && startupBusAvailable ? feedwaterFlow * 10 : 0) +
-    (pump2Online && busBAvailable ? feedwaterPumpBFlow * 10 : 0);
+    (pump1Online && startupBusAvailable ? feedwaterFlow * 20 : 0) +
+    (pump2Online && busBAvailable ? feedwaterPumpBFlow * 20 : 0);
   mccProcessRef.current = {
     mccPumpOn,
     steamFlow,
@@ -711,7 +836,7 @@ export default function ReactorSimulator() {
     },
     {
       id: "ipr-block",
-      label: "IPR BLOCK",
+      label: "IRM BLOCK",
       active: rodBlockAlarm === "IPR",
       priority: "amber",
       tone: "double",
@@ -739,7 +864,7 @@ export default function ReactorSimulator() {
     },
     {
       id: "low-ipr",
-      label: "LOW IPR",
+      label: "LOW IRM RANGE",
       active: mode === "IPR" && iprCycle === 1,
       priority: "blue",
       tone: "low",
@@ -748,8 +873,8 @@ export default function ReactorSimulator() {
     },
     {
       id: "high-ipr",
-      label: "HIGH IPR",
-      active: mode === "IPR" && iprCycle === 3,
+      label: "HIGH IRM RANGE",
+      active: mode === "IPR" && iprCycle === 8,
       priority: "amber",
       tone: "high",
       pan: "center",
@@ -1033,7 +1158,8 @@ export default function ReactorSimulator() {
         setRods(saved.rods);
         setSelectedRodId(saved.selectedRodId || "A1");
         setMode(saved.mode || "SD");
-        setIprCycle(saved.iprCycle || 1);
+        setIprCycle(Math.max(1, Math.min(8, saved.iprCycle || 1)));
+        setIrmRange(Math.max(1, Math.min(8, saved.irmRange || saved.iprCycle || 1)));
         setAutoTarget(saved.autoTarget || 1);
         setAutoSpeed(saved.autoSpeed || "medium");
         setReactorLevel(saved.reactorLevel || 0);
@@ -1052,6 +1178,7 @@ export default function ReactorSimulator() {
         selectedRodId,
         mode,
         iprCycle,
+        irmRange,
         autoTarget,
         autoSpeed,
         reactorLevel,
@@ -1064,6 +1191,7 @@ export default function ReactorSimulator() {
     selectedRodId,
     mode,
     iprCycle,
+    irmRange,
     autoTarget,
     autoSpeed,
     reactorLevel,
@@ -1084,6 +1212,20 @@ export default function ReactorSimulator() {
       if (typeof saved.temperature === "number")
         setTemperature(saved.temperature);
       if (typeof saved.pressure === "number") setPressure(saved.pressure);
+      if (typeof saved.fuelLevel === "number") setFuelLevel(saved.fuelLevel);
+      if (typeof saved.gridSync === "number") setGridSync(saved.gridSync);
+      if (typeof saved.turbineSpeed === "number") setTurbineSpeed(saved.turbineSpeed);
+      if (typeof saved.targetTurbineSpeed === "number") setTargetTurbineSpeed(saved.targetTurbineSpeed);
+      if (typeof saved.pressureRate === "number") setPressureRate(saved.pressureRate);
+      if (typeof saved.rodAprm === "number") {
+        setRodAprm(saved.rodAprm);
+        rodAprmRef.current = saved.rodAprm;
+        rodKineticsRef.current = { observed: saved.rodAprm, target: saved.rodAprm, startedAt: 0, intensity: 0, origin: saved.rodAprm };
+      }
+      if (typeof saved.recirculationAprm === "number") setRecirculationAprm(saved.recirculationAprm);
+      if (typeof saved.periodRecirculationAprm === "number") setPeriodRecirculationAprm(saved.periodRecirculationAprm);
+      if (typeof saved.oilTemperature === "number") setOilTemperature(saved.oilTemperature);
+      if (typeof saved.turbineMetalTemperature === "number") setTurbineMetalTemperature(saved.turbineMetalTemperature);
       if (typeof saved.reactorLevel === "number")
         setReactorLevel(saved.reactorLevel);
       if (typeof saved.hotwellLevel === "number")
@@ -1093,11 +1235,13 @@ export default function ReactorSimulator() {
       if (typeof saved.condenserVacuum === "number")
         setCondenserVacuum(saved.condenserVacuum);
       if (typeof saved.mode === "string") setMode(saved.mode);
-      if (typeof saved.iprCycle === "number") setIprCycle(saved.iprCycle);
+      if (typeof saved.iprCycle === "number") setIprCycle(Math.max(1, Math.min(8, saved.iprCycle)));
+      if (typeof saved.irmRange === "number") setIrmRange(Math.max(1, Math.min(8, saved.irmRange)));
       if (typeof saved.isRunning === "boolean") setIsRunning(saved.isRunning);
       if (typeof saved.bypassValve === "number")
         setBypassValve(saved.bypassValve);
       if (typeof saved.valveValue === "number") setValveValue(saved.valveValue);
+      if (typeof saved.pressure === "number") pressureSample.current = { value: saved.pressure, time: performance.now() };
       if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning(current => ({ ...current, ...saved.physicsTuning }));
       const controls = saved.controls || {};
       const apply = (key: string, setter: (value: any) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key]); };
@@ -1109,7 +1253,8 @@ export default function ReactorSimulator() {
       apply("startupBusA", setStartupBusA); apply("busATransformer", setBusATransformer); apply("turbineBusB", setTurbineBusB); apply("safetyBusS", setSafetyBusS); apply("edgBreaker", setEdgBreaker); apply("acDcInterlock", setAcDcInterlock); apply("safetyToDcBreaker", setSafetyToDcBreaker); apply("busEToDcBreaker", setBusEToDcBreaker); apply("mainBatteryCharge", setMainBatteryCharge); apply("rolldownProtection", setRolldownProtection); apply("cstLevel", setCstLevel); apply("cstMakeup", setCstMakeup); apply("cstDrain", setCstDrain); apply("hotwellMakeup", setHotwellMakeup); apply("hotwellDrain", setHotwellDrain);
       apply("rcicValve", setRcicValve); apply("rcicFlow", setRcicFlow); apply("eccsPumpA", setEccsPumpA); apply("eccsPumpB", setEccsPumpB); apply("eccsPumpAMode", setEccsPumpAMode); apply("eccsPumpBMode", setEccsPumpBMode); apply("srvOpen", setSrvOpen); apply("adsActive", setAdsActive);
       apply("lubePumpSource", setLubePumpSource); apply("hydraulicPumpSource", setHydraulicPumpSource); apply("coldOilValve", setColdOilValve); apply("warmOilValve", setWarmOilValve); apply("turningGear", setTurningGear); apply("preheatValve", setPreheatValve);
-      apply("simpleMode", setSimpleMode);
+      apply("tutorialEnabled", setTutorialEnabled);
+      apply("tutorialLevel", setTutorialLevel);
     } catch {} finally { setSessionRestored(true); }
   }, []);
   useEffect(() => {
@@ -1120,19 +1265,30 @@ export default function ReactorSimulator() {
         rods,
         temperature,
         pressure,
+        fuelLevel,
+        gridSync,
+        turbineSpeed,
+        targetTurbineSpeed,
+        pressureRate,
+        rodAprm,
+        recirculationAprm,
+        periodRecirculationAprm,
+        oilTemperature,
+        turbineMetalTemperature,
         reactorLevel,
         hotwellLevel,
         deaeratorLevel,
         condenserVacuum,
         mode,
         iprCycle,
+        irmRange,
         isRunning,
         bypassValve,
         valveValue,
         aprm,
         turbineOutputMW,
         physicsTuning,
-        controls: { mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, simpleMode },
+        controls: { mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel },
         updatedAt: Date.now(),
       }),
     );
@@ -1147,21 +1303,46 @@ export default function ReactorSimulator() {
     rods,
     temperature,
     pressure,
+    fuelLevel,
+    gridSync,
+    turbineSpeed,
+    targetTurbineSpeed,
+    pressureRate,
+    rodAprm,
+    recirculationAprm,
+    periodRecirculationAprm,
+    oilTemperature,
+    turbineMetalTemperature,
     reactorLevel,
     hotwellLevel,
     deaeratorLevel,
     condenserVacuum,
     mode,
     iprCycle,
+    irmRange,
     isRunning,
     bypassValve,
     valveValue,
     sessionRestored, aprm, physicsTuning,
-    turbineOutputMW, mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, simpleMode,
+    turbineOutputMW, mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel,
   ]);
   useEffect(() => {
-    localStorage.setItem("unit2-simple-mode", String(simpleMode));
-  }, [simpleMode]);
+    localStorage.setItem("unit2-tutorial-enabled", String(tutorialEnabled));
+    localStorage.setItem("unit2-tutorial-level", String(tutorialLevel));
+  }, [tutorialEnabled, tutorialLevel]);
+  useEffect(() => {
+    // A fresh control-room entry begins with annunciator windows acknowledged.
+    // The slight delay ensures the page-local annunciator panel has mounted.
+    const timer = window.setTimeout(() => window.dispatchEvent(new Event("rbwr-annunciator-master-ack")), 120);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (!tutorialEnabled) return;
+    // Training changes can intentionally line systems up. Acknowledge the
+    // resulting windows so a lesson starts with useful, new annunciations.
+    const timer = window.setTimeout(() => window.dispatchEvent(new Event("rbwr-annunciator-master-ack")), 120);
+    return () => window.clearTimeout(timer);
+  }, [tutorialEnabled, tutorialLevel]);
   useEffect(() => {
     if (!simpleMode) return;
     // These systems are intentionally bypassed in Simple mode; restoring Full
@@ -1174,6 +1355,36 @@ export default function ReactorSimulator() {
     setDaIntakeValve(100);
     setDaOuttakeValve(100);
   }, [simpleMode]);
+  useEffect(() => {
+    if (!tutorialEnabled) return;
+    // Lessons begin with offsite/startup power available so newly introduced
+    // equipment can actually be operated. Electrical lessons may still use
+    // the breakers themselves after this initial line-up.
+    setOffsitePowerAvailable(true);
+    setStartupBusA(true);
+    setSafetyBusS(true);
+  }, [tutorialEnabled, tutorialLevel]);
+  useEffect(() => {
+    if (!tutorialEnabled || tutorialLevel !== 4) return;
+    // The rod lesson starts at the first legitimate startup action instead
+    // of SD, where withdrawal is intentionally inhibited.
+    setMode("SRM");
+    setSelectedRodId("C3");
+    setSelectionScope("rod");
+    setRodDirection(0);
+  }, [tutorialEnabled, tutorialLevel]);
+  useEffect(() => {
+    if (!tutorialEnabled || tutorialLevel < 5) return;
+    // Turbine/MCC lessons use a stable 20% APRM environment, leaving the
+    // learner free to concentrate on the system being introduced.
+    setIsRunning(true);
+    setMode("RUN");
+    setRods((previous) => previous.map((rod) => ({ ...rod, position: 73.33 })));
+    setPressure((value) => Math.max(value, 7100));
+    setAutoEnabled(true);
+    setAutoTarget(20);
+    setAutoMode("rods");
+  }, [tutorialEnabled, tutorialLevel]);
   useEffect(() => {
     localStorage.setItem("rbwr-rps-trip-inhibit", String(rpsTripInhibit));
   }, [rpsTripInhibit]);
@@ -1206,6 +1417,18 @@ export default function ReactorSimulator() {
       );
     }
   };
+  // A turbine trip is separate from a reactor SCRAM. It immediately isolates
+  // turbine admission and gives reactor steam a safe bypass path.
+  const tripTurbine = (reason: string) => {
+    setIsLocked(false);
+    setValveValue(0);
+    setValveDirection(0);
+    setBypassValve(100);
+    setBypassDirection(0);
+    setTargetTurbineSpeed(0);
+    setTurbineRpmAuto(false);
+    setEvent(`TURBINE TRIP — ${reason}. Main valve shut; bypass fully open.`);
+  };
   useEffect(() => {
     const silenceTripAlarm = (event: Event) => {
       const detail = (event as CustomEvent<{ ids?: string[] }>).detail;
@@ -1227,7 +1450,6 @@ export default function ReactorSimulator() {
     if (simpleMode) {
       setDaTemperature(110);
       setDaPressure(1.5);
-      return;
     }
     const tick = window.setInterval(() => {
       if (simulationPausedRef.current) return;
@@ -1248,25 +1470,28 @@ export default function ReactorSimulator() {
           if (mode === "SRM" && isCycleComplete(previous, "SRM", 1)) {
             setMode("IPR");
             setIprCycle(1);
-            setAutoMessage("AUTO SELECTED IPR CYCLE 1.");
+            setIrmRange(1);
+            setAutoMessage("AUTO SELECTED IRM MODE — RANGE R1.");
             return previous;
           }
           if (mode === "IPR" && isCycleComplete(previous, "IPR", iprCycle)) {
-            if (iprCycle < 3) {
-              setIprCycle((value) => value + 1);
-              setAutoMessage(`AUTO ADVANCED TO IPR CYCLE ${iprCycle + 1}.`);
+            if (iprCycle < 8) {
+              setIprCycle((range) => range + 1);
+              setIrmRange((range) => Math.min(8, range + 1));
+              setAutoMessage(`AUTO COMPLETED IRM R${iprCycle} — SELECTED R${iprCycle + 1}.`);
             } else {
               setMode("RUN");
-              setAutoMessage("AUTO SELECTED RUN MODE.");
+              setAutoMessage("AUTO COMPLETED FINAL IRM WINDOW — SELECTED RUN MODE.");
             }
             return previous;
           }
+          const livePhysics = rodDrivePhysicsRef.current;
           const recirculationSettling = clamp(
-            recirculationTargetAprm - recirculationAprm,
+            livePhysics.recirculationTargetAprm - livePhysics.recirculationAprm,
             -2,
             2,
           );
-          const predictedAprm = aprm + recirculationSettling;
+          const predictedAprm = livePhysics.aprm + recirculationSettling;
           const difference = autoTarget - predictedAprm;
           const holdBand = { slow: 0.08, medium: 0.15, fast: 0.25 }[autoSpeed];
           if (Math.abs(difference) < holdBand) {
@@ -1364,9 +1589,6 @@ export default function ReactorSimulator() {
     autoMode,
     autoTarget,
     autoSpeed,
-    aprm,
-    recirculationAprm,
-    recirculationTargetAprm,
     iprCycle,
     selectionScope,
   ]);
@@ -1461,30 +1683,36 @@ export default function ReactorSimulator() {
     periodAprmRef.current = periodAprm;
   }, [periodAprm]);
   useEffect(() => {
-    // Reactor period is an inverse exponential growth rate, not the change
-    // between two animation frames. Sampling once a second and filtering the
-    // logarithmic rate prevents a tiny recirculation adjustment from swinging
-    // straight between infinity and a protective low-period indication.
+    // Reactor period is based on the *reactivity trend*, not the small APRM
+    // number displayed during source-range startup.  Using APRM alone made a
+    // single rod leaving 0% look like a huge exponential jump (0.01 → 0.03),
+    // which caused an unrealistic immediate low-period SCRAM.  The source
+    // baseline represents the neutron population already being monitored by
+    // SRM, while the rate filter represents delayed neutron/thermal response.
+    // With all rods moving at normal speed, period approaches ~40 seconds only
+    // after a sustained change; one normal SRM rod stays comfortably long.
     const samplePeriod = () => {
       const now = performance.now();
       const previous = aprmSample.current;
       const elapsed = Math.max(0.5, (now - previous.time) / 1000);
       const current = Math.max(0, periodAprmRef.current);
 
-      if (current < 0.5 || previous.value < 0.5) {
+      if (current < 0.02 && previous.value < 0.02) {
         setReactorPeriod(999);
         aprmSample.current = { value: current, time: now, logRate: 0 };
         return;
       }
 
+      const sourceRangeBaseline = 42;
       const instantaneousRate = clamp(
-        Math.log(current / previous.value) / elapsed,
-        -0.12,
-        0.12,
+        Math.log((sourceRangeBaseline + current) / (sourceRangeBaseline + previous.value)) / elapsed,
+        -0.05,
+        0.05,
       );
-      const logRate = previous.logRate * 0.82 + instantaneousRate * 0.18;
-      const period = logRate > 0.0009
-        ? clamp(Math.LN2 / logRate, 5, 999)
+      const response = 1 - Math.exp(-0.12 * elapsed);
+      const logRate = previous.logRate + (instantaneousRate - previous.logRate) * response;
+      const period = logRate > 0.00035
+        ? clamp(Math.LN2 / logRate, 10, 999)
         : 999;
       setReactorPeriod(period);
       aprmSample.current = { value: current, time: now, logRate };
@@ -1789,9 +2017,9 @@ export default function ReactorSimulator() {
         setHotwellDrain(hotwellLevel > 0.15);
       }
       dispatch(condensateTarget, 2000, setCondensateFlow, setCondensatePumpBFlow);
-      dispatch(feedTarget, 1000, setFeedwaterFlow, setFeedwaterPumpBFlow);
+      dispatch(feedTarget, 2000, setFeedwaterFlow, setFeedwaterPumpBFlow);
       if (busBAvailable && condensateTarget > 2000) setCondenserPumpB(true);
-      if (busBAvailable && feedTarget > 1000) setPump2Online(true);
+      if (busBAvailable && feedTarget > 2000) setPump2Online(true);
     };
     applyTargets();
     const tick = window.setInterval(applyTargets, 150);
@@ -1911,10 +2139,10 @@ export default function ReactorSimulator() {
       // The DA's two process valves control temperature and pressure
       // independently; MCC feedwater flow remains untouched.
       setDaIntakeValve((value) =>
-        clamp(value + clamp((110.5 - daTemperature) * 0.8, -0.5, 0.5), 0, 100),
+        Math.round(clamp(value + clamp((110.5 - daTemperature) * 0.8, -0.5, 0.5), 0, 100) * 10) / 10,
       );
       setDaOuttakeValve((value) =>
-        clamp(value + clamp((1.60 - daPressure) * 5, -0.5, 0.5), 0, 100),
+        Math.round(clamp(value + clamp((1.60 - daPressure) * 5, -0.5, 0.5), 0, 100) * 10) / 10,
       );
       setDaIntakeOpen(true);
       setDaOutputOpen(true);
@@ -1977,9 +2205,15 @@ export default function ReactorSimulator() {
     isLocked &&
     netProductionMW > 1 &&
     Math.abs(netProductionMW - gridDemandMW) <= demandToleranceMW;
-  const automationPenaltyCount =
-    (autoEnabled || automationCooldowns.aprm > 0 ? 1 : 0) +
-    (mccAutoOn || automationCooldowns.mcc > 0 ? 1 : 0);
+  const automationPenaltySystems = [
+    autoEnabled || automationCooldowns.aprm > 0 ? "Auto APRM" : null,
+    mccAutoOn || automationCooldowns.mcc > 0 ? "MCC Auto" : null,
+    turbinePressureAuto || automationCooldowns.pressure > 0 ? "Auto Pressure" : null,
+    condenserAuto || automationCooldowns.condenser > 0 ? "Condenser Auto" : null,
+  ].filter((system): system is string => Boolean(system));
+  // Each active automation system deducts 0.25 point/s. A 100-second
+  // cooldown continues that deduction after it is switched off.
+  const automationPenaltyCount = automationPenaltySystems.length;
   const scoreRate = onGridDemand
     ? Math.max(0.25, 1 - automationPenaltyCount * 0.25)
     : 0;
@@ -2010,10 +2244,6 @@ export default function ReactorSimulator() {
   }, [operatorName]);
 
   useEffect(() => {
-    if (operatorName) return;
-    navigate("/", { replace: true });
-  }, [navigate, operatorName]);
-  useEffect(() => {
     const preventControlSelection = (event: Event) => {
       const target = event.target as Element | null;
       if (!target?.closest(".rbwr-control-room")) return;
@@ -2028,11 +2258,50 @@ export default function ReactorSimulator() {
     };
   }, []);
   useEffect(() => {
+    randomEventsEnabledRef.current = randomEventsEnabled;
+    if (!randomEventsEnabled) {
+      pendingGridEventRef.current = null;
+      setPendingGridEvent(null);
+    }
+  }, [randomEventsEnabled]);
+  useEffect(() => {
+    pendingGridEventRef.current = pendingGridEvent;
+  }, [pendingGridEvent]);
+  useEffect(() => {
+    if (offsiteCountdown === null) return;
+    const timer = window.setInterval(() => {
+      setOffsiteCountdown((seconds) => {
+        if (seconds === null) return null;
+        if (seconds <= 1) {
+          setOffsitePowerAvailable(false);
+          setIsLocked(false);
+          setEvent("OFFSITE POWER LOSS — EXTERNAL SWITCHYARD AND STARTUP TRANSFORMER DE-ENERGIZED. GRID BREAKER OPENED; ISLAND THE TURBINE TO RESTORE AUXILIARY POWER.");
+          return null;
+        }
+        return seconds - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [offsiteCountdown]);
+  useEffect(() => {
     const tick = window.setInterval(() => {
       setSecondsToDemandChange((seconds) => {
-        if (seconds > 1) return seconds - 1;
+        if (seconds > 1) {
+          const remaining = seconds - 1;
+          if (pendingGridEventRef.current === "loop" && remaining === 100)
+            setEvent("GRID WARNING — LOSS OF OFFSITE POWER EXPECTED IN APPROXIMATELY 100 SECONDS. PREPARE TURBINE ISLANDING.");
+          return remaining;
+        }
         setGridDemandMW(nextGridDemandMW);
         setNextGridDemandMW(newGridDemand());
+        if (pendingGridEventRef.current === "loop") {
+          setOffsitePowerAvailable(false);
+          setIsLocked(false);
+          setEvent("LOOP EVENT — EXTERNAL SWITCHYARD AND STARTUP TRANSFORMER DE-ENERGIZED. GRID BREAKER OPENED; ISLAND THE TURBINE TO RESTORE AUXILIARY POWER.");
+        }
+        const nextEvent = randomEventsEnabledRef.current && Math.random() < 0.06 ? "loop" : null;
+        pendingGridEventRef.current = nextEvent;
+        setPendingGridEvent(nextEvent);
         return newDemandInterval();
       });
     }, 1000);
@@ -2043,10 +2312,12 @@ export default function ReactorSimulator() {
       setAutomationCooldowns((previous) => ({
         aprm: autoEnabled ? 100 : Math.max(0, previous.aprm - 1),
         mcc: mccAutoOn ? 100 : Math.max(0, previous.mcc - 1),
+        pressure: turbinePressureAuto ? 100 : Math.max(0, previous.pressure - 1),
+        condenser: condenserAuto ? 100 : Math.max(0, previous.condenser - 1),
       }));
     }, 1000);
     return () => window.clearInterval(tick);
-  }, [autoEnabled, mccAutoOn]);
+  }, [autoEnabled, mccAutoOn, turbinePressureAuto, condenserAuto]);
   useEffect(() => {
     if (!operatorName || !scoreRate) return;
     const tick = window.setInterval(() => {
@@ -2079,6 +2350,9 @@ export default function ReactorSimulator() {
     return () => window.clearInterval(flush);
   }, [remoteLeaderboardReady, operatorName]);
   useEffect(() => {
+    // Training uses a protected power supply so a learner can operate the
+    // newly introduced equipment without a hidden transformer-load puzzle.
+    if (tutorialEnabled) return;
     if (sharedTurbineCapacityActive && sharedTurbineLoad > 150) {
       setBusATransformer(false);
       setTurbineBusB(false);
@@ -2104,7 +2378,7 @@ export default function ReactorSimulator() {
       setSafetyBusS(false);
       setEvent("SAFETY BUS OVERLOAD — BUS S TRIPPED.");
     }
-  }, [sharedTurbineCapacityActive, sharedTurbineLoad, isLocked, startupBusAvailable, busATransformer, turbineBusEligible, busACapacity, turbineBusB, safetyBusS, startupLoad, busBLoad, safetyLoad]);
+  }, [tutorialEnabled, sharedTurbineCapacityActive, sharedTurbineLoad, isLocked, startupBusAvailable, busATransformer, turbineBusEligible, busACapacity, turbineBusB, safetyBusS, startupLoad, busBLoad, safetyLoad]);
 
   useEffect(() => {
     const active = {
@@ -2144,8 +2418,7 @@ export default function ReactorSimulator() {
     ) {
       setRpsTrips((previous) => ({ ...previous, "TURBINE VACUUM": true }));
       if (rolldownProtection) {
-        setIsLocked(false);
-        setEvent("CHANNEL B TURBINE VACUUM TRIP — generator unsynchronized.");
+        tripTurbine("Channel B low condenser vacuum protection");
       } else
         setEvent(
           "CHANNEL B TURBINE VACUUM ALARM — roll-down protection bypassed.",
@@ -2160,7 +2433,7 @@ export default function ReactorSimulator() {
   ]);
 
   useReactorPhysics({
-    simulationPaused,
+    simulationPaused: simulationPaused || !sessionRestored,
     isRunning,
     temperature,
     mainValve: valveValue,
@@ -2187,13 +2460,17 @@ export default function ReactorSimulator() {
     onAutomaticScram: () => scram(),
   });
   useEffect(() => {
-    if (isRunning && !isLocked) {
-      // Before synchronization the shaft accelerates only as admitted steam flow rises.
-      setTargetTurbineSpeed(
-        mainSteamInletOpen ? clamp(turbineSteamFlow / 3, 0, 80) : 0,
-      );
+    if (isLocked) return;
+    // Turning gear slowly rolls the shaft at about 50 RPM before run-up.
+    if (turningGear) {
+      setTargetTurbineSpeed(50 / 45);
+      return;
     }
-  }, [isRunning, isLocked, mainSteamInletOpen, turbineSteamFlow]);
+    if (isRunning) {
+      // Before synchronization the shaft accelerates only as admitted steam flow rises.
+      setTargetTurbineSpeed(mainSteamInletOpen ? clamp(turbineSteamFlow / 3, 0, 80) : 0);
+    }
+  }, [isRunning, isLocked, mainSteamInletOpen, turbineSteamFlow, turningGear]);
   useEffect(() => {
     // RPM Auto has its own staged 7,100 kPa governor. Do not let the two
     // automatic controllers issue opposing valve commands.
@@ -2227,11 +2504,23 @@ export default function ReactorSimulator() {
     if (!turbineRpmAuto || !isRunning || !mainSteamInletOpen || isLocked) {
       rpmAutoSteamReadyRef.current = false;
       rpmAutoInPhaseSinceRef.current = null;
+      islandGovernorHoldRef.current = false;
       return;
     }
     const governor = window.setInterval(() => {
       const rpmError = 3000 - actualRPM;
       const pressureError = pressure - 7100;
+      const deliberateValveMove = valveDirection !== 0 || bypassDirection !== 0;
+      const severeDeviation = Math.abs(rpmError) > 75 || Math.abs(pressureError) > 900 || Math.abs(pressureRate) > 400;
+      if (deliberateValveMove || severeDeviation) islandGovernorHoldRef.current = false;
+      if (islandGovernorHoldRef.current) {
+        // Island governor hold: preserve the established steam admission and
+        // pin shaft speed at nominal frequency until an operator action or a
+        // truly significant plant disturbance demands renewed regulation.
+        setTurbineSpeed(66.67);
+        setTargetTurbineSpeed(66.67);
+        return;
+      }
       if (Math.abs(rpmError) <= 5) {
         rpmAutoInPhaseSinceRef.current ??= performance.now();
       } else {
@@ -2272,10 +2561,15 @@ export default function ReactorSimulator() {
         return;
       }
 
-      // Once phase has remained stable, taper the governor so it does not
-      // hunt around synchronism. After six seconds it holds its last valve
-      // positions until speed leaves the ±5 RPM window again.
-      if (inPhaseSeconds >= 6) return;
+      // Once phase has remained stable, lock the established steam flow and
+      // nominal shaft speed for easy island operation. The hold releases only
+      // for an intentional valve movement or a severe deviation above.
+      if (inPhaseSeconds >= 6) {
+        islandGovernorHoldRef.current = true;
+        setTurbineSpeed(66.67);
+        setTargetTurbineSpeed(66.67);
+        return;
+      }
       const settleFactor = inPhaseSeconds >= 2 ? 0.2 : 1;
 
       // Stage 2: calculate the main-valve setting which should pass roughly
@@ -2294,7 +2588,7 @@ export default function ReactorSimulator() {
       setBypassValve((value) => Math.round(clamp(value - 0.2 * settleFactor, 0, 100) * 10) / 10);
     }, 125);
     return () => window.clearInterval(governor);
-  }, [turbineRpmAuto, isRunning, mainSteamInletOpen, isLocked, actualRPM, pressure, pressureRate, thermalOutput.steamKgS, steamPressureFactor]);
+  }, [turbineRpmAuto, isRunning, mainSteamInletOpen, isLocked, actualRPM, pressure, pressureRate, valveDirection, bypassDirection, thermalOutput.steamKgS, steamPressureFactor]);
   const lubePressure =
     simpleMode ||
     lubePumpSource === "aux" ||
@@ -2311,7 +2605,6 @@ export default function ReactorSimulator() {
       : 0;
   const turbineReadiness = simpleMode ? {} : {
     "MAIN STEAM PRESSURE": pressure >= 5500 && pressure <= 8500,
-    "MAIN STEAM TEMPERATURE": temperature >= 100,
     "CONDENSER VACUUM": condenserVacuum >= 0.04 && condenserVacuum <= 0.07,
     "HYDRAULIC PUMP PRESSURE": hydraulicPressure >= 80,
     "LUBRICATION PUMP PRESSURE": lubePressure >= 80,
@@ -2350,15 +2643,17 @@ export default function ReactorSimulator() {
       setOilTemperature((value) =>
         clamp(value + clamp((oilTarget - value) * 0.07, -1, 1), 20, 100),
       );
-      const preheatActive = aux.turningGear && aux.preheatValve && aux.temperature >= 150;
+      // This auxiliary preheat path has its own metal-temperature limit; it
+      // does not depend on the main-steam-temperature run-up condition.
+      const preheatActive = aux.turningGear && aux.preheatValve;
       const metalTarget = preheatActive
-        ? clamp(aux.temperature - 12, 25, 320)
+        ? 280
         : 25;
       setTurbineMetalTemperature((value) =>
         clamp(
           value +
             (metalTarget - value) *
-              (preheatActive ? 0.06 : 0.003),
+              (preheatActive ? 0.012 : 0.003),
           20,
           350,
         ),
@@ -2369,12 +2664,17 @@ export default function ReactorSimulator() {
   useEffect(() => {
     if (simpleMode) return;
     if (!isLocked && actualRPM > 1800 && oilTemperature < 25) {
-      setTargetTurbineSpeed(0);
-      setEvent(
-        "TURBINE TRIP — lubrication oil temperature entered the danger zone.",
-      );
+      tripTurbine("lubrication oil temperature entered the danger zone");
     }
   }, [actualRPM, oilTemperature, isLocked, simpleMode]);
+  useEffect(() => {
+    // Turning gear is a low-speed maintenance drive. Steam run-up with it
+    // engaged would damage the gear and therefore causes a turbine trip.
+    if (!turningGear || (actualRPM <= 100 && valveValue <= 2)) return;
+    setTurningGear(false);
+    setPreheatValve(false);
+    tripTurbine("turning gear remained engaged during turbine run-up");
+  }, [turningGear, actualRPM, valveValue]);
   useEffect(() => {
     if (simpleMode) return;
     if (turbineSmoke !== "idle" || actualRPM <= 3000 || lubePressure >= 80)
@@ -2392,9 +2692,7 @@ export default function ReactorSimulator() {
     if (turbineSmoke !== "countdown") return;
     if (agentSeconds <= 0) {
       setTurbineSmoke("released");
-      setIsLocked(false);
-      setTargetTurbineSpeed(0);
-      setEvent("FIRE AGENT RELEASED — turbine tripped.");
+      tripTurbine("fire agent released");
       return;
     }
     const timer = window.setTimeout(
@@ -2437,13 +2735,14 @@ export default function ReactorSimulator() {
     );
     setMode("RUN");
     setIprCycle(3);
+    setIrmRange(8);
     setAutoEnabled(false);
     setRodDirection(0);
     setSelectedRodId("A1");
     setIsRunning(true);
     setScramPressed(false);
     setEvent(
-      "INSTANT STARTUP COMPLETE — SRM and IPR programme set to RUN handoff position.",
+      "INSTANT STARTUP COMPLETE — SRM and IRM programme set to RUN handoff position.",
     );
   };
   const resetTrips = () => {
@@ -2472,7 +2771,8 @@ export default function ReactorSimulator() {
     sessionStorage.removeItem("rbwr-pending-console-commands");
     setActive("status");
     setConsoleOpen(false);
-    setSimpleMode(false);
+    setTutorialEnabled(false);
+    setTutorialLevel(1);
     setTemperature(25);
     setPressure(101);
     setFuelLevel(100);
@@ -2493,9 +2793,13 @@ export default function ReactorSimulator() {
       tripTemperature: 1100,
     });
     setRods(createInitialRods());
+    setRodAprm(0);
+    rodAprmRef.current = 0;
+    rodKineticsRef.current = { observed: 0, target: 0, startedAt: 0, intensity: 0, origin: 0 };
     setSelectedRodId("A1");
     setMode("SD");
     setIprCycle(1);
+    setIrmRange(1);
     setRodDirection(0);
     setSelectionScope("rod");
     setReactorPeriod(999);
@@ -2551,7 +2855,12 @@ export default function ReactorSimulator() {
     setGridDemandMW(newGridDemand());
     setNextGridDemandMW(newGridDemand());
     setSecondsToDemandChange(newDemandInterval());
-    setAutomationCooldowns({ aprm: 0, mcc: 0 });
+    setRandomEventsEnabled(false);
+    setPendingGridEvent(null);
+    pendingGridEventRef.current = null;
+    setOffsitePowerAvailable(true);
+    setOffsiteCountdown(null);
+    setAutomationCooldowns({ aprm: 0, mcc: 0, pressure: 0, condenser: 0 });
     setCstLevel(8);
     setCstMakeup(false);
     setCstDrain(false);
@@ -2603,6 +2912,7 @@ export default function ReactorSimulator() {
       Object.fromEntries(Object.keys(rpsTrips).map((key) => [key, false])),
     );
     setEvent("Simulator reset to cold shutdown.");
+    window.setTimeout(() => window.dispatchEvent(new Event("rbwr-annunciator-master-ack")), 120);
   };
   useEffect(() => {
     if (
@@ -2623,12 +2933,61 @@ export default function ReactorSimulator() {
   const runConsoleCommand = (raw: string) => {
     const [target, verb, rawValue] = raw.toLowerCase().trim().split(/\s+/);
     const value = Number(rawValue);
+    if (target === "login") {
+      const space = raw.trim().indexOf(" ");
+      const name = (space < 0 ? "" : raw.trim().slice(space + 1)).replace(/[^a-z0-9 _-]/gi, "").trim().slice(0, 24);
+      if (!name) return "Usage: LOGIN <yourname>. Use LOGOUT to operate as a guest without point scoring.";
+      pendingScoreRef.current = 0;
+      localStorage.setItem("unit2-operator-name", name);
+      setOperatorName(name);
+      setLeaderboard((previous) => previous[name] ? previous : { ...previous, [name]: { points: 0, lastSeen: Date.now() } });
+      void ensureLeaderboardPlayer(name).catch(() => {});
+      return `LOGIN ACCEPTED — ${name}. Points will be recorded while you match grid demand.`;
+    }
+    if (target === "logout") {
+      pendingScoreRef.current = 0;
+      localStorage.removeItem("unit2-operator-name");
+      setOperatorName("");
+      return "GUEST MODE ACTIVE — simulation controls remain available, but points are not recorded.";
+    }
+    if (target === "leaderboard") {
+      const rows = sortedOperators.slice(0, 5);
+      const top = rows.length ? rows.map(([name, entry], index) => `${index + 1}. ${name} — ${Number(entry.points || 0).toFixed(1)} pts`).join("\n") : "No scored operators yet.";
+      return `UNIT 2 LEADERBOARD\n${top}\n\n${operatorName ? `YOUR POSITION: #${operatorRank || "—"} / ${sortedOperators.length || "—"}\nYOUR SCORE: ${operatorPoints.toFixed(1)} pts` : "GUEST MODE — LOGIN <yourname> to record points and receive a rank."}`;
+    }
+    if (target === "operations") {
+      const activeTrips = Object.entries(rpsTrips)
+        .filter(([, active]) => active)
+        .map(([name]) => name);
+      const turbinePowerReady = turbineBusEligible;
+      const prospectiveBusACapacity = busATransformer && turbinePowerReady ? 60 : 38;
+      const busALocked = sharedTurbineCapacityActive
+        ? startupDemand + busBDemand > 150
+        : startupDemand > prospectiveBusACapacity;
+      const busBLocked = sharedTurbineCapacityActive
+        ? startupDemand + busBDemand > 150
+        : busBDemand > 60;
+      const busSLocked = safetyDemand > 30;
+      const busLine = (name: string, energized: boolean, commanded: boolean, demand: number, limit: number, locked: boolean) =>
+        `${name}: ${energized ? "ENERGIZED" : commanded ? "DE-ENERGIZED" : "OPEN"} · ${demand.toFixed(1)}/${limit.toFixed(0)} kW${locked ? " · POWER-LOCKED (OVERLOAD ON ENERGIZATION)" : ""}`;
+      if (verb === "trips")
+        return activeTrips.length ? `TRIP STATUS\nACTIVE: ${activeTrips.join(" · ")}` : "TRIP STATUS\nNo active RPS trip nodes.";
+      if (verb === "fuel")
+        return `FUEL STATUS\nCORE INVENTORY: ${fuelLevel.toFixed(1)}%\nAPRM: ${aprm.toFixed(2)}% · ROD APRM: ${rodAprm.toFixed(2)}%`;
+      if (verb === "demand")
+        return `GRID DEMAND\nCURRENT: ${gridDemandMW.toFixed(0)} MW\nNEXT: ${nextGridDemandMW.toFixed(0)} MW in ${secondsToDemandChange}s\nNET UNIT PRODUCTION: ${netProductionMW.toFixed(1)} MW`;
+      if (verb === "buses")
+        return `BUS AVAILABILITY\n${busLine("BUS A", startupBusAvailable, startupBusA || busATransformer, startupDemand, sharedTurbineCapacityActive ? 150 : prospectiveBusACapacity, busALocked)}\n${busLine("BUS B", busBAvailable, turbineBusB, busBDemand, sharedTurbineCapacityActive ? 150 : 60, busBLocked)}\n${busLine("BUS S", safetyBusAvailable, safetyBusS, safetyDemand, 30, busSLocked)}\nBUS E: ${busEAvailable ? "ENERGIZED" : "DE-ENERGIZED"} · BATTERY ${mainBatteryCharge.toFixed(1)}%\nDC BUS: ${dcBusAvailable ? "ENERGIZED" : "DE-ENERGIZED"}`;
+      if (verb === "status")
+        return `UNIT 2 OPERATIONS STATUS\nREACTOR: ${isRunning ? "STARTED" : "SHUT DOWN"} · APRM ${aprm.toFixed(2)}% · ${pressure.toFixed(0)} kPa\nTURBINE: ${actualRPM.toFixed(0)} RPM · ${turbineOutputMW.toFixed(1)} MW · ${isLocked ? "GRID SYNCED" : "GRID OPEN"}\nFUEL: ${fuelLevel.toFixed(1)}% · CONDENSER: ${Math.round(condenserVacuum * 1000)} mbar\nTRIPS: ${activeTrips.length ? activeTrips.join(", ") : "CLEAR"}\nGRID: ${gridDemandMW.toFixed(0)} MW now · ${nextGridDemandMW.toFixed(0)} MW next in ${secondsToDemandChange}s\nUse TRIP STATUS, BUS AVAILABILITY, FUEL STATUS, or NEXT DEMAND for detail.`;
+      return "Operations query unavailable. Use STATUS, TRIP STATUS, BUS AVAILABILITY, FUEL STATUS, or NEXT DEMAND.";
+    }
     if (target === "help" && verb === "values")
       return "READABLE VALUES: reactor.temp|pressure|level|fuel|period|aprm|rodaprm, hotwell.level, da.level|temp|pressure|intake|outtake, cst.level, condenser.pressure|valve, condensate.a|b, feedwater.a|b, recirc.a|b|flow.a|flow.b, turbine.rpm|output|mainvalve|bypass|steamflow, electrical.battery|load.a|load.b|load.s|bus.a|bus.b|bus.s|dc, rcic.flow, oil.temp, turbine.metaltemp.";
     if (target === "help" && verb === "scenarios")
-      return "SCENARIOS: cold — full reset; reactor-ready — RUN core, stable MCC, turbine offline; turbine-synced — ready reactor and synchronized turbine; grid-load — synchronized moderate-load unit.";
+      return "SCENARIOS: cold — full reset; reactor-ready — RUN core, stable MCC, turbine offline; turbine-synced — ready reactor and synchronized turbine; grid-load — synchronized moderate-load unit; offsite — warning, then a 100-second loss-of-offsite-power drill.";
     if (target === "help")
-      return "Commands: VALUES | GET <value> | <value> SET <n> | <switch> ON|OFF | SCRAM | START|STOP | PAUSE | UNPAUSE | SCENARIO <cold|reactor-ready|turbine-synced|grid-load>. Values: reactor.temp|pressure|level, hotwell.level, da.level|temp|pressure, cst.level, condenser.pressure|valve, condensate.a|b, feedwater.a|b, recirc.a|b, turbine.mainvalve|bypass, auto.aprm, physics.thermal|steam|removal|triptemp. Switches: mcc.auto|pump, condenser.auto|pump.a|pump.b|circulation.a|circulation.b, recirc.pump.a|b, turbine.rpmauto|pressureauto|inlet, electrical.busa|bustransformer|busb|buss, rcic.valve, eccs.a|b, ads.";
+      return "Commands: LOGIN <name> | LOGOUT (guest mode) | LEADERBOARD | VALUES | GET <value> | <value> SET <n> | <switch> ON|OFF | SCRAM | START|STOP | PAUSE | UNPAUSE | SCENARIO <cold|reactor-ready|turbine-synced|grid-load|offsite>. Values: reactor.temp|pressure|level, hotwell.level, da.level|temp|pressure, cst.level, condenser.pressure|valve, condensate.a|b, feedwater.a|b, recirc.a|b, turbine.mainvalve|bypass, auto.aprm, physics.thermal|steam|removal|triptemp. Switches: mcc.auto|pump, condenser.auto|pump.a|pump.b|circulation.a|circulation.b, recirc.pump.a|b, turbine.rpmauto|pressureauto|inlet, electrical.busa|bustransformer|busb|buss, rcic.valve, eccs.a|b, ads.";
     if (target === "pause" || target === "unpause" || target === "resume") {
       const paused = target === "pause";
       setSimulationPaused(paused);
@@ -2637,6 +2996,11 @@ export default function ReactorSimulator() {
     }
     if (target === "scenario") {
       const scenario = verb;
+      if (scenario === "offsite") {
+        setOffsiteCountdown(100);
+        setEvent("GRID WARNING — MANUAL OFFSITE-POWER LOSS DRILL IN 100 SECONDS. PREPARE TURBINE ISLANDING.");
+        return "Offsite-power loss drill armed. External power will be lost in 100 seconds; prepare turbine islanding.";
+      }
       if (scenario === "cold") {
         reset();
         return "Cold shutdown scenario loaded.";
@@ -2644,7 +3008,7 @@ export default function ReactorSimulator() {
       if (scenario === "reactor-ready" || scenario === "turbine-synced" || scenario === "grid-load") {
         const load = scenario === "grid-load";
         setRpsTrips((previous) => Object.fromEntries(Object.keys(previous).map((key) => [key, false])));
-        setIsRunning(true); setScramPressed(false); setMode("RUN"); setIprCycle(3);
+        setIsRunning(true); setScramPressed(false); setMode("RUN"); setIprCycle(3); setIrmRange(8);
         setRods((previous) => previous.map((rod) => ({ ...rod, position: load ? 40 : 64 })));
         setReactorLevel(0); setHotwellLevel(0); setDeaeratorLevel(0); setCstLevel(6);
         setMccPumpOn(true); setCondenserValve(55); setCondenserVacuum(.055);
@@ -2659,7 +3023,7 @@ export default function ReactorSimulator() {
         setEvent(`CLI SCENARIO LOADED — ${scenario.toUpperCase().replace("-", " ")}.`);
         return `Scenario ${scenario.toUpperCase()} loaded.`;
       }
-      return "Unknown scenario. Use SCENARIO cold, reactor-ready, turbine-synced, or grid-load.";
+      return "Unknown scenario. Use SCENARIO cold, reactor-ready, turbine-synced, grid-load, or offsite.";
     }
     if (target === "values" || target === "status")
       return `REACTOR ${temperature.toFixed(1)}°C · ${pressure.toFixed(0)} kPa · ${reactorLevel.toFixed(2)} m · APRM ${aprm.toFixed(2)}%\nMCC hotwell ${hotwellLevel.toFixed(2)} m · DA ${deaeratorLevel.toFixed(2)} m · CST ${cstLevel.toFixed(2)} m\nCOND ${Math.round(condenserVacuum * 1000)} mbar / valve ${condenserValve.toFixed(1)}% · RECIRC A/B ${recircAFlow.toFixed(1)}/${recircBFlow.toFixed(1)} kg/s\nTURBINE ${actualRPM.toFixed(0)} RPM · main ${valveValue.toFixed(1)}% · bypass ${bypassValve.toFixed(1)}%`;
@@ -2703,6 +3067,45 @@ export default function ReactorSimulator() {
       setAgentSeconds(10);
       setEvent("CONSOLE EVENT — turbine smoke triggered.");
       return "Turbine smoke triggered; agent release countdown available.";
+    }
+    if (target === "maintenance" && verb === "repair") {
+      setMalfunctions((current) => ({ ...current, recircAFlowLossActive: false, recircBFlowLossActive: false }));
+      setEvent("UNIT 2 MAINTENANCE — active random malfunctions cleared.");
+      return "Maintenance repair complete. Active random malfunctions cleared.";
+    }
+    if (target === "maintenance" && verb === "edg" && rawValue === "refuel") {
+      setEvent("EDG MAINTENANCE — refuelling cycle recorded.");
+      return "EDG refuelling cycle complete. Fuel telemetry will be added with the EDG system.";
+    }
+    if (target === "maintenance" && verb === "turbine" && rawValue === "oil-check")
+      return `TCR OIL LEAK CHECK — lubrication pressure ${lubePressure.toFixed(0)}%, oil temperature ${oilTemperature.toFixed(1)} °C. No simulated leak sensor installed.`;
+    if (target === "maintenance" && verb === "turbine" && rawValue === "repair") {
+      setTurbineSmoke("idle");
+      setAgentSeconds(10);
+      setEvent("TCR MAINTENANCE — turbine damage repair recorded.");
+      return "Turbine repair complete; smoke/fire exercise reset.";
+    }
+    if (target === "maintenance" && verb === "unit" && rawValue === "refuel") {
+      setEvent("UNIT 2 MAINTENANCE — refuelling process started.");
+      return "Unit refuelling process logged. Core fuel mechanics are reserved for a future maintenance update.";
+    }
+    if (target === "hr" && verb === "points")
+      return `OPERATOR PERFORMANCE\nNAME: ${operatorName}\nPOINTS: ${operatorPoints.toFixed(1)}\nRANK: #${operatorRank || "—"} / ${sortedOperators.length || 1}`;
+    if (target === "grid" && verb === "disconnect") {
+      setIsLocked(false);
+      setEvent("GRID CONTROL — generator disconnected from the grid.");
+      return "Grid breaker opened. The turbine may continue in island-capable operation.";
+    }
+    if (target === "fss" && ["silence", "reset", "test"].includes(verb || "")) {
+      if (verb === "test") {
+        setTurbineSmoke("countdown");
+        setAgentSeconds(10);
+        setEvent("FSS MASTER PANEL — turbine smoke/fire test initiated.");
+        return "FSS test active: turbine smoke/fire countdown initiated.";
+      }
+      window.dispatchEvent(new CustomEvent(`rbwr-annunciator-master-${verb}`));
+      if (verb === "reset") setEvent("FSS MASTER PANEL — alarm reset requested.");
+      return `FSS master alarm ${verb} command sent.`;
     }
     const switches: Record<string, (enabled: boolean) => void> = {
       "mcc.auto": setMccAutoOn, "mcc.pump": setMccPumpOn,
@@ -2894,6 +3297,37 @@ export default function ReactorSimulator() {
       }}
     />
   );
+  const tutorialObjectiveMet = !tutorialEnabled || (
+    tutorialLevel === 1 ? startupBusAvailable && safetyBusAvailable :
+    tutorialLevel === 2 ? !Object.values(rpsTrips).some(Boolean) :
+    tutorialLevel === 3 ? Boolean(rods.find((rod) => rod.id === "C3")) :
+    tutorialLevel === 4 ? rods.some((rod) => rod.position < 99.5) :
+    tutorialLevel === 5 ? pressure >= 6800 && pressure <= 7400 && condenserVacuum >= 0.04 && condenserVacuum <= 0.07 :
+    tutorialLevel === 6 ? actualRPM >= 2800 :
+    tutorialLevel === 7 ? mccPumpOn && condenserPumpOn && pump1Online && hotwellOutflowKgS > 100 && daOutflowKgS > 100 :
+    tutorialLevel === 8 ? isLocked : true
+  );
+  const tutorialAllowsPanel = (panel: Panel) => {
+    if (!tutorialEnabled) return true;
+    const limits: Record<number, Panel[]> = {
+      1: ["status", "electrical"],
+      2: ["status", "electrical", "rps"],
+      3: ["status", "electrical", "rps", "control-rods"],
+      4: ["status", "electrical", "rps", "control-rods"],
+      5: ["status", "electrical", "rps", "control-rods", "power-grid", "condenser"],
+      6: ["status", "electrical", "rps", "control-rods", "power-grid", "condenser"],
+      7: ["status", "electrical", "rps", "control-rods", "power-grid", "condenser", "mcc", "water"],
+      8: panels,
+    };
+    return (limits[tutorialLevel] || limits[1]).includes(panel);
+  };
+  const advanceTutorial = () => {
+    if (!tutorialObjectiveMet) return;
+    const next = Math.min(TUTORIAL_LEVELS.length, tutorialLevel + 1);
+    setTutorialLevel(next);
+    setActive(({ 2: "rps", 3: "control-rods", 4: "control-rods", 5: "power-grid", 6: "power-grid", 7: "mcc", 8: "electrical" }[next] || "status") as Panel);
+    setEvent(next === TUTORIAL_LEVELS.length ? "TRAINING COMPLETE — all Unit 2 systems are available." : `TRAINING LEVEL ${next} UNLOCKED.`);
+  };
   const tabbedShell = (content: ReactNode) => (
     <div className={`rbwr-control-room min-h-screen bg-[#07111d] text-slate-100 transition-[filter] duration-500 ${dcBusAvailable ? "" : "brightness-[.3] saturate-[.45]"}`}>
       <main className="mx-auto max-w-7xl p-3 sm:p-4 md:p-7">
@@ -2912,16 +3346,19 @@ export default function ReactorSimulator() {
               variant="outline"
               disabled={!busEAvailable}
               onClick={() => {
-                setSimpleMode((value) => !value);
-                setEvent(
-                  !simpleMode
-                    ? "SIMPLE MODE ENABLED — DA and turbine preparation controls are bypassed."
-                    : "FULL SIMULATOR MODE ENABLED — advanced controls restored.",
-                );
+                if (tutorialEnabled) {
+                  setTutorialEnabled(false);
+                  setEvent("ADVANCED MODE ENABLED — tutorial controls released.");
+                } else {
+                  setTutorialLevel(1);
+                  setTutorialEnabled(true);
+                  setActive("status");
+                  setEvent("TRAINING MODE ENABLED — Level 1: control-room orientation.");
+                }
               }}
-              className={`min-h-11 ${simpleMode ? "border-emerald-400 bg-emerald-500/15 text-emerald-200" : "border-slate-600 text-slate-300"}`}
+              className={`min-h-11 ${tutorialEnabled ? "border-cyan-300 bg-cyan-500/15 text-cyan-100" : "border-slate-600 text-slate-300"}`}
             >
-              {simpleMode ? "SIMPLE MODE: ON" : "SIMPLE MODE"}
+              {tutorialEnabled ? `TRAINING: L${tutorialLevel}` : "TRAINING MODE"}
             </Button>
             <Button
               variant="outline"
@@ -2966,6 +3403,7 @@ export default function ReactorSimulator() {
               key={panel}
               size="sm"
               variant={active === panel ? "default" : "ghost"}
+              disabled={!tutorialAllowsPanel(panel)}
               onClick={() => setActive(panel)}
               className={`min-h-11 shrink-0 snap-start ${active === panel ? "bg-cyan-500 text-slate-950" : "text-slate-300"}`}
             >
@@ -2983,6 +3421,7 @@ export default function ReactorSimulator() {
         onCommand={runConsoleCommand}
         liveStatus={`CLOCK ${simulationPaused ? "PAUSED" : "RUNNING"}\n\nREACTOR\nAPRM ${aprm.toFixed(2)}% · ${temperature.toFixed(1)} °C\nRPV ${pressure.toFixed(0)} kPa · LEVEL ${reactorLevel.toFixed(2)} m\n\nMCC\nHOTWELL ${hotwellLevel.toFixed(2)} m · DA ${deaeratorLevel.toFixed(2)} m\nCST ${cstLevel.toFixed(2)} m · COND ${Math.round(condenserVacuum * 1000)} mbar\n\nTURBINE\n${actualRPM.toFixed(0)} RPM · ${turbineOutputMW.toFixed(1)} MW\nMAIN ${valveValue.toFixed(1)}% · BYPASS ${bypassValve.toFixed(1)}%\n\nELECTRICAL\nBUS A ${startupBusAvailable ? "ON" : "OFF"} · BUS B ${busBAvailable ? "ON" : "OFF"}\nBUS S ${safetyBusAvailable ? "ON" : "OFF"} · DC ${dcBusAvailable ? "ON" : "OFF"}`}
       />
+      {tutorialEnabled && <TutorialCoach progress={{ level: tutorialLevel, objectiveMet: tutorialObjectiveMet, aprmHeld: tutorialAprmHold }} onAdvance={advanceTutorial} onExit={() => { setTutorialEnabled(false); setEvent("ADVANCED MODE ENABLED — tutorial exited."); }} />}
     </div>
   );
   if (active === "status")
@@ -3116,8 +3555,10 @@ export default function ReactorSimulator() {
         rods={rods}
         selectedRodId={selectedRodId}
         mode={mode}
-        iprCycle={iprCycle}
+        irmRange={irmRange}
+        startupCycle={iprCycle}
         aprm={aprm}
+        rodAprm={rodAprm}
         srmCount={srmCount}
         direction={rodDirection}
         autoEnabled={autoEnabled}
@@ -3147,7 +3588,13 @@ export default function ReactorSimulator() {
         onModeChange={(next) => {
           if (next === "IPR" && !isCycleComplete(rods, "SRM", 1)) {
             setAutoMessage(
-              "SRM BLOCK — complete the 5% SRM cycle before selecting IPR.",
+              "SRM BLOCK — complete the 5% SRM cycle before selecting IRM.",
+            );
+            return;
+          }
+          if (next === "RUN" && aprm < 5) {
+            setAutoMessage(
+              "RUN MODE BLOCK — raise reactor power to at least 5% APRM before selecting RUN.",
             );
             return;
           }
@@ -3155,14 +3602,18 @@ export default function ReactorSimulator() {
           if (next === "SD") setAutoEnabled(false);
         }}
         onDirectionChange={setRodDirection}
-        onAdvanceCycle={() => {
-          if (isCycleComplete(rods, mode, iprCycle)) {
-            setIprCycle((value) => Math.min(3, value + 1));
-            setEvent("IPR cycle advanced.");
-          } else
-            setAutoMessage(
-              "GROUP BLOCK — complete the current withdrawal cycle first.",
-            );
+        onIrmRangeChange={(value) => setIrmRange(clamp(value, 1, 8))}
+        onAdvanceStartupCycle={() => {
+          if (!isCycleComplete(rods, "IPR", iprCycle)) {
+            setAutoMessage("GROUP BLOCK — complete the current startup cycle before advancing.");
+            return;
+          }
+          if (iprCycle >= 8) {
+            setAutoMessage("FINAL IRM CYCLE COMPLETE — select RUN when the required power is reached.");
+            return;
+          }
+          setIprCycle((cycle) => cycle + 1);
+          setAutoMessage(`STARTUP CYCLE ADVANCED — withdrawal limit increased for cycle ${iprCycle + 1}.`);
         }}
         onAutoEnabledChange={setAutoEnabled}
         onAutoTargetChange={(value) => setAutoTarget(clamp(value, 0, 100))}
@@ -3397,7 +3848,20 @@ export default function ReactorSimulator() {
         leaderboardSize={sortedOperators.length}
         scoreRate={scoreRate}
         automationPenaltyCount={automationPenaltyCount}
+        automationPenaltySystems={automationPenaltySystems}
+        randomEventsEnabled={randomEventsEnabled}
+        pendingGridEvent={pendingGridEvent}
+        onRandomEventsChange={(enabled) => {
+          setRandomEventsEnabled(enabled);
+          setEvent(enabled ? "RANDOM GRID EVENTS ENABLED — each demand cycle may schedule a low-probability event." : "RANDOM GRID EVENTS DISABLED.");
+        }}
         onChange={setMalfunctions}
+        calculateAprmForMw={calculateAprmForMw}
+        mainValve={valveValue}
+        bypassValve={bypassValve}
+        condenserMbar={condenserVacuum * 1000}
+        condenserEfficiency={condenserEfficiency}
+        pressure={pressure}
       />,
     );
   if (active === "mcc") return tabbedShell(mccPanel);

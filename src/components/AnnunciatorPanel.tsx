@@ -42,6 +42,26 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
       return [item.id, item.active && !prior.active ? { active: true, acknowledged: false, silenced: false } : { ...prior, active: item.active }];
     })));
   }, [annunciatorSignature]);
+  useEffect(() => {
+    const masterSilence = () => {
+      const ids = annunciators.map(item => item.id);
+      window.dispatchEvent(new CustomEvent("rbwr-annunciator-silence", { detail: { page: "fss", ids } }));
+      setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, state.active && !state.acknowledged ? { ...state, silenced: true } : state])));
+    };
+    const masterReset = () => {
+      const ids = annunciators.map(item => item.id);
+      window.dispatchEvent(new CustomEvent("rbwr-annunciator-ack", { detail: { page: "fss", ids } }));
+      setWindows(previous => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, { ...state, acknowledged: true, silenced: false }])));
+    };
+    window.addEventListener("rbwr-annunciator-master-silence", masterSilence);
+    window.addEventListener("rbwr-annunciator-master-reset", masterReset);
+    window.addEventListener("rbwr-annunciator-master-ack", masterReset);
+    return () => {
+      window.removeEventListener("rbwr-annunciator-master-silence", masterSilence);
+      window.removeEventListener("rbwr-annunciator-master-reset", masterReset);
+      window.removeEventListener("rbwr-annunciator-master-ack", masterReset);
+    };
+  }, [annunciators]);
 
   useEffect(() => {
     const playEndingCue = (item: Annunciator) => { const buffer = item.sample ? sampleBuffers.current.get(item.sample) : undefined; if (!buffer || !item.endingCueSeconds || !context.current) return; const source = context.current.createBufferSource(); const gain = context.current.createGain(); const duration = Math.min(item.endingCueSeconds, buffer.duration); source.buffer = buffer; gain.gain.value = .28; source.connect(gain).connect(context.current.destination); source.start(0, Math.max(0, buffer.duration - duration), duration); };

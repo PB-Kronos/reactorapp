@@ -131,7 +131,13 @@ const ControlTooltips = () => {
         below: rect.top < 96,
       });
     };
-    const controlFor = (target: EventTarget | null) => target instanceof Element ? target.closest<HTMLElement>(selector) : null;
+    const controlFor = (target: EventTarget | null) => {
+      const control = target instanceof Element ? target.closest<HTMLElement>(selector) : null;
+      // The dense A1–F6 core map is a selection surface, not a set of 36
+      // independent documented controls. Suppress its popups entirely.
+      if (control?.matches("button") && /^[A-F][1-6]$/.test(control.textContent?.trim() || "")) return null;
+      return control;
+    };
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType !== "mouse" || event.buttons !== 0) return;
       const control = controlFor(event.target);

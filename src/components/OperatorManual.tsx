@@ -43,8 +43,8 @@ const guides: Record<string, Guide> = {
     title: "MCC and water inventory",
     purpose: "Balance steam output, condensate flow, and feedwater flow so reactor and hotwell levels remain steady.",
     steps: ["Enable MCC Circulation Pump before expecting normal inventory movement.", "Start condensate and feedwater pumps, then raise their flows toward total steam flow.", "Use MCC Auto for assisted balancing; it takes back flow control after manual adjustment is released.", "Use CST/hotwell makeup or drain only to correct level errors."],
-    targets: ["Reactor and hotwell: near 0.00 m", "Each pump: up to 1000 kg/s", "Match steam, hotwell outflow, and feedwater outflow"],
-    caution: "In Full mode, DA controls affect DA temperature and pressure. In Simple mode, the DA is bypassed.",
+    targets: ["Reactor and hotwell: near 0.00 m", "Each feedwater/condensate pump: up to 2,000 kg/s", "Match steam, hotwell outflow, and feedwater outflow"],
+    caution: "In Advanced Mode, DA controls affect DA temperature and pressure. Early training lessons temporarily bypass the DA.",
   },
   condenser: {
     title: "Condenser and vacuum",
@@ -58,7 +58,7 @@ const guides: Record<string, Guide> = {
     purpose: "Warm, run up, synchronize, and load the turbine-generator using steam flow.",
     steps: ["In Full mode, satisfy the RPS turbine run-up checklist first.", "Open main steam inlet, use bypass and main valve to establish controlled steam flow and speed.", "At synchronism, enable exciter and close grid breaker.", "After synchronization, increase APRM and let the main valve regulate pressure near nominal."],
     targets: ["Nominal main steam pressure: 7100 kPa", "Full-mode oil temperature: 35–65 °C", "Synchronize only when speed and phase are aligned"],
-    caution: "Simple mode bypasses turbine preparation. Full mode requires healthy lube, hydraulic, preheat, and run-up conditions.",
+    caution: "Early turbine-training lessons bypass preparation checks. Advanced Mode requires healthy lube, hydraulic, preheat, and run-up conditions.",
   },
   electrical: {
     title: "Electrical distribution",

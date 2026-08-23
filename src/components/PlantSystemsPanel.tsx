@@ -22,7 +22,7 @@ const FlowMeter = ({ label, value }: { label: string; value: number }) => <div c
 
 export const PlantSystemsPanel = (p: Props) => {
   const hotwellOutflow = p.hotwellOutflowKgS ?? p.condensateFlow * 10;
-  const daOutflow = p.daOutflowKgS ?? p.feedwaterDemand * 10;
+  const daOutflow = p.daOutflowKgS ?? p.feedwaterDemand * 20;
   const busBNote = p.busBAvailable ? undefined : "Bus B must be energized and synchronized.";
 
   if (p.panel === "condenser") return <div className="grid gap-6 lg:grid-cols-2">
@@ -48,8 +48,8 @@ export const PlantSystemsPanel = (p: Props) => {
     <Card className="border-slate-700 bg-slate-900/60"><CardHeader><CardTitle>Mass-flow balance</CardTitle></CardHeader><CardContent className="space-y-4">
       <FlowMeter label="TOTAL STEAM FLOW" value={p.steamFlow}/><FlowMeter label="HOTWELL OUTFLOW" value={hotwellOutflow}/><FlowMeter label={p.simpleMode ? "FEEDWATER OUTFLOW" : "DEAERATOR OUTFLOW"} value={daOutflow}/>
       <div className="rounded border border-slate-700 p-3"><div className="mb-2 flex justify-between"><span>CONDENSATE PUMP A</span><strong>{p.condensateFlow.toFixed(1)}% / {(p.condensateFlow * 20).toFixed(0)} kg/s</strong></div><Slider value={[p.condensateFlow]} max={100} step={0.1} disabled={!p.condenserPumpOn} onValueChange={v => p.onCondensateFlowChange(v[0])}/><div className="mt-3 flex justify-between"><span>CONDENSATE PUMP B</span><strong>{(p.condensatePumpBFlow ?? 0).toFixed(1)}% / {((p.condensatePumpBFlow ?? 0) * 20).toFixed(0)} kg/s</strong></div><Slider value={[p.condensatePumpBFlow ?? 0]} max={100} step={0.1} disabled={!p.busBAvailable || !p.condenserPumpB} onValueChange={v => p.onCondensatePumpBFlowChange?.(v[0])}/></div>
-      <div className="rounded border border-slate-700 p-3"><div className="mb-2 flex justify-between"><span>FEEDWATER PUMP A</span><strong>{p.feedwaterDemand.toFixed(1)}% / {(p.feedwaterDemand * 10).toFixed(0)} kg/s</strong></div><Slider value={[p.feedwaterDemand]} max={100} step={0.1} disabled={!p.pump1Online} onValueChange={v => p.onFeedwaterDemandChange(v[0])}/><div className="mt-3 flex justify-between"><span>FEEDWATER PUMP B</span><strong>{(p.feedwaterPumpBFlow ?? 0).toFixed(1)}% / {((p.feedwaterPumpBFlow ?? 0) * 10).toFixed(0)} kg/s</strong></div><Slider value={[p.feedwaterPumpBFlow ?? 0]} max={100} step={0.1} disabled={!p.busBAvailable || !p.pump2Online} onValueChange={v => p.onFeedwaterPumpBFlowChange?.(v[0])}/></div>
-      <p className="text-xs text-slate-400">Feedwater pumps supply up to 1,000 kg/s and condensate pumps up to 2,000 kg/s at 100.0%. {p.simpleMode ? "Simple mode routes condensate directly to the reactor feedwater train." : "Guide equations: ΔH = TF − HF, ΔD = HF − DF, ΔR = DF − TF."}</p>
+      <div className="rounded border border-slate-700 p-3"><div className="mb-2 flex justify-between"><span>FEEDWATER PUMP A</span><strong>{p.feedwaterDemand.toFixed(1)}% / {(p.feedwaterDemand * 20).toFixed(0)} kg/s</strong></div><Slider value={[p.feedwaterDemand]} max={100} step={0.1} disabled={!p.pump1Online} onValueChange={v => p.onFeedwaterDemandChange(v[0])}/><div className="mt-3 flex justify-between"><span>FEEDWATER PUMP B</span><strong>{(p.feedwaterPumpBFlow ?? 0).toFixed(1)}% / {((p.feedwaterPumpBFlow ?? 0) * 20).toFixed(0)} kg/s</strong></div><Slider value={[p.feedwaterPumpBFlow ?? 0]} max={100} step={0.1} disabled={!p.busBAvailable || !p.pump2Online} onValueChange={v => p.onFeedwaterPumpBFlowChange?.(v[0])}/></div>
+      <p className="text-xs text-slate-400">Feedwater and condensate pumps each supply up to 2,000 kg/s at 100.0%. {p.simpleMode ? "This early training lesson routes condensate directly to the reactor feedwater train." : "Guide equations: ΔH = TF − HF, ΔD = HF − DF, ΔR = DF − TF."}</p>
     </CardContent></Card>
   </div>;
 

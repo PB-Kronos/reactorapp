@@ -14,7 +14,7 @@ const Index = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [history, setHistory] = useState<string[]>([
     "UNIT 2: THE BWR SIM // OPERATOR ACCESS TERMINAL",
-    "Use LOGIN <yourname> to register before entering the reactor. Type HELP for commands.",
+    "Guest entry is available. LOGIN <yourname> is recommended to record points. Type HELP for commands.",
   ]);
   const [operatorName, setOperatorName] = useState(
     () => localStorage.getItem("unit2-operator-name") || "",
@@ -104,9 +104,9 @@ const Index = () => {
   };
   const greetingHelp = (topic: string) => {
     const details: Record<string, string> = {
-      login: "LOGIN <yourname>\nRegisters your public operator name in this browser. Login is required before REACTOR can be opened and lets the leaderboard track your score.\nExample: LOGIN UnitOperator",
-      logout: "LOGOUT\nEnds the local greeting-terminal operator session. You will need to LOGIN again before entering the reactor.",
-      reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Requires LOGIN <yourname> first.",
+      login: "LOGIN <yourname>\nRegisters your public operator name in this browser and lets the leaderboard track your score.\nExample: LOGIN UnitOperator",
+      logout: "LOGOUT\nEnds the score-recording session and switches to guest mode. The reactor remains available, but guest operation earns no points.",
+      reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Guest entry is allowed; LOGIN <yourname> is recommended to record points.",
       console: "CONSOLE\nOpens the advanced Mainframe terminal. Use LOGIN SUPERVISOR there for full simulator command access.",
       status: "STATUS\nDisplays the basic public system state and the current greeting-terminal operator name.",
       leaderboard: "LEADERBOARD\nShows the top five locally stored operators plus your score and ranking after you login.",
@@ -164,10 +164,10 @@ const Index = () => {
     } else if (lower === "logout") {
       localStorage.removeItem("unit2-operator-name");
       setOperatorName("");
-      response = "LOGOUT COMPLETE — LOGIN <yourname> is required before entering the reactor.";
+      response = "LOGOUT COMPLETE — GUEST MODE ACTIVE. You may still enter the reactor, but points will not be recorded.";
     }
     else if (lower === "status")
-      response = `System bus: ONLINE\nRPS: ARMED\nECCS: AVAILABLE\nOperator: ${operatorName || "LOGIN REQUIRED"}`;
+      response = `System bus: ONLINE\nRPS: ARMED\nECCS: AVAILABLE\nOperator: ${operatorName || "GUEST (NO POINTS)"}`;
     else if (lower === "leaderboard") {
       try {
         const remote = await getLeaderboard();
@@ -187,13 +187,9 @@ const Index = () => {
       }
     }
     else if (lower === "reactor") {
-      if (!operatorName) {
-        response = "LOGIN REQUIRED — use LOGIN <yourname> before entering the reactor.";
-      } else {
       await fullscreen();
       navigate("/reactor");
       return;
-      }
     } else if (lower === "console") {
       if (!operatorName) {
         response = "LOGIN REQUIRED — use LOGIN <yourname> before opening the advanced console.";
@@ -252,7 +248,7 @@ const Index = () => {
     } else if (lower === "clear") {
       setHistory([
         "UNIT 2: THE BWR SIM // OPERATOR ACCESS TERMINAL",
-        "Use LOGIN <yourname> to register before entering the reactor. Type HELP for commands.",
+        "Guest entry is available. LOGIN <yourname> is recommended to record points. Type HELP for commands.",
       ]);
       setInput("");
       return;
@@ -307,10 +303,6 @@ const Index = () => {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      if (!operatorName) {
-                        setHistory((current) => [...current.slice(-18), "LOGIN REQUIRED — use LOGIN <yourname> before entering the reactor."]);
-                        return;
-                      }
                       void fullscreen().then(() => navigate("/reactor"));
                     }}
                     className="h-7 border-emerald-600 bg-emerald-950/30 px-2 text-[10px] tracking-wide text-emerald-200 hover:bg-emerald-500 hover:text-black"
@@ -342,7 +334,7 @@ const Index = () => {
                   LIVE SYSTEM SUMMARY
                 </h2>
                 <span className="border border-emerald-500 px-2 py-1 text-xs text-emerald-200">
-                  V2
+                  V2.2
                 </span>
               </div>
               <dl className="space-y-3">
@@ -373,24 +365,25 @@ const Index = () => {
               </a>
             </section>
             <section className="border border-cyan-700/50 bg-cyan-950/15 p-5 text-xs text-cyan-100">
-              <h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2</h2>
+              <h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2.2</h2>
               <ul className="space-y-2">
                 <li>
-                  • Terminals: reworked greeting commands and the live
-                  /mainframe simulator terminal.
+                  • Startup and control rods: separate withdrawal cycles from
+                  IRM display selection, improved kinetic APRM response, and
+                  expanded operator guidance.
                 </li>
                 <li>
-                  • Turbine: preparations, run-up conditions, fire protection,
-                  and auxiliaries.
+                  • Turbine: turning gear, preheat, trip steam isolation, and
+                  a more complete run-up path.
                 </li>
                 <li>
-                  • Annunciators: more sounds, local acknowledge/silence, and
-                  per-page windows.
+                  • Systems: APRM-to-MW target calculator, improved MCC /
+                  condenser physics, and direct live-state restoration.
                 </li>
-                <li>• APRM now gradually moves toward its intended target.</li>
+                <li>• Electrical: live bus/machine status and protection logic.</li>
                 <li>
-                  • ECCS: ADS, six relief valves, LCPI/RHR selector pumps, and
-                  RCIC.
+                  • Terminals & scoring: guest mode, account switching,
+                  leaderboard access, and automation scoring penalties.
                 </li>
               </ul>
             </section>

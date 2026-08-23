@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { U2_OPERATING_FLOW_NORMALIZATION } from "@/lib/thermalOutput";
 
 interface UseReactorPhysicsProps {
   simulationPaused?: boolean;
@@ -45,6 +46,11 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
         // SRVs remain connected to the vessel following a SCRAM. This lets ADS
         // depressurize a shut-down reactor instead of freezing its pressure.
         if (openReliefValves > 0) state.onPressureChange(previous => clamp(previous - openReliefValves * 90, 101, 12000));
+        // Turning gear is available during shutdown. Its low-speed target is
+        // supplied by the turbine panel and must not depend on reactor power.
+        state.onTurbineSpeedChange(previous =>
+          previous + (state.targetTurbineSpeed - previous) * 0.08,
+        );
         scramLatched.current = false;
         return;
       }
@@ -66,7 +72,7 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
         // At 20% APRM this supports a ~200 kg/s no-load turbine run-up while
         // holding the main-steam header near 7,100 kPa. Higher-power
         // operation is governed by actual steam removal through the valves.
-        const steamProduction = reactivity * 52500 * (state.steamProductionMultiplier ?? 1);
+        const steamProduction = reactivity * 52500 * U2_OPERATING_FLOW_NORMALIZATION * (state.steamProductionMultiplier ?? 1);
         const steamRemoval = ((state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + openReliefValves * 8000) * (state.steamRemovalMultiplier ?? 1);
         const target = clamp(101 + steamProduction - steamRemoval, 101, 12000);
         return clamp(previous + (target - previous) * 0.045, 101, 12000);
@@ -76,7 +82,11 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
         // About 200 kg/s is sufficient for rated no-load speed. Once the grid
         // breaker closes, grid frequency holds shaft speed regardless of load.
         const flowDrivenTarget = state.mainSteamInletOpen ? clamp(state.turbineSteamFlow / 3, 0, 80) : 0;
-        const target = state.isLocked ? 66.67 : state.targetTurbineSpeed;
+        // Keep a low-speed turning-gear target alive before steam admission;
+        // once steam is flowing, its higher physical flow target takes over.
+        const target = state.isLocked
+          ? 66.67
+          : Math.max(flowDrivenTarget, state.targetTurbineSpeed);
         return previous + ((state.isLocked ? target : flowDrivenTarget) - previous) * 0.08;
       });
       state.onGridSyncChange(previous => clamp(previous + (state.isLocked ? 2.5 : -1.2), 0, 100));
