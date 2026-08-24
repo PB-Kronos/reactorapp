@@ -45,9 +45,22 @@ export const nextWithdrawableRod = (rods: ControlRod[], mode: ReactorMode, start
 // Rod flux is independent of the operator's selected IRM display range. It
 // rises exponentially from source range, then levels into the R8 scale. The
 // active IRM range merely rescales that same flux for its 0–100% indication.
+// Above the early source/intermediate response, the core becomes progressively
+// more responsive as it enters its normal operating range. The curve is
+// anchored at 50% average withdrawal = 20% rod APRM and full withdrawal =
+// 75% rod APRM. It preserves the low-power source response before that knee,
+// while recirculation remains the complementary power-control path.
 export const getAprm = (rods: ControlRod[]) => {
   if (!rods.length) return 0;
   const withdrawn = rods.reduce((sum, rod) => sum + (100 - (Number.isFinite(rod.position) ? rod.position : 100)), 0) / rods.length;
   const physicalRange = Math.max(1, Math.min(8, 1 + Math.max(0, withdrawn - 5) * .43));
-  return Math.pow(10, (physicalRange - 6) / 2) * (withdrawn / 50);
+  const sourceAndIntermediateAprm = Math.pow(10, (physicalRange - 6) / 2) * (withdrawn / 50);
+  if (sourceAndIntermediateAprm <= 5) return sourceAndIntermediateAprm;
+  const aboveKnee = sourceAndIntermediateAprm - 5;
+  // Smooth cubic: f(5)=5, f(10)=20, f(20)=75. Keeping the first derivative
+  // continuous avoids a visible reactivity jump when crossing the knee.
+  return Math.min(
+    75,
+    sourceAndIntermediateAprm + (43 / 90) * aboveKnee ** 2 - (7 / 450) * aboveKnee ** 3,
+  );
 };

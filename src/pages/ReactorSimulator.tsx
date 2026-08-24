@@ -170,6 +170,7 @@ export default function ReactorSimulator() {
   const pendingGridEventRef = useRef<"loop" | null>(pendingGridEvent);
   const [automationCooldowns, setAutomationCooldowns] = useState({ aprm: 0, mcc: 0, pressure: 0, condenser: 0 });
   const [operatorName, setOperatorName] = useState(() => localStorage.getItem("unit2-operator-name") || "");
+  const [tooltipsEnabled, setTooltipsEnabled] = useState(() => localStorage.getItem("unit2-tooltips-enabled") !== "false");
   const [leaderboard, setLeaderboard] = useState<Record<string, { points: number; lastSeen: number }>>(() => {
     try { return JSON.parse(localStorage.getItem("unit2-operator-scores") || "{}"); } catch { return {}; }
   });
@@ -318,6 +319,7 @@ export default function ReactorSimulator() {
   const rodAprmRef = useRef(0);
   const rodKineticsRef = useRef({ observed: 0, target: 0, startedAt: 0, intensity: 0, origin: 0 });
   const rodBlockTimer = useRef<number | null>(null);
+  const completedIrmCycleRef = useRef<number | null>(null);
   const rpmAutoSteamReadyRef = useRef(false);
   const rpmAutoInPhaseSinceRef = useRef<number | null>(null);
   const islandGovernorHoldRef = useRef(false);
@@ -422,15 +424,16 @@ export default function ReactorSimulator() {
   const recircBFlow = recircPumpB && startupBusAvailable
     ? Math.max(0, recircSpeedB * 20 - (malfunctions.recircBFlowLossActive ? 20 : 0))
     : 0;
-  // The two 2,000 kg/s recirculation pumps supply 50 APRM points at full
-  // flow. Combined output remains bounded by the 115% APRM protection cap.
+  // The two 2,000 kg/s recirculation pumps provide up to 50 APRM points at
+  // full flow. Rods can supply 75 APRM, but total indicated unit power is
+  // still protected by the 105% operating limit below.
   const recirculationTargetAprm = (recircAFlow + recircBFlow) * 0.0125;
   const tutorialAprmHold = tutorialEnabled && (tutorialLevel === 5 || tutorialLevel === 6 || tutorialLevel === 7) ? 20 : null;
   const aprm = tutorialAprmHold ?? clamp(
     (Number.isFinite(rodAprm) ? rodAprm : 0) +
       (Number.isFinite(recirculationAprm) ? recirculationAprm : 0),
     0,
-    115,
+    105,
   );
   // The rod-drive clock must not be recreated whenever delayed thermal
   // feedback changes APRM. Keep those live physics values in a ref for the
@@ -573,16 +576,22 @@ export default function ReactorSimulator() {
   // Turbine work follows admitted steam mass flow. Pressure raises flow through
   // the valve; it is not an independent valve-position multiplier.
   const turbineSteamQuality = clamp(pressure / 7100, 0.35, 1.12);
-  const turbineOutputMW =
+  // Unit 2 is a nominal 1,200 MW unit. Steam-path changes can change how
+  // readily that load is reached, but cannot turn it into an unbounded
+  // generator rating at wide-open admission.
+  const turbineOutputMW = clamp(
     isRunning && isLocked && exciterOn && turbineSteamFlow > 1
       ? turbineSteamFlow * 0.34191 * turbineSteamQuality * condenserEfficiency
-      : 0;
+      : 0,
+    0,
+    1200,
+  );
   const calculateAprmForMw = (targetMw: number) => {
     const admission = mainSteamInletOpen ? valveValue / 100 : 0;
     const outputPerThermalSteam = steamPathCapacity * admission * steamPressureFactor * .34191 * turbineSteamQuality * condenserEfficiency;
     const available = isRunning && isLocked && exciterOn && outputPerThermalSteam > .00001;
     if (!available) return { aprm: 0, maxMw: 0, available: false, message: "Unavailable: synchronize the generator, close the grid breaker, energize the exciter, open the main-steam inlet, and admit steam through the main valve." };
-    const maxMw = getU2ThermalOutput(100).steamKgS * outputPerThermalSteam;
+    const maxMw = Math.min(1200, getU2ThermalOutput(100).steamKgS * outputPerThermalSteam);
     const aprmRequired = getAprmForSteamKgS(Math.max(0, targetMw) / outputPerThermalSteam);
     return {
       aprm: aprmRequired,
@@ -827,7 +836,7 @@ export default function ReactorSimulator() {
     {
       id: "srm-block",
       label: "SRM BLOCK",
-      active: rodBlockAlarm === "SRM",
+      active: mode === "SRM" && rodBlockAlarm === "SRM",
       priority: "amber",
       tone: "double",
       pan: "center",
@@ -837,7 +846,7 @@ export default function ReactorSimulator() {
     {
       id: "ipr-block",
       label: "IRM BLOCK",
-      active: rodBlockAlarm === "IPR",
+      active: mode === "IPR" && rodBlockAlarm === "IPR",
       priority: "amber",
       tone: "double",
       pan: "center",
@@ -893,7 +902,9 @@ export default function ReactorSimulator() {
     {
       id: "recirc-a-cavitation",
       label: "RECIRC A CAVITATION",
-      active: recircPumpA && recircSpeedA > 30 && rodAprm < 20,
+      // Low-power operation is an intentional recirculation startup regime;
+      // suppress the cavitation model until the core has reached 19% APRM.
+      active: recircPumpA && recircSpeedA > 30 && rodAprm >= 19,
       priority: "amber",
       tone: "low",
       pan: "left",
@@ -902,7 +913,7 @@ export default function ReactorSimulator() {
     {
       id: "recirc-b-cavitation",
       label: "RECIRC B CAVITATION",
-      active: recircPumpB && recircSpeedB > 30 && rodAprm < 20,
+      active: recircPumpB && recircSpeedB > 30 && rodAprm >= 19,
       priority: "amber",
       tone: "low",
       pan: "right",
@@ -1536,7 +1547,7 @@ export default function ReactorSimulator() {
           }
           return previous;
         }
-        if (direction < 0 && rod.position <= limit) {
+        if (direction < 0 && startupWithdrawal && rod.position <= limit) {
           if (!autoEnabled) {
             triggerRodBlock(mode === "SRM" ? "SRM" : "IPR");
             setAutoMessage(
@@ -1592,6 +1603,26 @@ export default function ReactorSimulator() {
     iprCycle,
     selectionScope,
   ]);
+
+  // A completed IRM withdrawal window is a physical group block, not an
+  // extra button press. Advance the permitted withdrawal limit immediately
+  // for both manual and automatic startup, while keeping the operator's IRM
+  // display-range selection independent from the programme cycle.
+  useEffect(() => {
+    if (mode !== "IPR" || !isCycleComplete(rods, "IPR", iprCycle)) {
+      completedIrmCycleRef.current = null;
+      return;
+    }
+    if (completedIrmCycleRef.current === iprCycle) return;
+    completedIrmCycleRef.current = iprCycle;
+    if (iprCycle >= 8) {
+      setAutoMessage("FINAL IRM CYCLE COMPLETE — select RUN when the required power is reached.");
+      return;
+    }
+    setIprCycle((cycle) => Math.min(8, cycle + 1));
+    setAutoMessage(`IRM CYCLE ${iprCycle} COMPLETE — withdrawal limit advanced to cycle ${iprCycle + 1}.`);
+    setEvent(`IRM GROUP BLOCK CLEARED — startup cycle ${iprCycle + 1} is now permitted.`);
+  }, [mode, rods, iprCycle]);
 
   useEffect(() => {
     const tick = window.setInterval(
@@ -1689,8 +1720,9 @@ export default function ReactorSimulator() {
     // which caused an unrealistic immediate low-period SCRAM.  The source
     // baseline represents the neutron population already being monitored by
     // SRM, while the rate filter represents delayed neutron/thermal response.
-    // With all rods moving at normal speed, period approaches ~40 seconds only
-    // after a sustained change; one normal SRM rod stays comfortably long.
+    // The prior 42-APRM baseline hid normal intermediate-range changes almost
+    // completely.  A 20-APRM source baseline still keeps one SRM rod slow,
+    // yet lets the meter report a sustained multi-rod / recirculation trend.
     const samplePeriod = () => {
       const now = performance.now();
       const previous = aprmSample.current;
@@ -1703,16 +1735,19 @@ export default function ReactorSimulator() {
         return;
       }
 
-      const sourceRangeBaseline = 42;
+      const sourceRangeBaseline = 20;
       const instantaneousRate = clamp(
         Math.log((sourceRangeBaseline + current) / (sourceRangeBaseline + previous.value)) / elapsed,
-        -0.05,
-        0.05,
+        -0.08,
+        0.08,
       );
-      const response = 1 - Math.exp(-0.12 * elapsed);
+      // About a four-second smoothing window: enough to avoid needle chatter
+      // without making the indication appear frozen after a real reactivity
+      // change has begun.
+      const response = 1 - Math.exp(-0.22 * elapsed);
       const logRate = previous.logRate + (instantaneousRate - previous.logRate) * response;
-      const period = logRate > 0.00035
-        ? clamp(Math.LN2 / logRate, 10, 999)
+      const period = logRate > 0.00005
+        ? clamp(Math.LN2 / logRate, 8, 999)
         : 999;
       setReactorPeriod(period);
       aprmSample.current = { value: current, time: now, logRate };
@@ -3006,21 +3041,70 @@ export default function ReactorSimulator() {
         return "Cold shutdown scenario loaded.";
       }
       if (scenario === "reactor-ready" || scenario === "turbine-synced" || scenario === "grid-load") {
-        const load = scenario === "grid-load";
+        // A scenario must seed the plant's *dynamic* state as well as its
+        // controls.  Previously GRID-LOAD only changed displayed controls,
+        // leaving delayed rod/recirculation power at its old value.  The next
+        // clocks then pulled pressure, condenser vacuum and MCC inventory away
+        // from the preset immediately.
+        const gridLoad = scenario === "grid-load";
+        const turbineOnline = scenario !== "reactor-ready";
+        const presetRodAprm = 20;
+        const presetRecirculationAprm = gridLoad ? 25 : 0;
+        const presetAprm = presetRodAprm + presetRecirculationAprm;
+        // Half withdrawal now produces the 20% rod-APRM operating point.
+        // Scenarios begin at this controllable mid-range core condition,
+        // never with every rod fully withdrawn.
+        const presetRodPosition = 50;
+        // These valve combinations are calculated from the same pressure
+        // model used by the physics clock: they balance steam production near
+        // 7,100 kPa instead of relying on a one-frame pressure reading.
+        const presetMainValve = scenario === "reactor-ready" ? 0 : gridLoad ? 60 : 60;
+        const presetBypassValve = scenario === "reactor-ready" ? 100 : gridLoad ? 22 : 40;
+        const presetProcessFlow = gridLoad ? 72.3 : 20.9;
+        // At the preset steam rates, this puts the condenser model close to
+        // its 52–55 mbar design band without needing an auto-controller.
+        const presetCondenserValve = gridLoad ? 7.2 : 30;
         setRpsTrips((previous) => Object.fromEntries(Object.keys(previous).map((key) => [key, false])));
-        setIsRunning(true); setScramPressed(false); setMode("RUN"); setIprCycle(3); setIrmRange(8);
-        setRods((previous) => previous.map((rod) => ({ ...rod, position: load ? 40 : 64 })));
+        setIsRunning(true); setScramPressed(false); setMode("RUN"); setIprCycle(8); setIrmRange(8);
+        setRods((previous) => previous.map((rod) => ({ ...rod, position: presetRodPosition, temperature: 25 + presetAprm * 3.2 })));
+        setRodDirection(0); setAutoEnabled(false); setTurbinePressureAuto(false); setTurbineRpmAuto(false);
+        setRodAprm(presetRodAprm);
+        rodAprmRef.current = presetRodAprm;
+        rodKineticsRef.current = { observed: presetRodAprm, target: presetRodAprm, startedAt: 0, intensity: 0, origin: presetRodAprm };
+        setRecirculationAprm(presetRecirculationAprm);
+        setPeriodRecirculationAprm(presetRecirculationAprm);
+        periodAprmRef.current = presetAprm;
+        aprmSample.current = { value: presetAprm, time: performance.now(), logRate: 0 };
+        setReactorPeriod(999);
+        setTemperature(25 + presetAprm * 3.2);
         setReactorLevel(0); setHotwellLevel(0); setDeaeratorLevel(0); setCstLevel(6);
-        setMccPumpOn(true); setCondenserValve(55); setCondenserVacuum(.055);
-        setCondenserPumpOn(true); setCondenserCirculationPumpOn(true);
-        setPump1Online(true); setCondensateFlow(load ? 900 : 400); setFeedwaterFlow(load ? 900 : 400);
-        setStartupBusA(true); setSafetyBusS(true); setMainSteamInletOpen(true);
-        setPressure(load ? 7100 : 4500); setBypassValve(load ? 0 : 45); setValveValue(load ? 42 : 0);
-        if (scenario !== "reactor-ready") {
+        setDaTemperature(110); setDaPressure(1.5); setDaIntakeOpen(true); setDaOutputOpen(true); setDaIntakeValve(100); setDaOuttakeValve(100); setDaAuto(false);
+        setMccPumpOn(true); setMccAutoOn(false);
+        setCondenserValve(presetCondenserValve); setCondenserVacuum(.052); setCondenserAuto(false);
+        condenserTargetRef.current = .052;
+        setCondenserPumpOn(true); setCondenserPumpB(false); setCondenserCirculationPumpOn(true); setCondenserCirculationPumpB(false);
+        setCarAOn(false); setCarBOn(false); setSjaeOn(false);
+        setPump1Online(true); setPump2Online(false); setCondensateFlow(presetProcessFlow); setCondensatePumpBFlow(0); setFeedwaterFlow(presetProcessFlow); setFeedwaterPumpBFlow(0);
+        // 50% on each pump supplies the 25 APRM recirculation share used by
+        // GRID-LOAD, with room to raise recirculation to 50 APRM if needed.
+        setRecircPumpA(gridLoad); setRecircPumpB(gridLoad); setRecircSpeedA(gridLoad ? 50 : 0); setRecircSpeedB(gridLoad ? 50 : 0);
+        setMalfunctions((previous) => ({ ...previous, recircAFlowLossActive: false, recircBFlowLossActive: false }));
+        setOffsitePowerAvailable(true); setOffsiteCountdown(null); setPendingGridEvent(null);
+        setSafetyBusS(true); setSafetyToDcBreaker(true); setAcDcInterlock(false); setBusEToDcBreaker(false); setMainBatteryCharge(100);
+        setMainSteamInletOpen(true); setPressure(7100); pressureSample.current = { value: 7100, time: performance.now() };
+        setBypassValve(presetBypassValve); setBypassDirection(0); setValveValue(presetMainValve); setValveDirection(0);
+        setSrvOpen((previous) => previous.map(() => false)); setAdsActive(false);
+        if (turbineOnline) {
           setExciterOn(true); setTurbineSpeed(66.67); setTargetTurbineSpeed(66.67); setIsLocked(true);
           setBusATransformer(true); setStartupBusA(false); setTurbineBusB(true);
-        } else { setExciterOn(false); setTurbineSpeed(0); setIsLocked(false); }
-        setEvent(`CLI SCENARIO LOADED — ${scenario.toUpperCase().replace("-", " ")}.`);
+          setGridSync(100);
+        } else {
+          setExciterOn(false); setTurbineSpeed(0); setTargetTurbineSpeed(0); setIsLocked(false);
+          // Reactor-ready uses offsite power and a fully-open bypass: a hot,
+          // pressure-controlled reactor with the turbine deliberately offline.
+          setStartupBusA(true); setBusATransformer(false); setTurbineBusB(false); setGridSync(0);
+        }
+        setEvent(`CLI SCENARIO LOADED — ${scenario.toUpperCase().replace("-", " ")}. APRM, steam balance, condenser, MCC and electrical lineup have been initialized together.`);
         return `Scenario ${scenario.toUpperCase()} loaded.`;
       }
       return "Unknown scenario. Use SCENARIO cold, reactor-ready, turbine-synced, grid-load, or offsite.";
@@ -3178,7 +3262,7 @@ export default function ReactorSimulator() {
       "recirc.b": { min: 0, max: 100, set: setRecircSpeedB, unit: "%" },
       "turbine.mainvalve": { min: 0, max: 100, set: setValveValue, unit: "%" },
       "turbine.bypass": { min: 0, max: 100, set: setBypassValve, unit: "%" },
-      "auto.aprm": { min: 0, max: 100, set: setAutoTarget, unit: "%" },
+      "auto.aprm": { min: 0, max: 105, set: setAutoTarget, unit: "%" },
       "rcic.flow": { min: 0, max: 100, set: setRcicFlow, unit: "%" },
       "oil.cold": { min: 0, max: 100, set: setColdOilValve, unit: "%" },
       "oil.warm": { min: 0, max: 100, set: setWarmOilValve, unit: "%" },
@@ -3342,6 +3426,21 @@ export default function ReactorSimulator() {
           </div>
           <div className="flex flex-wrap gap-2">
             <OperatorManual page={active} />
+            <Button
+              variant="outline"
+              disabled={!busEAvailable}
+              data-tooltip-title="Tooltips"
+              data-tooltip-description="Shows or hides the immediate control explanations that appear on mouse hover and keyboard focus. This only changes guidance overlays; it does not affect controls or simulation physics."
+              onClick={() => {
+                const next = !tooltipsEnabled;
+                setTooltipsEnabled(next);
+                localStorage.setItem("unit2-tooltips-enabled", String(next));
+                window.dispatchEvent(new CustomEvent("unit2-tooltip-toggle", { detail: { enabled: next } }));
+              }}
+              className={`min-h-11 ${tooltipsEnabled ? "border-cyan-300/70 text-cyan-100" : "border-slate-600 text-slate-400"}`}
+            >
+              TOOLTIPS: {tooltipsEnabled ? "ON" : "OFF"}
+            </Button>
             <Button
               variant="outline"
               disabled={!busEAvailable}
@@ -3603,20 +3702,8 @@ export default function ReactorSimulator() {
         }}
         onDirectionChange={setRodDirection}
         onIrmRangeChange={(value) => setIrmRange(clamp(value, 1, 8))}
-        onAdvanceStartupCycle={() => {
-          if (!isCycleComplete(rods, "IPR", iprCycle)) {
-            setAutoMessage("GROUP BLOCK — complete the current startup cycle before advancing.");
-            return;
-          }
-          if (iprCycle >= 8) {
-            setAutoMessage("FINAL IRM CYCLE COMPLETE — select RUN when the required power is reached.");
-            return;
-          }
-          setIprCycle((cycle) => cycle + 1);
-          setAutoMessage(`STARTUP CYCLE ADVANCED — withdrawal limit increased for cycle ${iprCycle + 1}.`);
-        }}
         onAutoEnabledChange={setAutoEnabled}
-        onAutoTargetChange={(value) => setAutoTarget(clamp(value, 0, 100))}
+        onAutoTargetChange={(value) => setAutoTarget(clamp(value, 0, 105))}
         onAutoSpeedChange={setAutoSpeed}
         onAutoModeChange={setAutoMode}
         onSelectionScopeChange={setSelectionScope}

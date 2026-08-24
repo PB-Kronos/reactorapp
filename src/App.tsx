@@ -93,8 +93,19 @@ const controlGuidance = (label: string, fallback: string) => {
 };
 const ControlTooltips = () => {
   const [tooltip, setTooltip] = useState<{ title: string; description: string; x: number; y: number; below: boolean } | null>(null);
+  const [enabled, setEnabled] = useState(() => localStorage.getItem("unit2-tooltips-enabled") !== "false");
   const keyboardFocus = useRef(false);
   const hoveredControl = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const onToggle = (event: Event) => {
+      const next = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled;
+      if (typeof next !== "boolean") return;
+      setEnabled(next);
+      if (!next) setTooltip(null);
+    };
+    window.addEventListener("unit2-tooltip-toggle", onToggle);
+    return () => window.removeEventListener("unit2-tooltip-toggle", onToggle);
+  }, []);
   useEffect(() => {
     const selector = 'button, input, select, textarea, [role="slider"]';
     const annotateOne = (control: HTMLElement) => {
@@ -121,6 +132,7 @@ const ControlTooltips = () => {
       root.querySelectorAll<HTMLElement>(selector).forEach(annotateOne);
     };
     const show = (control: HTMLElement) => {
+      if (!enabled) return;
       annotateOne(control);
       const rect = control.getBoundingClientRect();
       setTooltip({
@@ -139,7 +151,7 @@ const ControlTooltips = () => {
       return control;
     };
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse" || event.buttons !== 0) return;
+      if (!enabled || event.pointerType !== "mouse" || event.buttons !== 0) return;
       const control = controlFor(event.target);
       if (control === hoveredControl.current) return;
       hoveredControl.current = control;
@@ -155,7 +167,7 @@ const ControlTooltips = () => {
       if (event.key === "Tab") keyboardFocus.current = true;
     };
     const onFocusIn = (event: FocusEvent) => {
-      if (!keyboardFocus.current) return;
+      if (!enabled || !keyboardFocus.current) return;
       const control = controlFor(event.target);
       if (control) show(control);
     };
@@ -186,7 +198,7 @@ const ControlTooltips = () => {
       document.removeEventListener("focusout", onFocusOut);
       window.removeEventListener("unit2-tooltip-overrides", onOverridesChanged);
     };
-  }, []);
+  }, [enabled]);
   if (!tooltip) return null;
   return <div aria-live="polite" className="pointer-events-none fixed z-[100] w-72 -translate-x-1/2 rounded-lg border border-cyan-300/70 bg-slate-950/95 px-3 py-2 font-mono shadow-[0_8px_30px_rgba(0,0,0,.55)]" style={{ left: tooltip.x, top: tooltip.below ? tooltip.y + 14 : tooltip.y - 10, transform: `translate(-50%, ${tooltip.below ? "0" : "-100%"})` }}><div className="text-xs font-black tracking-wide text-cyan-200">{tooltip.title}</div><p className="mt-1 text-[11px] leading-snug text-slate-300">{tooltip.description}</p></div>;
 };

@@ -55,7 +55,9 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
         return;
       }
 
-      const reactivity = clamp(state.aprm / 100, 0, 1.15);
+      // Unit APRM is limited to 105% (75% rod contribution plus 30%
+      // recirculation), so physics must not retain the former 115% range.
+      const reactivity = clamp(state.aprm / 100, 0, 1.05);
       // Tuned bulk-water temperature: about 280 C at 80% APRM with slow thermal inertia.
       const targetTemperature = 25 + reactivity * 320;
       const temperatureDelta = (targetTemperature - state.temperature) * .008 * (state.thermalResponse ?? 1);
