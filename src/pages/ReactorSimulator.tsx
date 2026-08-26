@@ -1912,8 +1912,11 @@ export default function ReactorSimulator() {
       const activeCars = (control.carAOn ? 1 : 0) + (control.carBOn ? 1 : 0);
       setCondenserVacuum((value) => {
         // The condenser is a heat sink, not a fixed-position vacuum source.
-        // More steam requires more circulating-water/valve capacity; the
-        // valve becomes deliberately less effective near the 40–70 mbar band.
+        // Steam load changes the natural back-pressure, but an energized
+        // circulation system with a fully open vacuum valve must always be
+        // able to establish the 40 mbar end of the operating band.  The old
+        // low-steam assist floor prevented that and made the indication appear
+        // stuck at high pressure even at 100% valve opening.
         const steamFraction = clamp(control.steamFlow / 1300, 0, 1.2);
         const steamDrivenPressure = 1 - Math.min(.70, steamFraction * .70);
         // The control valve has a deliberately strong, non-linear authority:
@@ -1922,20 +1925,21 @@ export default function ReactorSimulator() {
         // At essentially zero steam load it still cannot create a fake vacuum.
         const valveFraction = clamp(control.condenserValve / 100, 0, 1);
         const valveAuthority = 1 - Math.pow(1 - valveFraction, 4);
-        const steamAssist = clamp(control.steamFlow / 250, .10, 1);
         // Do not make valve capacity depend on its own measured pressure here:
         // that creates a low-pressure feedback loop which can hunt between two
-        // values. The approach rate below supplies the intended gentle motion.
-        const valveCooling = valveAuthority * (.04 + steamAssist * .91);
+        // values. Full valve authority removes up to 960 mbar independently
+        // of steam flow; steam changes the target around that capability.
+        const valveCooling = valveAuthority * .96;
         const processTarget = clamp(steamDrivenPressure - valveCooling - (control.sjaeOn ? .025 : 0), .04, 1);
         const carTarget = activeCars > 0 && value > .85 ? .85 : 1;
         const target = ((control.condenserCirculationPumpOn && control.startupBusAvailable) || (control.condenserCirculationPumpB && control.busBAvailable))
           ? Math.min(processTarget, carTarget)
           : (activeCars > 0 && value > .85 ? .85 : 1);
         condenserTargetRef.current = target;
-        // Vacuum changes become progressively slower near the normal 40–70
-        // mbar band, while the calculated target itself stays steady.
-        const rate = value < .12 ? .004 : value < .25 ? .01 : .04;
+        // Pull down promptly from the 1 bar offgas state, then become gentler
+        // near the normal 40–70 mbar operating band rather than appearing to
+        // freeze during a normal operator valve adjustment.
+        const rate = value < .08 ? .0035 : value < .12 ? .008 : value < .25 ? .02 : .06;
         return clamp(value + clamp(target - value, -rate, rate), .04, 1.05);
       });
     }, 1000);
@@ -2309,8 +2313,9 @@ export default function ReactorSimulator() {
         if (seconds === null) return null;
         if (seconds <= 1) {
           setOffsitePowerAvailable(false);
-          setIsLocked(false);
-          setEvent("OFFSITE POWER LOSS — EXTERNAL SWITCHYARD AND STARTUP TRANSFORMER DE-ENERGIZED. GRID BREAKER OPENED; ISLAND THE TURBINE TO RESTORE AUXILIARY POWER.");
+          setRpsTrips((previous) => ({ ...previous, "LOOP TRIP": true }));
+          tripTurbine("loss of offsite power");
+          setEvent("OFFSITE POWER LOSS — EXTERNAL SWITCHYARD AND STARTUP TRANSFORMER DE-ENERGIZED. TURBINE TRIPPED; REACTOR REMAINS RUNNING.");
           return null;
         }
         return seconds - 1;
@@ -2329,10 +2334,14 @@ export default function ReactorSimulator() {
         }
         setGridDemandMW(nextGridDemandMW);
         setNextGridDemandMW(newGridDemand());
-        if (pendingGridEventRef.current === "loop") {
+        // A queued random event is not allowed to survive its master switch.
+        // Manual `scenario offsite` uses its separate countdown and remains
+        // available regardless of this setting.
+        if (randomEventsEnabledRef.current && pendingGridEventRef.current === "loop") {
           setOffsitePowerAvailable(false);
-          setIsLocked(false);
-          setEvent("LOOP EVENT — EXTERNAL SWITCHYARD AND STARTUP TRANSFORMER DE-ENERGIZED. GRID BREAKER OPENED; ISLAND THE TURBINE TO RESTORE AUXILIARY POWER.");
+          setRpsTrips((previous) => ({ ...previous, "LOOP TRIP": true }));
+          tripTurbine("loss of offsite power");
+          setEvent("LOOP EVENT — EXTERNAL SWITCHYARD AND STARTUP TRANSFORMER DE-ENERGIZED. TURBINE TRIPPED; REACTOR REMAINS RUNNING.");
         }
         const nextEvent = randomEventsEnabledRef.current && Math.random() < 0.06 ? "loop" : null;
         pendingGridEventRef.current = nextEvent;
@@ -2419,7 +2428,9 @@ export default function ReactorSimulator() {
     const active = {
       "REACTOR LEVEL": reactorLevel <= -5 || reactorLevel >= 6,
       "MANUAL TRIP": false,
-      "LOOP TRIP": mccLevel < 15,
+      // LOOP is a turbine/grid event. It is latched by the offsite-loss
+      // event path above and must never become a reactor SCRAM condition.
+      "LOOP TRIP": false,
       "CORE TEMPERATURE": temperature > 900,
       "RPV PRESSURE": pressure > 9500,
       "LOW REACTOR PERIOD": reactorPeriod < 20,
