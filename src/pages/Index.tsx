@@ -14,7 +14,8 @@ const Index = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [history, setHistory] = useState<string[]>([
     "UNIT 2: THE BWR SIM // OPERATOR ACCESS TERMINAL",
-    "Guest entry is available. LOGIN <yourname> is recommended to record points. Type HELP for commands.",
+    "Guest entry is available. LOGIN <yourname> is recommended to record points.",
+    "NEW OPERATOR? Type HELP START for the startup path, HELP OPERATIONS for normal running order, or HELP MULTIUNIT for shared Unit 1 / Unit 2 operation.",
   ]);
   const [operatorName, setOperatorName] = useState(
     () => localStorage.getItem("unit2-operator-name") || "",
@@ -108,6 +109,9 @@ const Index = () => {
       logout: "LOGOUT\nEnds the score-recording session and switches to guest mode. The reactor remains available, but guest operation earns no points.",
       reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Guest entry is allowed; LOGIN <yourname> is recommended to record points.",
       console: "CONSOLE\nOpens the advanced Mainframe terminal. Use LOGIN SUPERVISOR there for full simulator command access.",
+      start: "START — BASIC OPERATOR PATH\n1. LOGIN <yourname> to record points (guest operation is allowed).\n2. Enter REACTOR and check Overview plus RPS for clear trip conditions.\n3. Energize Bus A, establish condenser vacuum, and start MCC circulation.\n4. Start with the tutorial, Auto APRM, or the normal SRM → IRM rod sequence.\n5. When steam conditions are ready, run up, synchronize, and load the turbine.\n\nNew operators: enable the tutorial and use PAGE MANUAL on each panel.",
+      operations: "OPERATIONS — NORMAL CONTROL ORDER\nElectrical power → protection clear → condenser vacuum → MCC flow and level control → controlled APRM increase → turbine run-up → synchronization → load following.\n\nAfter every major change, check reactor level, pressure, period, condenser pressure, Bus A/S availability, and annunciators. SCRAM is for emergencies; use Normal Stop for planned shutdown.",
+      multiunit: "MULTIUNIT\nDisplays the V2.3 shared-plant guide: Supervisor Rooms, Unit 1/2 station links, demand allocation, interlock prerequisites, scoring, and LOOP recovery.",
       status: "STATUS\nDisplays the basic public system state and the current greeting-terminal operator name.",
       leaderboard: "LEADERBOARD\nShows the top five locally stored operators plus your score and ranking after you login.",
       url: "URL <address>\nNavigates this tab to the provided full address, such as https://example.com.",
@@ -334,7 +338,7 @@ const Index = () => {
                   LIVE SYSTEM SUMMARY
                 </h2>
                 <span className="border border-emerald-500 px-2 py-1 text-xs text-emerald-200">
-                  V2.2
+                  V2.3
                 </span>
               </div>
               <dl className="space-y-3">
@@ -365,25 +369,24 @@ const Index = () => {
               </a>
             </section>
             <section className="border border-cyan-700/50 bg-cyan-950/15 p-5 text-xs text-cyan-100">
-              <h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2.2</h2>
+              <h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2.3</h2>
               <ul className="space-y-2">
                 <li>
-                  • Startup and control rods: separate withdrawal cycles from
-                  IRM display selection, improved kinetic APRM response, and
-                  expanded operator guidance.
+                  • Supervisor Room: shared two-unit plant rooms, live unit
+                  monitoring, invitation links, and coordinated plant control.
                 </li>
                 <li>
-                  • Turbine: turning gear, preheat, trip steam isolation, and
-                  a more complete run-up path.
+                  • Demand manager: scheduled site load, fair initial demand
+                  splits, live operator redistribution, and plant scoring.
                 </li>
                 <li>
-                  • Systems: APRM-to-MW target calculator, improved MCC /
-                  condenser physics, and direct live-state restoration.
+                  • Unit interlock: optional direct Bus A support between
+                  units, with source/target routing and a tie breaker.
                 </li>
-                <li>• Electrical: live bus/machine status and protection logic.</li>
+                <li>• Electrical: rebuilt routing, live bus monitors, direct energization logic, and clearer protection status.</li>
                 <li>
-                  • Terminals & scoring: guest mode, account switching,
-                  leaderboard access, and automation scoring penalties.
+                  • Reliability: shared-state syncing and the Vercel pnpm
+                  lockfile have been refreshed for smoother operation.
                 </li>
               </ul>
             </section>

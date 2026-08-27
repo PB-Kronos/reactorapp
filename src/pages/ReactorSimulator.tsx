@@ -95,9 +95,16 @@ const newDemandInterval = () => Math.round(360 + Math.random() * 280);
 
 export default function ReactorSimulator() {
   const navigate = useNavigate();
-  const [active, setActive] = useState<Panel>("status");
+  const secondaryWindow = new URLSearchParams(window.location.search).get("window") === "panel";
+  const requestedPanel = new URLSearchParams(window.location.search).get("panel") as Panel | null;
+  const [active, setActive] = useState<Panel>(() =>
+    requestedPanel && panels.includes(requestedPanel) ? requestedPanel : "status",
+  );
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [simulationPaused, setSimulationPaused] = useState(false);
+  // A panel window is a control/monitoring station.  It intentionally does
+  // not run an independent physics clock, preventing a second tab from
+  // advancing the plant in parallel with the main control room.
+  const [simulationPaused, setSimulationPaused] = useState(secondaryWindow);
   // Keep every simulation clock dormant until durable plant state has hydrated.
   // This prevents a refresh from running cold-default physics for a tick.
   const simulationPausedRef = useRef(true);
@@ -1214,8 +1221,9 @@ export default function ReactorSimulator() {
     transferStateLoaded.current = true;
     try {
       const saved = JSON.parse(
-        sessionStorage.getItem("rbwr-live-plant-state") ||
-          localStorage.getItem("rbwr-live-plant-state") ||
+        (secondaryWindow
+          ? localStorage.getItem("rbwr-live-plant-state") || sessionStorage.getItem("rbwr-live-plant-state")
+          : sessionStorage.getItem("rbwr-live-plant-state") || localStorage.getItem("rbwr-live-plant-state")) ||
           "null",
       );
       if (!saved) { setSessionRestored(true); return; }
@@ -3429,13 +3437,57 @@ export default function ReactorSimulator() {
         <header className="mb-5 flex flex-col gap-3 border-b border-cyan-500/20 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold tracking-[.3em] text-cyan-400">
-              UNIT 2 // THE BWR SIM
+              UNIT 2 // {secondaryWindow ? "SECONDARY CONTROL STATION" : "THE BWR SIM"}
             </p>
             <h1 className="text-2xl font-black sm:text-3xl">
-              Unit 2 Reactor Control Room
+              {secondaryWindow ? `${names[active]} — Panel Window` : "Unit 2 Reactor Control Room"}
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              data-tooltip-title={secondaryWindow ? "Return to main control room" : "Open this panel in a new window"}
+              data-tooltip-description={secondaryWindow ? "Returns this station to the normal full control-room view." : "Opens the currently selected panel in a dedicated secondary window. The same panel remains available here; use separate windows for MCC, TCR, Electrical, or any other panel you want to monitor continuously."}
+              onClick={() => {
+                if (secondaryWindow) {
+                  window.location.assign("/reactor");
+                  return;
+                }
+                const panelUrl = new URL("/reactor", window.location.origin);
+                panelUrl.searchParams.set("window", "panel");
+                panelUrl.searchParams.set("panel", active);
+                const popup = window.open(panelUrl.toString(), `unit2-${active}-station`, "popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes");
+                if (!popup) setEvent("PANEL WINDOW BLOCKED — allow pop-ups for Unit 2, then try again.");
+              }}
+              className="min-h-11 border-emerald-400/70 text-emerald-200 hover:bg-emerald-950"
+            >
+              {secondaryWindow ? "MAIN WINDOW" : "OPEN PANEL WINDOW"}
+            </Button>
+            {!secondaryWindow && (
+              <Button
+                variant="outline"
+                data-tooltip-title="Open personal status desk"
+                data-tooltip-description="Opens a third, personal monitoring window. Add any current simulator value as a movable and resizable field, then save or export the layout. It does not remove controls from this room."
+                onClick={() => {
+                  const desk = window.open("/status-desk", "unit2-status-desk", "popup=yes,width=1440,height=900,resizable=yes,scrollbars=yes");
+                  if (!desk) setEvent("STATUS DESK BLOCKED — allow pop-ups for Unit 2, then try again.");
+                }}
+                className="min-h-11 border-violet-400/70 text-violet-200 hover:bg-violet-950"
+              >
+                STATUS DESK
+              </Button>
+            )}
+            {secondaryWindow && (
+              <Button
+                variant="outline"
+                data-tooltip-title="Refresh panel status"
+                data-tooltip-description="Reloads this secondary station from the current shared simulator snapshot. Use it after another operator makes a major plant change in the main window."
+                onClick={() => window.location.reload()}
+                className="min-h-11 border-cyan-400/60 text-cyan-100 hover:bg-cyan-950"
+              >
+                REFRESH STATUS
+              </Button>
+            )}
             <OperatorManual page={active} />
             <Button
               variant="outline"
