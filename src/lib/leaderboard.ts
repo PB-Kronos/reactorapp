@@ -1,6 +1,13 @@
 import { supabase } from "@/lib/supabase";
 
-export type LeaderboardEntry = { id: string; display_name: string; points: number; last_seen: string };
+export type LeaderboardEntry = {
+  id: string;
+  display_name: string;
+  points: number;
+  points_unit1: number;
+  points_unit2: number;
+  last_seen: string;
+};
 
 async function currentUserId() {
   if (!supabase) return null;
@@ -27,19 +34,24 @@ export async function ensureLeaderboardPlayer(displayName: string) {
 export async function getLeaderboard() {
   if (!supabase) return [] as LeaderboardEntry[];
   const { data, error } = await supabase.from("players")
-    .select("id, display_name, points, last_seen").order("points", { ascending: false }).limit(100);
+    .select("id, display_name, points, points_unit1, points_unit2, last_seen").order("points", { ascending: false }).limit(100);
   if (error) throw error;
   return (data || []) as LeaderboardEntry[];
 }
 
-export async function addLeaderboardPoints(displayName: string, points: number) {
+export async function addLeaderboardPoints(displayName: string, unitNumber: 1 | 2, points: number) {
   const id = await currentUserId();
   if (!supabase || !id || points <= 0) return null;
   const { data: current, error: readError } = await supabase.from("players")
-    .select("id, points").eq("owner_id", id).eq("display_name", displayName).single();
+    .select("id, points, points_unit1, points_unit2").eq("owner_id", id).eq("display_name", displayName).single();
   if (readError) throw readError;
+  const unitColumn = unitNumber === 1 ? "points_unit1" : "points_unit2";
   const { data, error } = await supabase.from("players")
-    .update({ points: Number(current.points || 0) + points, last_seen: new Date().toISOString() })
+    .update({
+      points: Number(current.points || 0) + points,
+      [unitColumn]: Number(current[unitColumn] || 0) + points,
+      last_seen: new Date().toISOString(),
+    })
     .eq("id", current.id).select().single();
   if (error) throw error;
   return data as LeaderboardEntry;

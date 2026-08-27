@@ -2,7 +2,7 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Activity, BellRing, RotateCcw, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,19 @@ import {
 } from "@/lib/rodProgram";
 import { getAprmForSteamKgS, getU2ThermalOutput } from "@/lib/thermalOutput";
 import { addLeaderboardPoints, ensureLeaderboardPlayer, getLeaderboard } from "@/lib/leaderboard";
+import {
+  type PlantSnapshot,
+  claimPlantUnitPointTick,
+  getPlantSnapshot,
+  heartbeatPlantStation,
+  joinPlantRoom,
+  normalizeAssignment,
+  publishUnitTelemetry,
+  readPlantAssignment,
+  savePlantAssignment,
+  subscribePlantRoom,
+  updatePlantDispatch,
+} from "@/lib/plantOperations";
 
 type Panel =
   | "status"
@@ -95,15 +108,40 @@ const newDemandInterval = () => Math.round(360 + Math.random() * 280);
 
 export default function ReactorSimulator() {
   const navigate = useNavigate();
-  const secondaryWindow = new URLSearchParams(window.location.search).get("window") === "panel";
-  const requestedPanel = new URLSearchParams(window.location.search).get("panel") as Panel | null;
+  const location = useLocation();
+  const secondaryWindow = new URLSearchParams(location.search).get("window") === "panel";
+  const requestedPanel = new URLSearchParams(location.search).get("panel") as Panel | null;
+  const [plantAssignment] = useState(() => {
+    const query = new URLSearchParams(location.search);
+    const fromInvite = normalizeAssignment({
+      roomCode: query.get("plant") || "",
+      unitNumber: Number(query.get("unit")),
+      stationId: query.get("station") || "",
+    });
+    const assignment = fromInvite || readPlantAssignment();
+    if (assignment) savePlantAssignment(assignment);
+    return assignment;
+  });
+  const unitStateStorageKey = plantAssignment
+    ? `rbwr-u2-sim-v4:${plantAssignment.roomCode}:u${plantAssignment.unitNumber}`
+    : STORAGE;
+  const liveStateStorageKey = plantAssignment
+    ? `rbwr-live-plant-state:${plantAssignment.roomCode}:u${plantAssignment.unitNumber}`
+    : "rbwr-live-plant-state";
+  const [sharedPlant, setSharedPlant] = useState<PlantSnapshot>({ room: null, units: [] });
+  const [plantSyncError, setPlantSyncError] = useState("");
+  const [stationControlsLocked, setStationControlsLocked] = useState(false);
+  const [plantClock, setPlantClock] = useState(Date.now());
+  const demandManagerOnline = Boolean(
+    plantAssignment && sharedPlant.room?.demand_manager_last_seen &&
+    plantClock - Date.parse(sharedPlant.room.demand_manager_last_seen) < 15000,
+  );
   const [active, setActive] = useState<Panel>(() =>
     requestedPanel && panels.includes(requestedPanel) ? requestedPanel : "status",
   );
   const [consoleOpen, setConsoleOpen] = useState(false);
-  // A panel window is a control/monitoring station.  It intentionally does
-  // not run an independent physics clock, preventing a second tab from
-  // advancing the plant in parallel with the main control room.
+  // Panel stations never advance their own physics clock. The primary unit
+  // remains the simulation authority, avoiding parallel-clock drift.
   const [simulationPaused, setSimulationPaused] = useState(secondaryWindow);
   // Keep every simulation clock dormant until durable plant state has hydrated.
   // This prevents a refresh from running cold-default physics for a tick.
@@ -124,6 +162,10 @@ export default function ReactorSimulator() {
       delete document.body.dataset.rbwrPanel;
     };
   }, [active]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setPlantClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     simulationPausedRef.current = simulationPaused || !sessionRestored;
   }, [simulationPaused, sessionRestored]);
@@ -178,7 +220,7 @@ export default function ReactorSimulator() {
   const [automationCooldowns, setAutomationCooldowns] = useState({ aprm: 0, mcc: 0, pressure: 0, condenser: 0 });
   const [operatorName, setOperatorName] = useState(() => localStorage.getItem("unit2-operator-name") || "");
   const [tooltipsEnabled, setTooltipsEnabled] = useState(() => localStorage.getItem("unit2-tooltips-enabled") !== "false");
-  const [leaderboard, setLeaderboard] = useState<Record<string, { points: number; lastSeen: number }>>(() => {
+  const [leaderboard, setLeaderboard] = useState<Record<string, { points: number; unit1?: number; unit2?: number; lastSeen: number }>>(() => {
     try { return JSON.parse(localStorage.getItem("unit2-operator-scores") || "{}"); } catch { return {}; }
   });
   const [daFastCloseHeld, setDaFastCloseHeld] = useState(false);
@@ -390,8 +432,34 @@ export default function ReactorSimulator() {
   // itself is never a source of power.
   const turbineBusEligible =
     isLocked || Math.abs(turbineSpeed * 45 - 3000) <= 50;
-  const startupBusAvailable =
+  const locallySuppliedBusA =
     (offsitePowerAvailable && startupBusA) || (busATransformer && turbineBusEligible);
+  const interlockSource = plantAssignment && sharedPlant.room?.interlock_enabled &&
+    sharedPlant.room.interlock_target_unit === plantAssignment.unitNumber
+    ? sharedPlant.units.find((unit) => unit.unit_number === sharedPlant.room?.interlock_source_unit)
+    : null;
+  // Interlock is a one-way electrical tie. The transmitting unit must already
+  // have a genuinely energized Bus A from offsite, islanding, or a synchronized generator.
+  const interlockTargetConfigured = Boolean(
+    plantAssignment &&
+      sharedPlant.room?.interlock_enabled &&
+      sharedPlant.room.interlock_target_unit === plantAssignment.unitNumber,
+  );
+  const interlockTargeted = Boolean(
+    interlockTargetConfigured &&
+      sharedPlant.room?.interlock_breaker_closed,
+  );
+  const interlockBusAFeed = Boolean(
+    interlockTargeted &&
+      sharedPlant.room?.interlock_breaker_closed &&
+      interlockSource?.bus_a_transformer_closed,
+  );
+  const unitInterlockStatus = !plantAssignment || !sharedPlant.room?.interlock_enabled
+    ? "OFFLINE"
+    : sharedPlant.room.interlock_source_unit === plantAssignment.unitNumber
+      ? locallySuppliedBusA ? "SUPPLYING" : "SOURCE UNPOWERED"
+    : !sharedPlant.room.interlock_breaker_closed ? "TIE BREAKER OPEN" : interlockBusAFeed ? "FEEDING BUS A" : startupBusA ? "WAITING FOR SOURCE" : "TARGET BREAKER OPEN";
+  const startupBusAvailable = locallySuppliedBusA || interlockBusAFeed;
   const busBAvailable = turbineBusB && turbineBusEligible;
   // With both turbine-fed auxiliaries closed, Bus A and Bus B are supplied
   // from one generator auxiliary pool instead of two isolated 60 kW limits.
@@ -409,6 +477,11 @@ export default function ReactorSimulator() {
   const dcBusAvailable =
     (safetyToDcBreaker && safetyBusAvailable) ||
     (busEToDcBreaker && busEAvailable);
+  useEffect(() => {
+    if (!plantAssignment || !interlockTargeted || !busATransformer) return;
+    setBusATransformer(false);
+    setEvent("UNIT INTERLOCK ACTIVE — target Bus A transformer opened for phase separation.");
+  }, [plantAssignment, interlockTargeted, busATransformer]);
   const busAConsumerCommanded =
     condenserCirculationPumpOn ||
     condenserPumpOn ||
@@ -1171,7 +1244,7 @@ export default function ReactorSimulator() {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE) || "null");
+      const saved = JSON.parse(localStorage.getItem(unitStateStorageKey) || "null");
       if (saved?.rods?.length === 36) {
         setRods(saved.rods);
         setSelectedRodId(saved.selectedRodId || "A1");
@@ -1185,12 +1258,12 @@ export default function ReactorSimulator() {
         setDeaeratorLevel(saved.deaeratorLevel || 0);
       }
     } catch {
-      localStorage.removeItem(STORAGE);
+      localStorage.removeItem(unitStateStorageKey);
     }
   }, []);
   useEffect(() => {
     localStorage.setItem(
-      STORAGE,
+      unitStateStorageKey,
       JSON.stringify({
         rods,
         selectedRodId,
@@ -1215,16 +1288,17 @@ export default function ReactorSimulator() {
     reactorLevel,
     hotwellLevel,
     deaeratorLevel,
+    unitStateStorageKey,
   ]);
   useEffect(() => {
     if (transferStateLoaded.current) return;
-    transferStateLoaded.current = true;
-    try {
-      const saved = JSON.parse(
-        (secondaryWindow
-          ? localStorage.getItem("rbwr-live-plant-state") || sessionStorage.getItem("rbwr-live-plant-state")
-          : sessionStorage.getItem("rbwr-live-plant-state") || localStorage.getItem("rbwr-live-plant-state")) ||
-          "null",
+      transferStateLoaded.current = true;
+      try {
+        const saved = JSON.parse(
+          (secondaryWindow
+            ? localStorage.getItem(liveStateStorageKey) || sessionStorage.getItem(liveStateStorageKey)
+            : sessionStorage.getItem(liveStateStorageKey) || localStorage.getItem(liveStateStorageKey)) ||
+            "null",
       );
       if (!saved) { setSessionRestored(true); return; }
       if (saved.rods?.length === 36) setRods(saved.rods);
@@ -1279,7 +1353,7 @@ export default function ReactorSimulator() {
   useEffect(() => {
     if (!sessionRestored) return;
     sessionStorage.setItem(
-      "rbwr-live-plant-state",
+      liveStateStorageKey,
       JSON.stringify({
         rods,
         temperature,
@@ -1315,8 +1389,8 @@ export default function ReactorSimulator() {
     // shared snapshot. Keep a durable mirror as well: a browser reload must
     // never silently return steam valves to their startup positions.
     localStorage.setItem(
-      "rbwr-live-plant-state",
-      sessionStorage.getItem("rbwr-live-plant-state") || "{}",
+      liveStateStorageKey,
+      sessionStorage.getItem(liveStateStorageKey) || "{}",
     );
   }, [
     rods,
@@ -1342,7 +1416,7 @@ export default function ReactorSimulator() {
     isRunning,
     bypassValve,
     valveValue,
-    sessionRestored, aprm, physicsTuning,
+    sessionRestored, aprm, physicsTuning, liveStateStorageKey,
     turbineOutputMW, mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel,
   ]);
   useEffect(() => {
@@ -2217,11 +2291,13 @@ export default function ReactorSimulator() {
     (eccsPumpA ? 15 : 0) +
     (eccsPumpB ? 15 : 0);
   const startupLoad = startupBusAvailable ? startupDemand : 0;
-  const busACapacity = sharedTurbineCapacityActive
-    ? 150
-    : busATransformer && turbineBusEligible
-      ? 60
-      : 38;
+  const busACapacity = interlockBusAFeed
+    ? 60
+    : sharedTurbineCapacityActive
+      ? 150
+      : busATransformer && turbineBusEligible
+        ? 60
+        : 38;
   const busBLoad = busBAvailable ? busBDemand : 0;
   const sharedTurbineLoad = startupLoad + busBLoad;
   const safetyLoad = safetyBusAvailable ? safetyDemand : 0;
@@ -2247,24 +2323,120 @@ export default function ReactorSimulator() {
     { name: "ECCS TRAIN B", commanded: eccsPumpB, powered: safetyBusAvailable && eccsPumpB, demand: 15 },
   ];
   const netProductionMW = Math.max(0, turbineOutputMW - busBLoad / 1000);
-  const demandToleranceMW = Math.max(10, gridDemandMW * 0.025);
-  const onGridDemand =
+  const sharedUnit = plantAssignment
+    ? sharedPlant.units.find((unit) => unit.unit_number === plantAssignment.unitNumber)
+    : null;
+  const assignedUnitDemandMW = Number(demandManagerOnline ? sharedUnit?.assigned_demand_mw ?? gridDemandMW : gridDemandMW);
+  const unitDemandMW = assignedUnitDemandMW;
+  const plantDemandMW = Number(demandManagerOnline ? sharedPlant.room?.plant_demand_mw ?? gridDemandMW : gridDemandMW);
+  const plantOutputMW = demandManagerOnline && plantAssignment
+    ? sharedPlant.units.reduce((sum, unit) => sum + Number(unit.output_mw || 0), 0)
+    : netProductionMW;
+  const nextPlantDemandMW = Number(demandManagerOnline ? sharedPlant.room?.next_plant_demand_mw ?? nextGridDemandMW : nextGridDemandMW);
+  const plantDemandSeconds = demandManagerOnline && sharedPlant.room?.demand_effective_at
+    ? Math.max(0, Math.ceil((Date.parse(sharedPlant.room.demand_effective_at) - plantClock) / 1000))
+    : secondsToDemandChange;
+  // Dispatch scoring is deliberately fixed rather than percentage based:
+  // operators have a ±30 MW unit band, while the plant as a whole has a
+  // ±50 MW band around the supervisor's demand.
+  const unitDemandMet =
     isLocked &&
     netProductionMW > 1 &&
-    Math.abs(netProductionMW - gridDemandMW) <= demandToleranceMW;
+    Math.abs(netProductionMW - unitDemandMW) <= 30;
+  const plantDemandMet =
+    plantOutputMW > 1 &&
+    Math.abs(plantOutputMW - plantDemandMW) <= 50;
+  const onGridDemand = unitDemandMet && plantDemandMet;
+
+  useEffect(() => {
+    if (!plantAssignment || secondaryWindow) return;
+    let mounted = true;
+    let channel: ReturnType<typeof subscribePlantRoom> = null;
+    let heartbeat: number | undefined;
+    const refresh = () => {
+      void getPlantSnapshot(plantAssignment.roomCode).then((snapshot) => {
+        if (mounted) setSharedPlant(snapshot);
+      }).catch((error) => {
+        if (mounted) setPlantSyncError(error instanceof Error ? error.message : "Plant room sync failed.");
+      });
+    };
+    void joinPlantRoom(plantAssignment, operatorName || "GUEST", "control-room").then((joined) => {
+      if (!mounted) return;
+      setStationControlsLocked(Boolean(joined?.controlsLocked));
+      if (joined?.snapshot) setSharedPlant(joined.snapshot);
+      setPlantSyncError("");
+      refresh();
+      channel = subscribePlantRoom(plantAssignment.roomCode, refresh);
+      if (!joined?.controlsLocked) {
+        heartbeat = window.setInterval(() => {
+          void heartbeatPlantStation(plantAssignment).then((owned) => {
+            if (!owned && mounted) setStationControlsLocked(true);
+          }).catch(() => {});
+        }, 5000);
+      }
+    }).catch((error) => {
+      if (mounted) setPlantSyncError(error instanceof Error ? error.message : "Unable to join the plant room.");
+    });
+    return () => { mounted = false; channel?.unsubscribe(); if (heartbeat) window.clearInterval(heartbeat); };
+  }, [plantAssignment, operatorName, secondaryWindow]);
+
+  useEffect(() => {
+    if (stationControlsLocked) setSimulationPaused(true);
+  }, [stationControlsLocked]);
+
+  const plantTelemetryRef = useRef({
+    netProductionMW,
+    aprm,
+    pressure,
+    offsitePowerAvailable,
+    isLocked,
+    startupBusAvailable,
+    busATransformer,
+  });
+  useEffect(() => {
+    plantTelemetryRef.current = {
+      netProductionMW,
+      aprm,
+      pressure,
+      offsitePowerAvailable,
+      isLocked,
+      startupBusAvailable,
+      busATransformer,
+    };
+  }, [netProductionMW, aprm, pressure, offsitePowerAvailable, isLocked, startupBusAvailable, busATransformer]);
+  useEffect(() => {
+    if (!plantAssignment || !sessionRestored || stationControlsLocked) return;
+    const publish = () => {
+      const telemetry = plantTelemetryRef.current;
+      void publishUnitTelemetry(plantAssignment, {
+        output_mw: telemetry.netProductionMW,
+        aprm: telemetry.aprm,
+        pressure_kpa: telemetry.pressure,
+        offsite_available: telemetry.offsitePowerAvailable,
+        grid_connected: telemetry.isLocked,
+        bus_a_available: telemetry.startupBusAvailable,
+        bus_a_transformer_closed: telemetry.busATransformer,
+      }).catch((error) => setPlantSyncError(error instanceof Error ? error.message : "Unable to publish unit telemetry."));
+    };
+    publish();
+    const timer = window.setInterval(publish, 1500);
+    return () => window.clearInterval(timer);
+  }, [plantAssignment, sessionRestored, stationControlsLocked]);
   const automationPenaltySystems = [
     autoEnabled || automationCooldowns.aprm > 0 ? "Auto APRM" : null,
     mccAutoOn || automationCooldowns.mcc > 0 ? "MCC Auto" : null,
     turbinePressureAuto || automationCooldowns.pressure > 0 ? "Auto Pressure" : null,
     condenserAuto || automationCooldowns.condenser > 0 ? "Condenser Auto" : null,
   ].filter((system): system is string => Boolean(system));
-  // Each active automation system deducts 0.25 point/s. A 100-second
-  // cooldown continues that deduction after it is switched off.
+  // Each active automation system deducts 0.25 from a unit's five-second
+  // site-demand credit. A 100-second cooldown continues that deduction.
   const automationPenaltyCount = automationPenaltySystems.length;
-  const scoreRate = onGridDemand
+  const scoreRate = !stationControlsLocked && onGridDemand
     ? Math.max(0.25, 1 - automationPenaltyCount * 0.25)
     : 0;
+  const scoringUnit = plantAssignment?.unitNumber ?? 2;
   const operatorPoints = Number(leaderboard[operatorName]?.points || 0);
+  const operatorUnitPoints = Number(scoringUnit === 1 ? leaderboard[operatorName]?.unit1 || 0 : leaderboard[operatorName]?.unit2 || 0);
   const sortedOperators = Object.entries(leaderboard).sort(
     ([, left], [, right]) => Number(right.points || 0) - Number(left.points || 0),
   );
@@ -2279,7 +2451,7 @@ export default function ReactorSimulator() {
         await ensureLeaderboardPlayer(operatorName);
         const rows = await getLeaderboard();
         if (cancelled) return;
-        setLeaderboard(Object.fromEntries(rows.map((row) => [row.display_name, { points: Number(row.points), lastSeen: Date.parse(row.last_seen) || Date.now() }])));
+        setLeaderboard(Object.fromEntries(rows.map((row) => [row.display_name, { points: Number(row.points), unit1: Number(row.points_unit1 || 0), unit2: Number(row.points_unit2 || 0), lastSeen: Date.parse(row.last_seen) || Date.now() }])));
         setRemoteLeaderboardReady(true);
       } catch (error) {
         console.warn("Supabase leaderboard unavailable", error);
@@ -2373,11 +2545,13 @@ export default function ReactorSimulator() {
   useEffect(() => {
     if (!operatorName || !scoreRate) return;
     const tick = window.setInterval(() => {
-      setLeaderboard((previous) => {
+      const award = () => setLeaderboard((previous) => {
         const next = {
           ...previous,
           [operatorName]: {
             points: Number(previous[operatorName]?.points || 0) + scoreRate,
+            unit1: Number(previous[operatorName]?.unit1 || 0) + (scoringUnit === 1 ? scoreRate : 0),
+            unit2: Number(previous[operatorName]?.unit2 || 0) + (scoringUnit === 2 ? scoreRate : 0),
             lastSeen: Date.now(),
           },
         };
@@ -2385,22 +2559,30 @@ export default function ReactorSimulator() {
         if (remoteLeaderboardReady) pendingScoreRef.current += scoreRate;
         return next;
       });
-    }, 1000);
+      if (!plantAssignment) { award(); return; }
+      void claimPlantUnitPointTick(plantAssignment).then((claimed) => {
+        if (claimed) award();
+      }).catch(() => {
+        // If the new shared-point RPC has not been installed yet, do not
+        // silently double-credit multiple operator stations.
+        setPlantSyncError("Shared point credit unavailable — run the plant operations upgrade SQL.");
+      });
+    }, 5000);
     return () => window.clearInterval(tick);
-  }, [operatorName, scoreRate, remoteLeaderboardReady]);
+  }, [operatorName, scoreRate, remoteLeaderboardReady, scoringUnit]);
   useEffect(() => {
     if (!remoteLeaderboardReady || !operatorName) return;
     const flush = window.setInterval(() => {
       const pending = pendingScoreRef.current;
       if (pending <= 0) return;
       pendingScoreRef.current = 0;
-      void addLeaderboardPoints(operatorName, pending).then((row) => {
+      void addLeaderboardPoints(operatorName, scoringUnit, pending).then((row) => {
         if (!row) return;
-        setLeaderboard((previous) => ({ ...previous, [row.display_name]: { points: Number(row.points), lastSeen: Date.parse(row.last_seen) || Date.now() } }));
+        setLeaderboard((previous) => ({ ...previous, [row.display_name]: { points: Number(row.points), unit1: Number(row.points_unit1 || 0), unit2: Number(row.points_unit2 || 0), lastSeen: Date.parse(row.last_seen) || Date.now() } }));
       }).catch(() => { pendingScoreRef.current += pending; });
     }, 5000);
     return () => window.clearInterval(flush);
-  }, [remoteLeaderboardReady, operatorName]);
+  }, [remoteLeaderboardReady, operatorName, scoringUnit]);
   useEffect(() => {
     // Training uses a protected power supply so a learner can operate the
     // newly introduced equipment without a hidden transformer-load puzzle.
@@ -2412,7 +2594,7 @@ export default function ReactorSimulator() {
       setEvent("TURBINE AUXILIARY POOL OVERLOAD — BUS A AND BUS B TRIPPED.");
       return;
     }
-    if (!sharedTurbineCapacityActive && startupBusAvailable && startupLoad > busACapacity) {
+    if (!interlockBusAFeed && !sharedTurbineCapacityActive && startupBusAvailable && startupLoad > busACapacity) {
       if (busATransformer && turbineBusEligible) {
         setBusATransformer(false);
         setEvent("BUS A TRANSFORMER OVERLOAD — BUS A TRIPPED.");
@@ -2818,9 +3000,9 @@ export default function ReactorSimulator() {
     setEvent("RPS nodes reset.");
   };
   const reset = () => {
-    localStorage.removeItem(STORAGE);
-    sessionStorage.removeItem("rbwr-live-plant-state");
-    localStorage.removeItem("rbwr-live-plant-state");
+    localStorage.removeItem(unitStateStorageKey);
+    sessionStorage.removeItem(liveStateStorageKey);
+    localStorage.removeItem(liveStateStorageKey);
     sessionStorage.removeItem("rbwr-pending-console-command");
     sessionStorage.removeItem("rbwr-pending-console-commands");
     setActive("status");
@@ -3007,7 +3189,7 @@ export default function ReactorSimulator() {
     if (target === "leaderboard") {
       const rows = sortedOperators.slice(0, 5);
       const top = rows.length ? rows.map(([name, entry], index) => `${index + 1}. ${name} — ${Number(entry.points || 0).toFixed(1)} pts`).join("\n") : "No scored operators yet.";
-      return `UNIT 2 LEADERBOARD\n${top}\n\n${operatorName ? `YOUR POSITION: #${operatorRank || "—"} / ${sortedOperators.length || "—"}\nYOUR SCORE: ${operatorPoints.toFixed(1)} pts` : "GUEST MODE — LOGIN <yourname> to record points and receive a rank."}`;
+      return `UNIT 2 LEADERBOARD\n${top}\n\n${operatorName ? `YOUR POSITION: #${operatorRank || "—"} / ${sortedOperators.length || "—"}\nTOTAL SCORE: ${operatorPoints.toFixed(1)} pts\nUNIT ${scoringUnit} SCORE: ${operatorUnitPoints.toFixed(1)} pts` : "GUEST MODE — LOGIN <yourname> to record points and receive a rank."}`;
     }
     if (target === "operations") {
       const activeTrips = Object.entries(rpsTrips)
@@ -3029,11 +3211,11 @@ export default function ReactorSimulator() {
       if (verb === "fuel")
         return `FUEL STATUS\nCORE INVENTORY: ${fuelLevel.toFixed(1)}%\nAPRM: ${aprm.toFixed(2)}% · ROD APRM: ${rodAprm.toFixed(2)}%`;
       if (verb === "demand")
-        return `GRID DEMAND\nCURRENT: ${gridDemandMW.toFixed(0)} MW\nNEXT: ${nextGridDemandMW.toFixed(0)} MW in ${secondsToDemandChange}s\nNET UNIT PRODUCTION: ${netProductionMW.toFixed(1)} MW`;
+        return `${demandManagerOnline ? "DEMAND MANAGER ONLINE" : "LOCAL GRID DEMAND"}\nCURRENT UNIT TARGET: ${unitDemandMW.toFixed(0)} MW\nNEXT SITE DEMAND: ${nextPlantDemandMW.toFixed(0)} MW in ${plantDemandSeconds}s\nNET UNIT PRODUCTION: ${netProductionMW.toFixed(1)} MW`;
       if (verb === "buses")
         return `BUS AVAILABILITY\n${busLine("BUS A", startupBusAvailable, startupBusA || busATransformer, startupDemand, sharedTurbineCapacityActive ? 150 : prospectiveBusACapacity, busALocked)}\n${busLine("BUS B", busBAvailable, turbineBusB, busBDemand, sharedTurbineCapacityActive ? 150 : 60, busBLocked)}\n${busLine("BUS S", safetyBusAvailable, safetyBusS, safetyDemand, 30, busSLocked)}\nBUS E: ${busEAvailable ? "ENERGIZED" : "DE-ENERGIZED"} · BATTERY ${mainBatteryCharge.toFixed(1)}%\nDC BUS: ${dcBusAvailable ? "ENERGIZED" : "DE-ENERGIZED"}`;
       if (verb === "status")
-        return `UNIT 2 OPERATIONS STATUS\nREACTOR: ${isRunning ? "STARTED" : "SHUT DOWN"} · APRM ${aprm.toFixed(2)}% · ${pressure.toFixed(0)} kPa\nTURBINE: ${actualRPM.toFixed(0)} RPM · ${turbineOutputMW.toFixed(1)} MW · ${isLocked ? "GRID SYNCED" : "GRID OPEN"}\nFUEL: ${fuelLevel.toFixed(1)}% · CONDENSER: ${Math.round(condenserVacuum * 1000)} mbar\nTRIPS: ${activeTrips.length ? activeTrips.join(", ") : "CLEAR"}\nGRID: ${gridDemandMW.toFixed(0)} MW now · ${nextGridDemandMW.toFixed(0)} MW next in ${secondsToDemandChange}s\nUse TRIP STATUS, BUS AVAILABILITY, FUEL STATUS, or NEXT DEMAND for detail.`;
+        return `UNIT 2 OPERATIONS STATUS\nREACTOR: ${isRunning ? "STARTED" : "SHUT DOWN"} · APRM ${aprm.toFixed(2)}% · ${pressure.toFixed(0)} kPa\nTURBINE: ${actualRPM.toFixed(0)} RPM · ${turbineOutputMW.toFixed(1)} MW · ${isLocked ? "GRID SYNCED" : "GRID OPEN"}\nFUEL: ${fuelLevel.toFixed(1)}% · CONDENSER: ${Math.round(condenserVacuum * 1000)} mbar\nTRIPS: ${activeTrips.length ? activeTrips.join(", ") : "CLEAR"}\nDEMAND: ${unitDemandMW.toFixed(0)} MW unit target · ${nextPlantDemandMW.toFixed(0)} MW site next in ${plantDemandSeconds}s · ${demandManagerOnline ? "MANAGER ONLINE" : "LOCAL MODE"}\nUse TRIP STATUS, BUS AVAILABILITY, FUEL STATUS, or NEXT DEMAND for detail.`;
       return "Operations query unavailable. Use STATUS, TRIP STATUS, BUS AVAILABILITY, FUEL STATUS, or NEXT DEMAND.";
     }
     if (target === "help" && verb === "values")
@@ -3433,6 +3615,14 @@ export default function ReactorSimulator() {
   };
   const tabbedShell = (content: ReactNode) => (
     <div className={`rbwr-control-room min-h-screen bg-[#07111d] text-slate-100 transition-[filter] duration-500 ${dcBusAvailable ? "" : "brightness-[.3] saturate-[.45]"}`}>
+      {stationControlsLocked && !secondaryWindow && <div className="fixed inset-0 z-[110] grid place-items-center bg-slate-950/90 p-5 text-center backdrop-blur-sm">
+        <div className="max-w-lg rounded-xl border border-amber-400/70 bg-slate-900 p-6 shadow-2xl">
+          <p className="text-xs font-black tracking-[.24em] text-amber-300">STATION OCCUPIED</p>
+          <h2 className="mt-2 text-2xl font-black">This invite is already active</h2>
+          <p className="mt-3 text-sm text-slate-300">Controls are locked to prevent two tabs or operators from commanding the same Unit station. Use a different Supervisor invite, or wait about 15 seconds after the active station closes.</p>
+          <Button className="mt-5" variant="outline" onClick={() => navigate("/")}>RETURN TO TERMINAL</Button>
+        </div>
+      </div>}
       <main className="mx-auto max-w-7xl p-3 sm:p-4 md:p-7">
         <header className="mb-5 flex flex-col gap-3 border-b border-cyan-500/20 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -3442,52 +3632,33 @@ export default function ReactorSimulator() {
             <h1 className="text-2xl font-black sm:text-3xl">
               {secondaryWindow ? `${names[active]} — Panel Window` : "Unit 2 Reactor Control Room"}
             </h1>
+            {plantAssignment && <p className="mt-1 text-[11px] font-bold tracking-wide text-violet-200">
+              PLANT {plantAssignment.roomCode} · UNIT {plantAssignment.unitNumber} · {unitDemandMW.toFixed(0)} MW UNIT TARGET · {plantOutputMW.toFixed(1)} / {plantDemandMW.toFixed(0)} MW PLANT · {demandManagerOnline ? `DEMAND MANAGER · T−${plantDemandSeconds}s` : "LOCAL DEMAND"}{interlockBusAFeed ? " · BUS A TIE FEED" : ""}
+            </p>}
+            {plantSyncError && <p className="mt-1 text-[11px] text-amber-300">PLANT LINK: {plantSyncError}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              data-tooltip-title={secondaryWindow ? "Return to main control room" : "Open this panel in a new window"}
-              data-tooltip-description={secondaryWindow ? "Returns this station to the normal full control-room view." : "Opens the currently selected panel in a dedicated secondary window. The same panel remains available here; use separate windows for MCC, TCR, Electrical, or any other panel you want to monitor continuously."}
-              onClick={() => {
-                if (secondaryWindow) {
-                  window.location.assign("/reactor");
-                  return;
-                }
-                const panelUrl = new URL("/reactor", window.location.origin);
-                panelUrl.searchParams.set("window", "panel");
-                panelUrl.searchParams.set("panel", active);
-                const popup = window.open(panelUrl.toString(), `unit2-${active}-station`, "popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes");
-                if (!popup) setEvent("PANEL WINDOW BLOCKED — allow pop-ups for Unit 2, then try again.");
-              }}
-              className="min-h-11 border-emerald-400/70 text-emerald-200 hover:bg-emerald-950"
-            >
+            <Button variant="outline" onClick={() => {
+              if (secondaryWindow) {
+                const mainUrl = new URL(window.location.href);
+                mainUrl.searchParams.delete("window");
+                mainUrl.searchParams.delete("panel");
+                window.location.assign(mainUrl.toString());
+                return;
+              }
+              const panelUrl = new URL(window.location.href);
+              panelUrl.searchParams.set("window", "panel");
+              panelUrl.searchParams.set("panel", active);
+              const popup = window.open(panelUrl.toString(), `unit2-${active}-station`, "popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes");
+              if (!popup) setEvent("PANEL WINDOW BLOCKED — allow pop-ups for Unit 2, then try again.");
+            }} className="min-h-11 border-emerald-400/70 text-emerald-200 hover:bg-emerald-950">
               {secondaryWindow ? "MAIN WINDOW" : "OPEN PANEL WINDOW"}
             </Button>
-            {!secondaryWindow && (
-              <Button
-                variant="outline"
-                data-tooltip-title="Open personal status desk"
-                data-tooltip-description="Opens a third, personal monitoring window. Add any current simulator value as a movable and resizable field, then save or export the layout. It does not remove controls from this room."
-                onClick={() => {
-                  const desk = window.open("/status-desk", "unit2-status-desk", "popup=yes,width=1440,height=900,resizable=yes,scrollbars=yes");
-                  if (!desk) setEvent("STATUS DESK BLOCKED — allow pop-ups for Unit 2, then try again.");
-                }}
-                className="min-h-11 border-violet-400/70 text-violet-200 hover:bg-violet-950"
-              >
-                STATUS DESK
-              </Button>
-            )}
-            {secondaryWindow && (
-              <Button
-                variant="outline"
-                data-tooltip-title="Refresh panel status"
-                data-tooltip-description="Reloads this secondary station from the current shared simulator snapshot. Use it after another operator makes a major plant change in the main window."
-                onClick={() => window.location.reload()}
-                className="min-h-11 border-cyan-400/60 text-cyan-100 hover:bg-cyan-950"
-              >
-                REFRESH STATUS
-              </Button>
-            )}
+            {!secondaryWindow && <Button variant="outline" onClick={() => {
+              const desk = window.open("/status-desk", "unit2-status-desk", "popup=yes,width=1440,height=900,resizable=yes,scrollbars=yes");
+              if (!desk) setEvent("STATUS DESK BLOCKED — allow pop-ups for Unit 2, then try again.");
+            }} className="min-h-11 border-violet-400/70 text-violet-200 hover:bg-violet-950">STATUS DESK</Button>}
+            {secondaryWindow && <Button variant="outline" onClick={() => window.location.reload()} className="min-h-11 border-cyan-400/60 text-cyan-100 hover:bg-cyan-950">REFRESH STATUS</Button>}
             <OperatorManual page={active} />
             <Button
               variant="outline"
@@ -3529,6 +3700,13 @@ export default function ReactorSimulator() {
               className="min-h-11 border-fuchsia-400/70 text-fuchsia-200 hover:bg-fuchsia-950"
             >
               CLI MODE
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/supervisor")}
+              className="min-h-11 border-violet-400/70 text-violet-200 hover:bg-violet-950"
+            >
+              PLANT SUPERVISOR
             </Button>
             <Button variant="outline" disabled={!busEAvailable} onClick={reset} className="min-h-11">
               {" "}
@@ -3942,6 +4120,7 @@ export default function ReactorSimulator() {
       <ElectricalPanel
         startupBusA={startupBusA}
         busATransformer={busATransformer}
+        busAAvailable={startupBusAvailable}
         turbineBusB={turbineBusB}
         safetyBusS={safetyBusS}
         edgBreaker={edgBreaker}
@@ -3952,6 +4131,24 @@ export default function ReactorSimulator() {
         dcBusAvailable={dcBusAvailable}
         mainBatteryCharge={mainBatteryCharge}
         batteryCharging={safetyBusAvailable}
+        unitInterlockStatus={unitInterlockStatus}
+        unitInterlockActive={unitInterlockStatus === "SUPPLYING" || unitInterlockStatus === "FEEDING BUS A"}
+        unitInterlockBreaker={Boolean(sharedPlant.room?.interlock_breaker_closed)}
+        onUnitInterlockBreakerChange={(value) => {
+          if (!plantAssignment) { setEvent("UNIT INTERLOCK BREAKER REQUIRES A SHARED PLANT ROOM."); return; }
+          if (value && interlockTargetConfigured && busATransformer) {
+            setBusATransformer(false);
+            setEvent("UNIT INTERLOCK CLOSED — target Bus A transformer opened for phase separation.");
+          }
+          setSharedPlant((current) => ({
+            ...current,
+            room: current.room ? { ...current.room, interlock_breaker_closed: value } : current.room,
+          }));
+          void updatePlantDispatch(plantAssignment.roomCode, { interlock_breaker_closed: value }).catch((error) => {
+            setPlantSyncError(error instanceof Error ? error.message : "Unable to change Unit Interlock breaker.");
+            void getPlantSnapshot(plantAssignment.roomCode).then(setSharedPlant).catch(() => {});
+          });
+        }}
         rolldownProtection={rolldownProtection}
         turbineOnline={isLocked}
         turbineBusEligible={turbineBusEligible}
@@ -3963,8 +4160,38 @@ export default function ReactorSimulator() {
         startupMachines={startupMachines}
         busBMachines={busBMachines}
         safetyMachines={safetyMachines}
-        onStartupBusAChange={(value) => { setStartupBusA(value); if (value) setBusATransformer(false); }}
-        onBusATransformerChange={(value) => { setBusATransformer(value); if (value) setStartupBusA(false); }}
+        onStartupBusAChange={(value) => {
+          if (value && interlockTargeted) {
+            setSharedPlant((current) => ({
+              ...current,
+              room: current.room ? { ...current.room, interlock_breaker_closed: false } : current.room,
+            }));
+            if (plantAssignment) {
+              void updatePlantDispatch(plantAssignment.roomCode, { interlock_breaker_closed: false }).catch((error) => {
+                setPlantSyncError(error instanceof Error ? error.message : "Unable to open Unit Interlock breaker.");
+              });
+            }
+            setEvent("UNIT INTERLOCK OPEN — target Bus A breaker closed; phase separation required.");
+          }
+          setStartupBusA(value);
+          if (value) setBusATransformer(false);
+        }}
+        onBusATransformerChange={(value) => {
+          if (value && interlockTargeted) {
+            setSharedPlant((current) => ({
+              ...current,
+              room: current.room ? { ...current.room, interlock_breaker_closed: false } : current.room,
+            }));
+            if (plantAssignment) {
+              void updatePlantDispatch(plantAssignment.roomCode, { interlock_breaker_closed: false }).catch((error) => {
+                setPlantSyncError(error instanceof Error ? error.message : "Unable to open Unit Interlock breaker.");
+              });
+            }
+            setEvent("UNIT INTERLOCK OPEN — target Bus A transformer closed; phase separation required.");
+          }
+          setBusATransformer(value);
+          if (value) setStartupBusA(false);
+        }}
         onTurbineBusBChange={setTurbineBusB}
         onSafetyBusSChange={(value) => { setSafetyBusS(value); if (value) setEdgBreaker(false); }}
         onEdgBreakerChange={(value) => { setEdgBreaker(value); if (value) setSafetyBusS(false); }}
@@ -3987,9 +4214,9 @@ export default function ReactorSimulator() {
         malfunctions={malfunctions}
         recircAFlow={recircAFlow}
         recircBFlow={recircBFlow}
-        gridDemandMW={gridDemandMW}
-        nextGridDemandMW={nextGridDemandMW}
-        secondsToDemandChange={secondsToDemandChange}
+        gridDemandMW={unitDemandMW}
+        nextGridDemandMW={nextPlantDemandMW}
+        secondsToDemandChange={plantDemandSeconds}
         netProductionMW={netProductionMW}
         onDemand={onGridDemand}
         operatorName={operatorName}
