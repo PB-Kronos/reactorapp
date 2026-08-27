@@ -156,6 +156,42 @@ export default function ReactorSimulator() {
   // Early lessons use the previous safe bypasses; later lessons progressively
   // expose the full plant instead of offering a separate Simple Mode.
   const simpleMode = tutorialEnabled && tutorialLevel === 6;
+  const applyPanelSnapshot = (saved: any) => {
+    if (!saved || typeof saved !== "object") return;
+    if (saved.rods?.length === 36) setRods(saved.rods);
+    if (typeof saved.temperature === "number") setTemperature(saved.temperature);
+    if (typeof saved.pressure === "number") setPressure(saved.pressure);
+    if (typeof saved.fuelLevel === "number") setFuelLevel(saved.fuelLevel);
+    if (typeof saved.gridSync === "number") setGridSync(saved.gridSync);
+    if (typeof saved.turbineSpeed === "number") setTurbineSpeed(saved.turbineSpeed);
+    if (typeof saved.targetTurbineSpeed === "number") setTargetTurbineSpeed(saved.targetTurbineSpeed);
+    if (typeof saved.pressureRate === "number") setPressureRate(saved.pressureRate);
+    if (typeof saved.rodAprm === "number") { setRodAprm(saved.rodAprm); rodAprmRef.current = saved.rodAprm; }
+    if (typeof saved.recirculationAprm === "number") setRecirculationAprm(saved.recirculationAprm);
+    if (typeof saved.periodRecirculationAprm === "number") setPeriodRecirculationAprm(saved.periodRecirculationAprm);
+    if (typeof saved.oilTemperature === "number") setOilTemperature(saved.oilTemperature);
+    if (typeof saved.turbineMetalTemperature === "number") setTurbineMetalTemperature(saved.turbineMetalTemperature);
+    if (typeof saved.reactorLevel === "number") setReactorLevel(saved.reactorLevel);
+    if (typeof saved.hotwellLevel === "number") setHotwellLevel(saved.hotwellLevel);
+    if (typeof saved.deaeratorLevel === "number") setDeaeratorLevel(saved.deaeratorLevel);
+    if (typeof saved.condenserVacuum === "number") setCondenserVacuum(saved.condenserVacuum);
+    if (typeof saved.mode === "string") setMode(saved.mode);
+    if (typeof saved.iprCycle === "number") setIprCycle(Math.max(1, Math.min(8, saved.iprCycle)));
+    if (typeof saved.irmRange === "number") setIrmRange(Math.max(1, Math.min(8, saved.irmRange)));
+    if (typeof saved.isRunning === "boolean") setIsRunning(saved.isRunning);
+    if (typeof saved.bypassValve === "number") setBypassValve(saved.bypassValve);
+    if (typeof saved.valveValue === "number") setValveValue(saved.valveValue);
+    if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning((current: any) => ({ ...current, ...saved.physicsTuning }));
+    const controls = saved.controls || {};
+    const apply = (key: string, setter: (value: any) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key]); };
+    apply("mainSteamInletOpen", setMainSteamInletOpen); apply("reliefOpen", setReliefOpen); apply("reliefValveB", setReliefValveB); apply("exciterOn", setExciterOn); apply("isLocked", setIsLocked); apply("turbinePressureAuto", setTurbinePressureAuto); apply("turbineRpmAuto", setTurbineRpmAuto);
+    apply("pump1Online", setPump1Online); apply("pump2Online", setPump2Online); apply("daIntakeOpen", setDaIntakeOpen); apply("daOutputOpen", setDaOutputOpen); apply("daIntakeValve", setDaIntakeValve); apply("daOuttakeValve", setDaOuttakeValve); apply("daIntakeDirection", setDaIntakeDirection); apply("daOuttakeDirection", setDaOuttakeDirection); apply("daAuto", setDaAuto);
+    apply("recircPumpA", setRecircPumpA); apply("recircPumpB", setRecircPumpB); apply("recircSpeedA", setRecircSpeedA); apply("recircSpeedB", setRecircSpeedB); apply("selectedRodId", setSelectedRodId); apply("rodDirection", setRodDirection); apply("selectionScope", setSelectionScope); apply("autoEnabled", setAutoEnabled); apply("autoTarget", setAutoTarget); apply("autoSpeed", setAutoSpeed); apply("autoMode", setAutoMode); apply("malfunctions", setMalfunctions);
+    apply("condensateFlow", setCondensateFlow); apply("condensatePumpBFlow", setCondensatePumpBFlow); apply("feedwaterFlow", setFeedwaterFlow); apply("feedwaterPumpBFlow", setFeedwaterPumpBFlow); apply("condenserPumpOn", setCondenserPumpOn); apply("condenserPumpB", setCondenserPumpB); apply("condenserValve", setCondenserValve); apply("condenserValveDirection", setCondenserValveDirection); apply("condenserAuto", setCondenserAuto); apply("carAOn", setCarAOn); apply("carBOn", setCarBOn); apply("sjaeOn", setSjaeOn); apply("mccPumpOn", setMccPumpOn); apply("mccAutoOn", setMccAutoOn); apply("condenserCirculationPumpOn", setCondenserCirculationPumpOn);
+    apply("startupBusA", setStartupBusA); apply("busATransformer", setBusATransformer); apply("turbineBusB", setTurbineBusB); apply("safetyBusS", setSafetyBusS); apply("edgBreaker", setEdgBreaker); apply("acDcInterlock", setAcDcInterlock); apply("safetyToDcBreaker", setSafetyToDcBreaker); apply("busEToDcBreaker", setBusEToDcBreaker); apply("mainBatteryCharge", setMainBatteryCharge); apply("rolldownProtection", setRolldownProtection); apply("cstLevel", setCstLevel); apply("cstMakeup", setCstMakeup); apply("cstDrain", setCstDrain); apply("hotwellMakeup", setHotwellMakeup); apply("hotwellDrain", setHotwellDrain);
+    apply("rcicValve", setRcicValve); apply("rcicFlow", setRcicFlow); apply("eccsPumpA", setEccsPumpA); apply("eccsPumpB", setEccsPumpB); apply("eccsPumpAMode", setEccsPumpAMode); apply("eccsPumpBMode", setEccsPumpBMode); apply("srvOpen", setSrvOpen); apply("adsActive", setAdsActive);
+    apply("lubePumpSource", setLubePumpSource); apply("hydraulicPumpSource", setHydraulicPumpSource); apply("coldOilValve", setColdOilValve); apply("warmOilValve", setWarmOilValve); apply("turningGear", setTurningGear); apply("preheatValve", setPreheatValve); apply("tutorialEnabled", setTutorialEnabled); apply("tutorialLevel", setTutorialLevel);
+  };
   useEffect(() => {
     document.body.dataset.rbwrPanel = active;
     return () => {
@@ -338,6 +374,8 @@ export default function ReactorSimulator() {
   const mccAutoManualAdjusting = useRef(false);
   const tripAlarm = useRef<HTMLAudioElement | null>(null);
   const transferStateLoaded = useRef(false);
+  const panelSyncChannel = useRef<BroadcastChannel | null>(null);
+  const suppressPanelBroadcastUntil = useRef(0);
   const pressureSample = useRef({ value: 101, time: performance.now() });
   const condenserTargetRef = useRef(1);
   const condenserPhaseRef = useRef(0);
@@ -1351,6 +1389,27 @@ export default function ReactorSimulator() {
     } catch {} finally { setSessionRestored(true); }
   }, []);
   useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("unit2-panel-live-sync-v1");
+    panelSyncChannel.current = channel;
+    channel.onmessage = (event) => {
+      const message = event.data;
+      if (!message || message.key !== liveStateStorageKey) return;
+      if (message.type === "request-state" && !secondaryWindow) {
+        try {
+          channel.postMessage({ type: "state", key: liveStateStorageKey, snapshot: JSON.parse(sessionStorage.getItem(liveStateStorageKey) || "{}") });
+        } catch { /* no complete snapshot yet */ }
+        return;
+      }
+      if (message.type === "state" && message.snapshot) {
+        suppressPanelBroadcastUntil.current = Date.now() + 160;
+        applyPanelSnapshot(message.snapshot);
+      }
+    };
+    if (secondaryWindow) channel.postMessage({ type: "request-state", key: liveStateStorageKey });
+    return () => { channel.close(); panelSyncChannel.current = null; };
+  }, [liveStateStorageKey, secondaryWindow]);
+  useEffect(() => {
     if (!sessionRestored) return;
     sessionStorage.setItem(
       liveStateStorageKey,
@@ -1392,6 +1451,15 @@ export default function ReactorSimulator() {
       liveStateStorageKey,
       sessionStorage.getItem(liveStateStorageKey) || "{}",
     );
+    if (Date.now() >= suppressPanelBroadcastUntil.current) {
+      try {
+        panelSyncChannel.current?.postMessage({
+          type: "state",
+          key: liveStateStorageKey,
+          snapshot: JSON.parse(sessionStorage.getItem(liveStateStorageKey) || "{}"),
+        });
+      } catch { /* storage is the fallback synchronisation path */ }
+    }
   }, [
     rods,
     temperature,
