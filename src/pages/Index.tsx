@@ -108,6 +108,7 @@ const Index = () => {
       logout: "LOGOUT\nEnds the score-recording session and switches to guest mode. The reactor remains available, but guest operation earns no points.",
       reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Guest entry is allowed; LOGIN <yourname> is recommended to record points.",
       console: "CONSOLE\nOpens the advanced Mainframe terminal. Use LOGIN SUPERVISOR there for full simulator command access.",
+      supervisor: "SUPERVISOR\nOpens the plant supervisor terminal. Use it to create a shared room, assign Unit 1 and Unit 2 demand, manage optional interlock, and copy station invite links.",
       status: "STATUS\nDisplays the basic public system state and the current greeting-terminal operator name.",
       leaderboard: "LEADERBOARD\nShows the top five locally stored operators plus your score and ranking after you login.",
       url: "URL <address>\nNavigates this tab to the provided full address, such as https://example.com.",
@@ -198,6 +199,10 @@ const Index = () => {
         navigate("/mainframe");
         return;
       }
+    } else if (lower === "supervisor") {
+      await fullscreen();
+      navigate("/supervisor");
+      return;
     } else if (lower === "url") {
       if (argument) {
         window.location.assign(argument);

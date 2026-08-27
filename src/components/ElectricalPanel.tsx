@@ -7,8 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export type ElectricalMachine = { name: string; commanded: boolean; powered: boolean; demand: number };
 interface Props {
   startupBusA: boolean; busATransformer: boolean; turbineBusB: boolean; safetyBusS: boolean; edgBreaker: boolean;
+  busAAvailable?: boolean;
   acDcInterlock: boolean; safetyToDcBreaker: boolean; busEToDcBreaker: boolean; busEAvailable: boolean; dcBusAvailable: boolean;
   mainBatteryCharge: number; batteryCharging: boolean;
+  unitInterlockStatus?: string; unitInterlockActive?: boolean;
+  unitInterlockBreaker?: boolean; onUnitInterlockBreakerChange?: (value: boolean) => void;
   rolldownProtection: boolean; turbineOnline: boolean; turbineBusEligible: boolean; startupLoad?: number; busBLoad?: number; safetyLoad?: number;
   sharedTurbineCapacityActive?: boolean; sharedTurbineLoad?: number;
   startupMachines?: ElectricalMachine[]; busBMachines?: ElectricalMachine[]; safetyMachines?: ElectricalMachine[];
@@ -30,7 +33,9 @@ const Breaker = ({ label, on, onChange }: { label: string; on: boolean; onChange
 const MachineBus = ({ label, active, load, limit, machines, children }: { label: string; active: boolean; load: number; limit: number; machines?: ElectricalMachine[]; children?: ReactNode }) => <Card className={active ? "border-emerald-500/40 bg-slate-900/75" : "border-slate-700 bg-slate-900/75"}><CardHeader className="pb-3"><CardTitle className="flex justify-between text-sm"><span>{label}</span><Badge className={active ? "bg-emerald-700" : "bg-slate-700"}>{active ? "ENERGIZED" : "DE-ENERGIZED"}</Badge></CardTitle></CardHeader><CardContent className="space-y-3"><div className="rounded bg-slate-950 p-3"><div className="mb-1 flex justify-between text-xs"><span>LIVE LOAD</span><strong>{load.toFixed(1)} / {limit} kW</strong></div><div className="h-2 overflow-hidden rounded bg-slate-800"><div className={load > limit ? "h-full bg-red-500" : "h-full bg-cyan-400"} style={{ width: `${Math.min(100, load / limit * 100)}%` }} /></div></div><div className="rounded border border-slate-700 bg-slate-950/60 p-2">{machines?.map(machine => <div key={machine.name} className="flex items-center justify-between gap-2 py-1 text-xs"><span className="flex items-center gap-2"><i className={`h-2.5 w-2.5 rounded-full ${machine.powered ? "bg-emerald-400" : "bg-red-500"}`} />{machine.name}</span><strong className={machine.powered ? "text-cyan-300" : "text-slate-500"}>{machine.powered ? `${machine.demand.toFixed(1)} kW` : machine.commanded ? "NO POWER" : "OFF"}</strong></div>)}</div>{children}</CardContent></Card>;
 
 export const ElectricalPanel = (p: Props) => {
-  const busA = p.startupBusA || (p.busATransformer && p.turbineBusEligible);
+  // The control room supplies the authoritative Bus A state. This includes
+  // the direct unit-interlock tie, which deliberately bypasses Startup TR.
+  const busA = p.busAAvailable ?? (p.startupBusA || (p.busATransformer && p.turbineBusEligible));
   const busB = p.turbineBusB && p.turbineBusEligible;
   const busS = p.safetyBusS && busA;
   const sharedTurbinePool = Boolean(p.sharedTurbineCapacityActive);
@@ -55,6 +60,7 @@ export const ElectricalPanel = (p: Props) => {
               <div className="rounded bg-red-700 px-3 py-2 text-red-100">Turbine</div><R tone="red" />
               <Breaker label="BUS B BRK" on={p.turbineBusB} onChange={p.onTurbineBusBChange} /><R tone="amber" /><Node label="BUS B" active={busB} compact />
             </div>
+            <div className="flex items-center justify-center gap-3 border-t border-dashed border-cyan-400/35 pt-4"><Node label={`UNIT INTERLOCK — ${p.unitInterlockStatus || "OFFLINE"}`} active={Boolean(p.unitInterlockActive)} tone="green" /><Breaker label="UNIT INTERLOCK BRK" on={Boolean(p.unitInterlockBreaker)} onChange={p.onUnitInterlockBreakerChange || (() => {})} /><span className="text-[10px] text-cyan-200">UNIT-TO-UNIT BUS A TIE STATUS</span></div>
           </div>
         </div>
         <div className="flex flex-col items-center border-t border-amber-500/50 pt-4"><span className="-mt-3"><D tone="amber" /></span><Breaker label="BUS A → BUS S" on={p.safetyBusS} onChange={p.onSafetyBusSChange} /><D tone="green" /><Node label="BUS S 480 VAC" active={busS} tone="green" /></div>

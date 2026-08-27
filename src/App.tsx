@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 
 const ReactorSimulator = lazy(() => import("./pages/ReactorSimulator"));
 const Mainframe = lazy(() => import("./pages/Mainframe"));
+const Supervisor = lazy(() => import("./pages/Supervisor"));
 const queryClient = new QueryClient();
 const Loading = () => <div className="grid min-h-screen place-items-center bg-slate-950 font-mono text-cyan-300">Loading Unit 2 systems…</div>;
 const tooltipKey = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
@@ -203,5 +204,5 @@ const ControlTooltips = () => {
   return <div aria-live="polite" className="pointer-events-none fixed z-[100] w-72 -translate-x-1/2 rounded-lg border border-cyan-300/70 bg-slate-950/95 px-3 py-2 font-mono shadow-[0_8px_30px_rgba(0,0,0,.55)]" style={{ left: tooltip.x, top: tooltip.below ? tooltip.y + 14 : tooltip.y - 10, transform: `translate(-50%, ${tooltip.below ? "0" : "-100%"})` }}><div className="text-xs font-black tracking-wide text-cyan-200">{tooltip.title}</div><p className="mt-1 text-[11px] leading-snug text-slate-300">{tooltip.description}</p></div>;
 };
 
-const App = () => <QueryClientProvider client={queryClient}><TooltipProvider><ControlTooltips /><Toaster /><Sonner /><BrowserRouter><Suspense fallback={<Loading />}><Routes><Route path="/" element={<Index />} /><Route path="/reactor" element={<ReactorSimulator />} /><Route path="/mainframe" element={<Mainframe />} /><Route path="*" element={<NotFound />} /></Routes></Suspense></BrowserRouter></TooltipProvider></QueryClientProvider>;
+const App = () => <QueryClientProvider client={queryClient}><TooltipProvider><ControlTooltips /><Toaster /><Sonner /><BrowserRouter><Suspense fallback={<Loading />}><Routes><Route path="/" element={<Index />} /><Route path="/reactor" element={<ReactorSimulator />} /><Route path="/mainframe" element={<Mainframe />} /><Route path="/supervisor" element={<Supervisor />} /><Route path="*" element={<NotFound />} /></Routes></Suspense></BrowserRouter></TooltipProvider></QueryClientProvider>;
 export default App;

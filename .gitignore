@@ -27,3 +27,5 @@ dist-ssr
 *.sw?
 .dyad/
 tmp/
+desktop.ini
+.megaignore
