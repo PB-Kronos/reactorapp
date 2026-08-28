@@ -111,12 +111,13 @@ const Index = () => {
       supervisor: "SUPERVISOR\nOpens the plant supervisor terminal. Use it to create a shared room, assign Unit 1 and Unit 2 demand, manage optional interlock, and copy station invite links.",
       start: "START — BASIC OPERATOR PATH\n1. LOGIN <yourname> to record points (guest operation is allowed).\n2. Enter REACTOR and check Overview plus RPS for clear trip conditions.\n3. Energize Bus A, establish condenser vacuum, and start MCC circulation.\n4. Start with the tutorial, Auto APRM, or the normal SRM → IRM rod sequence.\n5. When steam conditions are ready, run up, synchronize, and load the turbine.",
       operations: "OPERATIONS — NORMAL CONTROL ORDER\nElectrical power → protection clear → condenser vacuum → MCC flow and level control → controlled APRM increase → turbine run-up → synchronization → load following.\n\nAfter every major change, check reactor level, pressure, period, condenser pressure, Bus A/S availability, and annunciators.",
-      multiunit: "MULTIUNIT\nDisplays the V2.3 shared-plant guide: Supervisor Rooms, Unit 1/2 station links, demand allocation, interlock prerequisites, scoring, and LOOP recovery.",
+      multiunit: "MULTIUNIT\nDisplays the V2.3.2 shared-plant and local-operation guide: Supervisor Rooms, Unit 1/2 station links, demand allocation, interlock prerequisites, scoring, offline local transport, and LOOP recovery.",
       status: "STATUS\nDisplays the basic public system state and the current greeting-terminal operator name.",
       leaderboard: "LEADERBOARD\nShows the top five locally stored operators plus your score and ranking after you login.",
       url: "URL <address>\nNavigates this tab to the provided full address, such as https://example.com.",
       google: "GOOGLE <https://url>\nOpens a full HTTP(S) URL in a new tab. It is named for convenience; it does not perform a search.",
       github: "GITHUB\nOpens the Unit 2 project repository in a new tab.",
+      discord: "DISCORD\nOpens the official Unit 2 community Discord server.",
       contact: "CONTACT [discord]\nShows the available contact method. Use CONTACT DISCORD to open the current Discord link.",
       time: "TIME\nDisplays the local date and time from your device.",
       date: "DATE\nAlias for TIME; displays your device's local date and time.",
@@ -224,6 +225,9 @@ const Index = () => {
         "noopener,noreferrer",
       );
       response = "Opening Unit 2 repository.";
+    } else if (lower === "discord") {
+      window.open("https://discord.gg/TqZQwr6pTq", "_blank", "noopener,noreferrer");
+      response = "Opening the Unit 2 Discord server.";
     } else if (lower === "contact") {
       if (argument.toLowerCase() === "discord") {
         window.open(
@@ -331,6 +335,22 @@ const Index = () => {
                   >
                     GO TO CONSOLE
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void fullscreen().then(() => navigate("/supervisor"))}
+                    className="h-7 border-amber-700 bg-amber-950/20 px-2 text-[10px] tracking-wide text-amber-200 hover:bg-amber-400 hover:text-black"
+                  >
+                    SUPERVISOR ROOM
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open("https://discord.gg/TqZQwr6pTq", "_blank", "noopener,noreferrer")}
+                    className="h-7 border-violet-700 bg-violet-950/20 px-2 text-[10px] tracking-wide text-violet-200 hover:bg-violet-400 hover:text-black"
+                  >
+                    JOIN DISCORD
+                  </Button>
                 </div>
               </div>
             )}
@@ -342,7 +362,7 @@ const Index = () => {
                   LIVE SYSTEM SUMMARY
                 </h2>
                 <span className="border border-emerald-500 px-2 py-1 text-xs text-emerald-200">
-                  V2.2
+                  V2.3.2
                 </span>
               </div>
               <dl className="space-y-3">
@@ -373,25 +393,28 @@ const Index = () => {
               </a>
             </section>
             <section className="border border-cyan-700/50 bg-cyan-950/15 p-5 text-xs text-cyan-100">
-              <h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2.2</h2>
+              <h2 className="mb-3 font-bold text-cyan-200">UPDATE TO V2.3.2</h2>
               <ul className="space-y-2">
                 <li>
-                  • Startup and control rods: separate withdrawal cycles from
-                  IRM display selection, improved kinetic APRM response, and
-                  expanded operator guidance.
+                  • Local plant operations: run the full Supervisor, Unit 1/2,
+                  station, multiwindow, PMS, and phone system on one computer
+                  without Supabase or an internet connection.
                 </li>
                 <li>
-                  • Turbine: turning gear, preheat, trip steam isolation, and
-                  a more complete run-up path.
+                  • Synchronization: MCR is the single reactor-physics
+                  authority; specialist stations send controls without fighting
+                  pressure, RPM, levels, or kinetics.
                 </li>
                 <li>
-                  • Systems: APRM-to-MW target calculator, improved MCC /
-                  condenser physics, and direct live-state restoration.
+                  • MCC / recirculation: Hotwell Auto now has a ±0.25 m pump
+                  deadband; live recirculation kg/s displays and cavitation
+                  clearance at 19% rod APRM are corrected.
                 </li>
-                <li>• Electrical: live bus/machine status and protection logic.</li>
+                <li>• Resilience: persisted browser checkpoints and a cached production app shell support outage recovery.</li>
                 <li>
-                  • Terminals & scoring: guest mode, account switching,
-                  leaderboard access, and automation scoring penalties.
+                  • Multi-unit: Supervisor demand allocation, station links,
+                  Unit Interlock, and the Status Desk remain available in both
+                  online and local transport modes.
                 </li>
               </ul>
             </section>

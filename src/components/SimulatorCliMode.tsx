@@ -1,21 +1,54 @@
 import { Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  type PlantAssignment,
+  type PlantPhoneCall,
+  type PlantPhoneCallMessage,
+  type PlantPhoneMessage,
+  acknowledgePlantPhoneMessage,
+  createPlantPhoneCall,
+  getPlantPhoneCallMessages,
+  getPlantPhoneCalls,
+  getPlantPhoneMessages,
+  queuePlantRemoteCommand,
+  sendPlantPhoneCallMessage,
+  sendPlantPhoneMessage,
+  updatePlantPhoneCall,
+} from "@/lib/plantOperations";
+import {
+  type PhoneEndpoint,
+  automatedPhoneCommand,
+  getPhoneEndpoint,
+  phoneConversationId,
+  phoneDirectoryText,
+  stationPhoneIdentity,
+} from "@/lib/plantPhone";
 
 interface SimulatorCliModeProps {
   open: boolean;
   onClose: () => void;
   onCommand: (command: string) => string;
   liveStatus: string;
+  plantAssignment?: PlantAssignment | null;
+  onIncomingCall?: () => void;
 }
 
-export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: SimulatorCliModeProps) {
+export function SimulatorCliMode({ open, onClose, onCommand, liveStatus, plantAssignment, onIncomingCall }: SimulatorCliModeProps) {
   const [command, setCommand] = useState("");
   const [terminalMode, setTerminalMode] = useState<"entry" | "editor">("entry");
   const [department, setDepartment] = useState<string | null>(null);
   const [activeCall, setActiveCall] = useState<string | null>(null);
   const [callRequest, setCallRequest] = useState("");
   const [callTranscript, setCallTranscript] = useState<string[]>([]);
+  const [activePhoneEndpoint, setActivePhoneEndpoint] = useState<PhoneEndpoint | null>(null);
+  const [phoneMessages, setPhoneMessages] = useState<PlantPhoneMessage[]>([]);
+  const [activePrivateCall, setActivePrivateCall] = useState<PlantPhoneCall | null>(null);
+  const [incomingCall, setIncomingCall] = useState<PlantPhoneCall | null>(null);
+  const [privateCallMessages, setPrivateCallMessages] = useState<PlantPhoneCallMessage[]>([]);
+  const [pmsExtension, setPmsExtension] = useState(plantAssignment?.unitNumber === 1 ? "0020" : "0010");
+  const [pmsMessage, setPmsMessage] = useState("");
+  const [pmsUrgent, setPmsUrgent] = useState(false);
   const [calling, setCalling] = useState(false);
   const callTimer = useRef<number | null>(null);
   const [history, setHistory] = useState<string[]>(() => {
@@ -31,6 +64,7 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
   });
   const outputRef = useRef<HTMLPreElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const ownPhone = plantAssignment ? stationPhoneIdentity(plantAssignment.unitNumber, plantAssignment.stationId) : null;
 
   useEffect(() => {
     sessionStorage.setItem("rbwr-cli-history", JSON.stringify(history.slice(-80)));
@@ -51,10 +85,67 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
   useEffect(() => () => {
     if (callTimer.current !== null) window.clearTimeout(callTimer.current);
   }, []);
+  useEffect(() => {
+    if (!plantAssignment) return;
+    let active = true;
+    const refresh = () => {
+      void getPlantPhoneMessages(plantAssignment.roomCode).then((messages) => {
+        if (active) setPhoneMessages(messages);
+      }).catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2_500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [plantAssignment]);
+  useEffect(() => {
+    if (!activePrivateCall) { setPrivateCallMessages([]); return; }
+    let active = true;
+    const refresh = () => {
+      void getPlantPhoneCallMessages(activePrivateCall.id).then((messages) => {
+        if (active) setPrivateCallMessages(messages);
+      }).catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [activePrivateCall?.id]);
+  useEffect(() => {
+    if (!plantAssignment || !ownPhone) return;
+    let active = true;
+    const refresh = () => {
+      void getPlantPhoneCalls(plantAssignment.roomCode).then((calls) => {
+        if (!active) return;
+        const mine = calls.filter((call) => call.source_extension === ownPhone.extension || call.target_extension === ownPhone.extension);
+        const fresh = mine.find((call) => call.target_extension === ownPhone.extension && call.status === "ringing");
+        if (fresh && fresh.id !== activePrivateCall?.id) {
+          setIncomingCall(fresh);
+          onIncomingCall?.();
+        }
+        if (activePrivateCall) {
+          const updated = mine.find((call) => call.id === activePrivateCall.id);
+          if (updated) setActivePrivateCall(updated);
+          if (updated && (updated.status === "declined" || updated.status === "ended")) {
+            setHistory((previous) => [...previous, `CALL ${updated.target_extension} ${updated.status.toUpperCase()}.`]);
+            setActiveCall(null); setDepartment(null); setActivePhoneEndpoint(null); setActivePrivateCall(null); setCallRequest("");
+          }
+        }
+      }).catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [plantAssignment, ownPhone?.extension, activePrivateCall?.id]);
+  useEffect(() => {
+    setCallTranscript(privateCallMessages.map((message) => `${message.source_label}: ${message.body}`));
+  }, [privateCallMessages]);
 
   if (!open) return null;
   const departmentPrompt = (code: string) => {
+    const endpoint = getPhoneEndpoint(code);
+    if (endpoint?.type === "manual")
+      return `${endpoint.extension} // ${endpoint.label.toUpperCase()}\nMANUAL LINE — ${endpoint.purpose}. State a message to start plant chat.`;
     const menus: Record<string, string> = {
+      "0019": "0019 // U1 MAINTENANCE\nCommands: REFUEL\nAutomated Unit 1 maintenance line.",
       "0027": "0027 // EDG MAINTENANCE\nCommands: REFUEL\nFuture EDG maintenance terminal.",
       "0028": "0028 // TCR MAINTENANCE\nCommands: OIL LEAK CHECK · REPAIR\nFuture turbine-condition terminal.",
       "0029": "0029 // UNIT 2 MAINTENANCE\nCommands: REPAIR · REFUEL\nREPAIR clears active random malfunctions.",
@@ -64,7 +155,17 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
     };
     return menus[code];
   };
-  const runDepartmentCommand = (code: string, commandText: string) => {
+  const runDepartmentCommand = async (code: string, commandText: string) => {
+    const endpoint = getPhoneEndpoint(code);
+    if (endpoint?.type === "automated") {
+      if (code === "0100" && (commandText === "points" || commandText === "status")) return onCommand("hr points");
+      const action = automatedPhoneCommand(endpoint, commandText, plantAssignment?.unitNumber);
+      if (!action) return `AUTOMATED ${endpoint.label.toUpperCase()} — request unavailable. Check the service procedure for this extension.`;
+      if (!plantAssignment) return "A shared Unit plant room is required to route this automated service request.";
+      if (action.targetUnit === plantAssignment.unitNumber) return onCommand(action.command);
+      await queuePlantRemoteCommand(plantAssignment.roomCode, action.targetUnit, action.command);
+      return `REQUEST ROUTED TO UNIT ${action.targetUnit} — ${action.command.toUpperCase()}. Await remote unit acknowledgement.`;
+    }
     if (code === "0027" && commandText === "refuel") return onCommand("maintenance edg refuel");
     if (code === "0028" && commandText === "oil leak check") return onCommand("maintenance turbine oil-check");
     if (code === "0028" && commandText === "repair") return onCommand("maintenance turbine repair");
@@ -76,6 +177,8 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
     return `Unknown ${code} command. Type BACK to leave this department.`;
   };
   const callGreeting = (code: string) => {
+    const endpoint = getPhoneEndpoint(code);
+    if (endpoint?.type === "manual") return `${endpoint.label}, this is a manual plant line. What do you need?`;
     const greetings: Record<string, string[]> = {
       "0027": ["EDG maintenance, what do you need?", "Emergency diesel desk. State your request.", "Unit 2 EDG maintenance speaking — go ahead."],
       "0028": ["TCR maintenance here. What is the turbine issue?", "Turbine control room maintenance, go ahead.", "TCR desk. What do you need checked?"],
@@ -94,8 +197,27 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
       return "SIMULATION EDITOR ENABLED. Type HELP for live control commands; EXIT returns to entry mode.";
     }
     if (normalized === "help" || normalized === "directory")
-      return "DIRECTORY\n0027 EDG Maintenance\n0028 TCR Maintenance\n0029 Unit 2 Maintenance\n0100 Human Resources\n5682 Grid Control\n*#99 FSS Master Panel\nEDITOR Simulation editor\n\nSESSION\nLOGIN <name> records point scoring\nLOGOUT enters guest mode (no points)\nLEADERBOARD shows the top operators";
+      return `PLANT PHONE DIRECTORY\n${phoneDirectoryText()}\n\nCALL <extension> [message] — dial a manual or automated line.\nManual lines support live chat when the receiving unit opens its CLI.\nEDITOR Simulation editor\n\nSESSION\nLOGIN <name> records point scoring\nLOGOUT enters guest mode (no points)\nLEADERBOARD shows the top operators`;
     if (normalized === "status") return onCommand("operations status");
+    if (normalized === "pms") return "PMS: use PMS <extension> <message> to send without opening a live call. Manual extensions are listed in DIRECTORY.";
+    if (normalized.startsWith("pms ")) {
+      const [, extension = "", ...messageParts] = text.trim().split(/\s+/);
+      const endpoint = getPhoneEndpoint(extension);
+      const body = messageParts.join(" ").trim();
+      if (!endpoint || endpoint.type !== "manual") return "PMS requires an active manual extension. Use DIRECTORY.";
+      if (!body) return "Usage: PMS <manual-extension> <message>.";
+      if (!plantAssignment || !ownPhone) return "PMS requires a shared Unit plant room.";
+      void sendPlantPhoneMessage({
+        room_code: plantAssignment.roomCode,
+        conversation_id: phoneConversationId(plantAssignment.roomCode, ownPhone.extension, endpoint.extension),
+        source_extension: ownPhone.extension,
+        source_label: `PMS ${ownPhone.label}`,
+        target_extension: endpoint.extension,
+        target_label: endpoint.label,
+        body,
+      });
+      return `PMS TRANSMITTED TO ${endpoint.extension} ${endpoint.label}.`;
+    }
     if (normalized === "leaderboard" || normalized === "logout" || normalized.startsWith("login ")) return onCommand(text);
     if (["trip status", "trips", "trip"].includes(normalized)) return onCommand("operations trips");
     if (["bus availability", "bus status", "power status"].includes(normalized)) return onCommand("operations buses");
@@ -120,9 +242,15 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
     if (text.toLowerCase() === "clear") {
       setHistory(["UNIT 2 SIMULATOR // CLI MODE", "Buffer cleared."]);
     } else if (terminalMode === "entry") {
-      const call = text.trim().match(/^(?:call\s+)?(0027|0028|0029|0100|5682|\*#99)(?:\s+(.+))?$/i);
+      const call = text.trim().match(/^(?:call\s+)?(\*#99|\d{4})(?:\s+(.+))?$/i);
       if (call && !department) {
-        const code = call[1];
+        const code = call[1].toUpperCase();
+        const endpoint = getPhoneEndpoint(code);
+        if (!endpoint) {
+          setHistory((previous) => [...previous, `> ${text}`, "UNAVAILABLE EXTENSION — this number is reserved or not installed in the Unit 2 phone network."]);
+          setCommand("");
+          return;
+        }
         const requestedCommand = call[2]?.trim().toLowerCase().replace(/\s+/g, " ");
         setCalling(true);
         setHistory((previous) => [...previous, `> ${text}`, `DIALING ${code}...`]);
@@ -131,9 +259,28 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
           setDepartment(code);
           setActiveCall(code);
           setCallRequest("");
-          setCallTranscript([callGreeting(code)]);
-          const result = requestedCommand ? `\nRequested command queued: ${requestedCommand}` : "";
-          setHistory((previous) => [...previous, `CONNECTED // ${departmentPrompt(code)}${result}\nUse the phone dialog to continue.`]);
+          if (endpoint.type === "manual" && plantAssignment && ownPhone) {
+            void createPlantPhoneCall({
+              room_code: plantAssignment.roomCode,
+              source_extension: ownPhone.extension,
+              source_label: ownPhone.label,
+              target_extension: endpoint.extension,
+              target_label: endpoint.label,
+            }).then((privateCall) => {
+              setActivePhoneEndpoint(endpoint);
+              setActivePrivateCall(privateCall);
+              setCallTranscript([`RINGING ${endpoint.label} — awaiting pickup.`]);
+              setHistory((previous) => [...previous, `PRIVATE CALL RINGING // ${endpoint.extension} ${endpoint.label}.${requestedCommand ? " Enter the message after pickup." : ""}`]);
+            }).catch((cause) => {
+              setHistory((previous) => [...previous, `PHONE NETWORK ERROR — ${cause instanceof Error ? cause.message : "call could not be placed"}`]);
+              setActiveCall(null); setDepartment(null); setActivePhoneEndpoint(null);
+            });
+          } else {
+            setActivePhoneEndpoint(null);
+            setCallTranscript([callGreeting(code)]);
+          }
+          const result = requestedCommand ? `\nRequested command: ${requestedCommand}` : "";
+          if (endpoint.type !== "manual") setHistory((previous) => [...previous, `CONNECTED // ${departmentPrompt(code)}${result}\nUse the phone dialog to continue.`]);
           setCalling(false);
           callTimer.current = null;
         }, 850);
@@ -151,6 +298,34 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
       setHistory((previous) => [...previous, `> ${text}`, result]);
     }
     setCommand("");
+  };
+  const phoneThreads = ownPhone
+    ? [...new Map(phoneMessages
+      .filter((message) => message.source_extension === ownPhone.extension || message.target_extension === ownPhone.extension)
+      .map((message) => [message.conversation_id, message])).values()]
+    : [];
+  const openManualThread = (message: PlantPhoneMessage) => {
+    if (!ownPhone) return;
+    const remoteExtension = message.source_extension === ownPhone.extension ? message.target_extension : message.source_extension;
+    const endpoint = getPhoneEndpoint(remoteExtension);
+    if (!endpoint || endpoint.type !== "manual") return;
+    setPmsExtension(endpoint.extension);
+    setHistory((previous) => [...previous, `PMS THREAD SELECTED // ${endpoint.extension} ${endpoint.label}.`]);
+  };
+  const sendPms = () => {
+    const endpoint = getPhoneEndpoint(pmsExtension);
+    const body = pmsMessage.trim();
+    if (!endpoint || endpoint.type !== "manual" || !body || !plantAssignment || !ownPhone) return;
+    void sendPlantPhoneMessage({
+      room_code: plantAssignment.roomCode,
+      conversation_id: phoneConversationId(plantAssignment.roomCode, ownPhone.extension, endpoint.extension),
+      source_extension: ownPhone.extension,
+      source_label: `PMS ${ownPhone.label}`,
+      target_extension: endpoint.extension,
+      target_label: endpoint.label,
+      body,
+      priority: pmsUrgent ? "urgent" : "normal",
+    }).then(() => { setPmsMessage(""); setPmsUrgent(false); });
   };
 
   return (
@@ -170,6 +345,21 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
             </form>
           </section>
           <aside className="overflow-auto bg-[#06130e] p-4 font-mono sm:bg-emerald-950/10">
+            {ownPhone && <div className="mb-5 border-b border-emerald-400/20 pb-4">
+              <p className="text-[11px] font-black tracking-[.2em] text-emerald-400">PLANT PHONE NETWORK</p>
+              <p className="mt-2 text-xs text-emerald-200">THIS STATION: {ownPhone.extension} · {ownPhone.label}</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-emerald-300/75">PMS delivers messages without pickup. Select a thread to address PMS, or use CALL for a private pickup line.</p>
+              <div className="mt-3 space-y-2">{phoneThreads.length ? phoneThreads.slice(-6).reverse().map((message) => <div key={message.conversation_id} className={`rounded border px-2 py-2 text-[11px] ${message.priority === "urgent" && !message.acknowledged_at ? "border-red-400/70 bg-red-950/30" : "border-emerald-500/25 bg-black/20"}`}><button type="button" onClick={() => openManualThread(message)} className="block w-full text-left text-emerald-100"><b>{message.priority === "urgent" && !message.acknowledged_at ? "URGENT · " : ""}{message.source_extension === ownPhone.extension ? message.target_label : message.source_label}</b><br/><span className="text-emerald-300/75">{message.body.slice(0, 80)}</span></button>{message.target_extension === ownPhone.extension && message.priority === "urgent" && !message.acknowledged_at && <Button size="sm" type="button" onClick={() => void acknowledgePlantPhoneMessage(message.id)} className="mt-2 h-7 bg-red-400 text-slate-950 hover:bg-red-300">ACKNOWLEDGE</Button>}</div>) : <p className="text-xs text-emerald-300/55">No manual plant calls.</p>}</div>
+              <form className="mt-3 space-y-2 border-t border-emerald-400/15 pt-3" onSubmit={(event) => { event.preventDefault(); sendPms(); }}>
+                <label className="block text-[10px] font-black tracking-[.16em] text-emerald-400">PMS ADDRESS</label>
+                <select value={pmsExtension} onChange={(event) => setPmsExtension(event.target.value)} className="w-full rounded border border-emerald-500/30 bg-black/30 px-2 py-1 text-xs text-emerald-100">
+                  {["0001", "0010", "0020", "0021", "0022", "0023", "0024", "0025", "0040"].map((extension) => { const endpoint = getPhoneEndpoint(extension); return endpoint ? <option key={extension} value={extension}>{extension} · {endpoint.label}</option> : null; })}
+                </select>
+                <input value={pmsMessage} onChange={(event) => setPmsMessage(event.target.value)} placeholder="Send PMS message…" className="w-full rounded border border-emerald-500/30 bg-black/30 px-2 py-1 text-xs text-emerald-100 outline-none placeholder:text-emerald-800" />
+                <label className="flex items-center gap-2 text-[11px] text-red-200"><input type="checkbox" checked={pmsUrgent} onChange={(event) => setPmsUrgent(event.target.checked)} /> URGENT PMS — requires recipient acknowledgement</label>
+                <Button type="submit" size="sm" className="w-full bg-emerald-500 text-slate-950 hover:bg-emerald-400">SEND PMS</Button>
+              </form>
+            </div>}
             <p className="text-[11px] font-black tracking-[.2em] text-emerald-400">LIVE STATUS</p>
             <pre className="rbwr-selectable mt-3 whitespace-pre-wrap text-xs leading-relaxed text-emerald-100">{liveStatus}</pre>
             <div className="mt-5 border-t border-emerald-400/20 pt-4 text-xs leading-relaxed text-emerald-300/80">
@@ -178,30 +368,76 @@ export function SimulatorCliMode({ open, onClose, onCommand, liveStatus }: Simul
             </div>
           </aside>
         </div>
+        {incomingCall && <div className="absolute inset-0 z-20 grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
+          <section className="w-full max-w-md rounded-xl border border-amber-300/60 bg-[#130f04] p-5 font-mono shadow-[0_0_42px_rgba(251,191,36,.22)]">
+            <p className="text-[11px] font-black tracking-[.24em] text-amber-300">INCOMING PRIVATE CALL</p>
+            <h2 className="mt-2 text-lg font-black text-amber-50">{incomingCall.source_label} IS CALLING</h2>
+            <p className="mt-3 text-sm leading-relaxed text-amber-100/80">Extension {incomingCall.source_extension} is requesting a private operations line. Only the calling and receiving stations can view the conversation.</p>
+            <div className="mt-5 flex gap-2">
+              <Button type="button" className="flex-1 bg-emerald-400 text-slate-950 hover:bg-emerald-300" onClick={() => {
+                void updatePlantPhoneCall(incomingCall.id, "connected").then(() => {
+                  setActivePrivateCall({ ...incomingCall, status: "connected", answered_at: new Date().toISOString() });
+                  setActiveCall(incomingCall.source_extension);
+                  setActivePhoneEndpoint(getPhoneEndpoint(incomingCall.source_extension) || null);
+                  setDepartment(incomingCall.source_extension);
+                  setIncomingCall(null);
+                  setHistory((previous) => [...previous, `PRIVATE CALL ACCEPTED // ${incomingCall.source_label}.`]);
+                });
+              }}>PICK UP</Button>
+              <Button type="button" variant="outline" className="flex-1 border-red-400/60 text-red-200 hover:bg-red-950/50" onClick={() => {
+                void updatePlantPhoneCall(incomingCall.id, "declined");
+                setIncomingCall(null);
+                setHistory((previous) => [...previous, `PRIVATE CALL DECLINED // ${incomingCall.source_label}.`]);
+              }}>DECLINE</Button>
+            </div>
+          </section>
+        </div>}
         {activeCall && <div className="absolute inset-0 z-10 grid place-items-center bg-black/75 p-4 backdrop-blur-sm">
           <section className="w-full max-w-md rounded-xl border border-emerald-400/50 bg-[#06130e] p-5 font-mono shadow-[0_0_42px_rgba(16,185,129,.25)]">
-            <p className="text-[11px] font-black tracking-[.24em] text-emerald-400">SECURE LINE CONNECTED</p>
-            <h2 className="mt-2 text-lg font-black text-emerald-100">{activeCall} // {activeCall === "0027" ? "EDG MAINTENANCE" : activeCall === "0028" ? "TCR MAINTENANCE" : activeCall === "0029" ? "UNIT 2 MAINTENANCE" : activeCall === "0100" ? "HUMAN RESOURCES" : activeCall === "5682" ? "GRID CONTROL" : "FSS MASTER PANEL"}</h2>
+            <p className="text-[11px] font-black tracking-[.24em] text-emerald-400">{activePrivateCall?.status === "ringing" ? "PRIVATE LINE RINGING" : "SECURE LINE CONNECTED"}</p>
+            <h2 className="mt-2 text-lg font-black text-emerald-100">{activePrivateCall ? `${activePrivateCall.source_label} // ${activePrivateCall.target_label}` : `${activeCall} // ${activeCall === "0027" ? "EDG MAINTENANCE" : activeCall === "0028" ? "TCR MAINTENANCE" : activeCall === "0029" ? "UNIT 2 MAINTENANCE" : activeCall === "0100" ? "HUMAN RESOURCES" : activeCall === "5682" ? "GRID CONTROL" : "FSS MASTER PANEL"}`}</h2>
             <div className="mt-5 max-h-52 space-y-3 overflow-auto rounded border border-emerald-400/20 bg-black/30 p-3 text-sm leading-relaxed text-emerald-200">
               {callTranscript.map((line, index) => <p key={`${line}-${index}`} className={line.startsWith("YOU:") ? "text-emerald-400" : "text-emerald-100"}>{line}</p>)}
             </div>
-            <form className="mt-4 flex gap-2 border-t border-emerald-400/20 pt-4" onSubmit={(event) => {
+            {activePrivateCall?.status === "ringing" ? <Button type="button" className="mt-4 w-full bg-red-500 text-white hover:bg-red-400" onClick={() => {
+              void updatePlantPhoneCall(activePrivateCall.id, "ended");
+              setHistory((previous) => [...previous, `CALL ${activePrivateCall.target_extension} CANCELLED.`]);
+              setActiveCall(null); setDepartment(null); setActivePhoneEndpoint(null); setActivePrivateCall(null); setCallRequest("");
+            }}>CANCEL CALL</Button> : <form className="mt-4 flex gap-2 border-t border-emerald-400/20 pt-4" onSubmit={(event) => {
               event.preventDefault();
-              const request = callRequest.trim().toLowerCase().replace(/\s+/g, " ");
+              const spoken = callRequest.trim();
+              const request = spoken.toLowerCase().replace(/\s+/g, " ");
               if (!request) return;
               if (["end", "hang up", "goodbye", "bye"].includes(request)) {
                 setHistory((previous) => [...previous, `CALL ${activeCall} ENDED.`]);
-                setActiveCall(null); setDepartment(null); setCallRequest("");
+                if (activePrivateCall) void updatePlantPhoneCall(activePrivateCall.id, "ended");
+                setActiveCall(null); setDepartment(null); setActivePhoneEndpoint(null); setActivePrivateCall(null); setCallRequest("");
                 return;
               }
-              const response = runDepartmentCommand(activeCall, request);
-              setCallTranscript((previous) => [...previous, `YOU: ${callRequest.trim()}`, response]);
-              setHistory((previous) => [...previous, `[${activeCall}] ${request}`, response]);
+              if (activePrivateCall && plantAssignment && ownPhone) {
+                setCallTranscript((previous) => [...previous, `YOU: ${spoken}`]);
+                void sendPlantPhoneCallMessage({
+                  call_id: activePrivateCall.id,
+                  source_extension: ownPhone.extension,
+                  source_label: ownPhone.label,
+                  body: spoken,
+                }).then(() => {
+                  setHistory((previous) => [...previous, `[${activeCall}] ${spoken}`, "LIVE LINE MESSAGE SENT — line remains open."]);
+                }).catch((cause) => {
+                  setHistory((previous) => [...previous, `[${activeCall}] ${spoken}`, `PHONE NETWORK ERROR — ${cause instanceof Error ? cause.message : "message could not be sent"}`]);
+                });
+                setCallRequest("");
+                return;
+              }
+              void runDepartmentCommand(activeCall, request).then((response) => {
+                setCallTranscript((previous) => [...previous, `YOU: ${spoken}`, response]);
+                setHistory((previous) => [...previous, `[${activeCall}] ${request}`, response]);
+              });
               setCallRequest("");
             }}>
               <input autoFocus value={callRequest} onChange={(event) => setCallRequest(event.target.value)} placeholder="State your request… (type 'end' to hang up)" className="min-w-0 flex-1 bg-transparent font-mono text-sm text-emerald-100 outline-none placeholder:text-emerald-800" />
-              <Button type="submit" size="sm" className="bg-emerald-500 font-mono text-slate-950 hover:bg-emerald-400">SPEAK</Button>
-            </form>
+              <Button type="submit" size="sm" className="bg-emerald-500 font-mono text-slate-950 hover:bg-emerald-400">SEND</Button>
+            </form>}
           </section>
         </div>}
       </div>

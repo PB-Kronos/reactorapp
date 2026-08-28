@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { U2_OPERATING_FLOW_NORMALIZATION } from "@/lib/thermalOutput";
 
 interface UseReactorPhysicsProps {
   simulationPaused?: boolean;
@@ -13,6 +12,7 @@ interface UseReactorPhysicsProps {
   turbineSteamFlow: number;
   bypassSteamFlow: number;
   aprm: number;
+  thermalSteamKgS: number;
   pump1Online: boolean;
   pump2Online: boolean;
   isLocked: boolean;
@@ -69,12 +69,18 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
       }
       state.onTemperatureChange(nextTemperature);
       state.onPressureChange(previous => {
-        // Core power creates steam; actual measured steam flow, rather than a
-        // valve-position shortcut, removes it from the vessel.
-        // At 20% APRM this supports a ~200 kg/s no-load turbine run-up while
-        // holding the main-steam header near 7,100 kPa. Higher-power
-        // operation is governed by actual steam removal through the valves.
-        const steamProduction = reactivity * 52500 * U2_OPERATING_FLOW_NORMALIZATION * (state.steamProductionMultiplier ?? 1);
+        // The thermal/APRM curve supplies the steam source.  The prior
+        // APRM-only source was far too large at 20% APRM, forcing a fully-open
+        // main valve simply to hold nominal pressure and letting pressure fall
+        // when recirculation changed APRM.  Steam generation and removal now
+        // use the same kg/s basis, so a nominal 20% unit balances near a
+        // mid-travel main valve with bypass shut.
+        // The target equation is expressed as an absolute vessel pressure,
+        // so a hot steam header also carries its nominal pressure inventory.
+        // It ramps in only once the core is making meaningful steam; a cold
+        // shutdown still rests at atmospheric pressure.
+        const headerInventory = clamp(state.thermalSteamKgS / 200, 0, 1) * 7100;
+        const steamProduction = (headerInventory + state.thermalSteamKgS * 17.5) * (state.steamProductionMultiplier ?? 1);
         const steamRemoval = ((state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + openReliefValves * 8000) * (state.steamRemovalMultiplier ?? 1);
         const target = clamp(101 + steamProduction - steamRemoval, 101, 12000);
         return clamp(previous + (target - previous) * 0.045, 101, 12000);

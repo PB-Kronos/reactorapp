@@ -52,17 +52,24 @@ import { getAprmForSteamKgS, getU2ThermalOutput } from "@/lib/thermalOutput";
 import { addLeaderboardPoints, ensureLeaderboardPlayer, getLeaderboard } from "@/lib/leaderboard";
 import {
   type PlantSnapshot,
+  claimPlantRemoteCommands,
+  completePlantRemoteCommand,
+  broadcastUnitSnapshot,
   claimPlantUnitPointTick,
   getPlantSnapshot,
+  getPlantTransport,
   heartbeatPlantStation,
   joinPlantRoom,
   normalizeAssignment,
+  openUnitLiveChannel,
   publishUnitTelemetry,
   readPlantAssignment,
   savePlantAssignment,
+  setPlantTransport,
   subscribePlantRoom,
   updatePlantDispatch,
 } from "@/lib/plantOperations";
+import { getUnitStation } from "@/lib/unitStations";
 
 type Panel =
   | "status"
@@ -113,6 +120,7 @@ export default function ReactorSimulator() {
   const requestedPanel = new URLSearchParams(location.search).get("panel") as Panel | null;
   const [plantAssignment] = useState(() => {
     const query = new URLSearchParams(location.search);
+    if (query.get("local") === "1") setPlantTransport("local");
     const fromInvite = normalizeAssignment({
       roomCode: query.get("plant") || "",
       unitNumber: Number(query.get("unit")),
@@ -122,6 +130,8 @@ export default function ReactorSimulator() {
     if (assignment) savePlantAssignment(assignment);
     return assignment;
   });
+  const unitStation = getUnitStation(plantAssignment?.stationId);
+  const isPhysicsAuthority = !plantAssignment || unitStation.role === "mcr";
   const unitStateStorageKey = plantAssignment
     ? `rbwr-u2-sim-v4:${plantAssignment.roomCode}:u${plantAssignment.unitNumber}`
     : STORAGE;
@@ -130,22 +140,38 @@ export default function ReactorSimulator() {
     : "rbwr-live-plant-state";
   const [sharedPlant, setSharedPlant] = useState<PlantSnapshot>({ room: null, units: [] });
   const [plantSyncError, setPlantSyncError] = useState("");
+  const [plantTransportEpoch, setPlantTransportEpoch] = useState(0);
   const [stationControlsLocked, setStationControlsLocked] = useState(false);
   const [plantClock, setPlantClock] = useState(Date.now());
   const demandManagerOnline = Boolean(
     plantAssignment && sharedPlant.room?.demand_manager_last_seen &&
+    sharedPlant.room.demand_manager_enabled !== false &&
     plantClock - Date.parse(sharedPlant.room.demand_manager_last_seen) < 15000,
   );
   const [active, setActive] = useState<Panel>(() =>
     requestedPanel && panels.includes(requestedPanel) ? requestedPanel : "status",
   );
+  useEffect(() => {
+    const refresh = () => setPlantTransportEpoch(value => value + 1);
+    const onStorage = (event: StorageEvent) => { if (event.key === "unit2-plant-transport") refresh(); };
+    window.addEventListener("unit2-plant-transport", refresh);
+    window.addEventListener("storage", onStorage);
+    return () => { window.removeEventListener("unit2-plant-transport", refresh); window.removeEventListener("storage", onStorage); };
+  }, []);
+  const stationCanOperate = unitStation.role === "mcr" || unitStation.panels.includes(active);
+  useEffect(() => {
+    if (unitStation.role !== "mcr" && !unitStation.panels.includes(active)) setActive("status");
+  }, [active, unitStation.role]);
   const [consoleOpen, setConsoleOpen] = useState(false);
   // Panel stations never advance their own physics clock. The primary unit
   // remains the simulation authority, avoiding parallel-clock drift.
-  const [simulationPaused, setSimulationPaused] = useState(secondaryWindow);
+  const [simulationPaused, setSimulationPaused] = useState(secondaryWindow || !isPhysicsAuthority);
   // Keep every simulation clock dormant until durable plant state has hydrated.
   // This prevents a refresh from running cold-default physics for a tick.
   const simulationPausedRef = useRef(true);
+  useEffect(() => {
+    if (!isPhysicsAuthority) setSimulationPaused(true);
+  }, [isPhysicsAuthority]);
   const [sessionRestored, setSessionRestored] = useState(false);
   const [tutorialEnabled, setTutorialEnabled] = useState(
     () => localStorage.getItem("unit2-tutorial-enabled") === "true",
@@ -181,13 +207,16 @@ export default function ReactorSimulator() {
     if (typeof saved.isRunning === "boolean") setIsRunning(saved.isRunning);
     if (typeof saved.bypassValve === "number") setBypassValve(saved.bypassValve);
     if (typeof saved.valveValue === "number") setValveValue(saved.valveValue);
+    if (typeof saved.offsitePowerAvailable === "boolean") setOffsitePowerAvailable(saved.offsitePowerAvailable);
+    if (typeof saved.daTemperature === "number") setDaTemperature(saved.daTemperature);
+    if (typeof saved.daPressure === "number") setDaPressure(saved.daPressure);
     if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning((current: any) => ({ ...current, ...saved.physicsTuning }));
     const controls = saved.controls || {};
     const apply = (key: string, setter: (value: any) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key]); };
     apply("mainSteamInletOpen", setMainSteamInletOpen); apply("reliefOpen", setReliefOpen); apply("reliefValveB", setReliefValveB); apply("exciterOn", setExciterOn); apply("isLocked", setIsLocked); apply("turbinePressureAuto", setTurbinePressureAuto); apply("turbineRpmAuto", setTurbineRpmAuto);
     apply("pump1Online", setPump1Online); apply("pump2Online", setPump2Online); apply("daIntakeOpen", setDaIntakeOpen); apply("daOutputOpen", setDaOutputOpen); apply("daIntakeValve", setDaIntakeValve); apply("daOuttakeValve", setDaOuttakeValve); apply("daIntakeDirection", setDaIntakeDirection); apply("daOuttakeDirection", setDaOuttakeDirection); apply("daAuto", setDaAuto);
     apply("recircPumpA", setRecircPumpA); apply("recircPumpB", setRecircPumpB); apply("recircSpeedA", setRecircSpeedA); apply("recircSpeedB", setRecircSpeedB); apply("selectedRodId", setSelectedRodId); apply("rodDirection", setRodDirection); apply("selectionScope", setSelectionScope); apply("autoEnabled", setAutoEnabled); apply("autoTarget", setAutoTarget); apply("autoSpeed", setAutoSpeed); apply("autoMode", setAutoMode); apply("malfunctions", setMalfunctions);
-    apply("condensateFlow", setCondensateFlow); apply("condensatePumpBFlow", setCondensatePumpBFlow); apply("feedwaterFlow", setFeedwaterFlow); apply("feedwaterPumpBFlow", setFeedwaterPumpBFlow); apply("condenserPumpOn", setCondenserPumpOn); apply("condenserPumpB", setCondenserPumpB); apply("condenserValve", setCondenserValve); apply("condenserValveDirection", setCondenserValveDirection); apply("condenserAuto", setCondenserAuto); apply("carAOn", setCarAOn); apply("carBOn", setCarBOn); apply("sjaeOn", setSjaeOn); apply("mccPumpOn", setMccPumpOn); apply("mccAutoOn", setMccAutoOn); apply("condenserCirculationPumpOn", setCondenserCirculationPumpOn);
+    apply("condensateFlow", setCondensateFlow); apply("condensatePumpBFlow", setCondensatePumpBFlow); apply("feedwaterFlow", setFeedwaterFlow); apply("feedwaterPumpBFlow", setFeedwaterPumpBFlow); apply("condenserPumpOn", setCondenserPumpOn); apply("condenserPumpB", setCondenserPumpB); apply("condenserValve", setCondenserValve); apply("condenserValveDirection", setCondenserValveDirection); apply("condenserAuto", setCondenserAuto); apply("carAOn", setCarAOn); apply("carBOn", setCarBOn); apply("sjaeOn", setSjaeOn); apply("mccPumpOn", setMccPumpOn); apply("mccAutoOn", setMccAutoOn); apply("condenserCirculationPumpOn", setCondenserCirculationPumpOn); apply("condenserCirculationPumpB", setCondenserCirculationPumpB);
     apply("startupBusA", setStartupBusA); apply("busATransformer", setBusATransformer); apply("turbineBusB", setTurbineBusB); apply("safetyBusS", setSafetyBusS); apply("edgBreaker", setEdgBreaker); apply("acDcInterlock", setAcDcInterlock); apply("safetyToDcBreaker", setSafetyToDcBreaker); apply("busEToDcBreaker", setBusEToDcBreaker); apply("mainBatteryCharge", setMainBatteryCharge); apply("rolldownProtection", setRolldownProtection); apply("cstLevel", setCstLevel); apply("cstMakeup", setCstMakeup); apply("cstDrain", setCstDrain); apply("hotwellMakeup", setHotwellMakeup); apply("hotwellDrain", setHotwellDrain);
     apply("rcicValve", setRcicValve); apply("rcicFlow", setRcicFlow); apply("eccsPumpA", setEccsPumpA); apply("eccsPumpB", setEccsPumpB); apply("eccsPumpAMode", setEccsPumpAMode); apply("eccsPumpBMode", setEccsPumpBMode); apply("srvOpen", setSrvOpen); apply("adsActive", setAdsActive);
     apply("lubePumpSource", setLubePumpSource); apply("hydraulicPumpSource", setHydraulicPumpSource); apply("coldOilValve", setColdOilValve); apply("warmOilValve", setWarmOilValve); apply("turningGear", setTurningGear); apply("preheatValve", setPreheatValve); apply("tutorialEnabled", setTutorialEnabled); apply("tutorialLevel", setTutorialLevel);
@@ -375,6 +404,7 @@ export default function ReactorSimulator() {
   const tripAlarm = useRef<HTMLAudioElement | null>(null);
   const transferStateLoaded = useRef(false);
   const panelSyncChannel = useRef<BroadcastChannel | null>(null);
+  const unitRealtimeChannel = useRef<ReturnType<typeof openUnitLiveChannel> | null>(null);
   const suppressPanelBroadcastUntil = useRef(0);
   const pressureSample = useRef({ value: 101, time: performance.now() });
   const condenserTargetRef = useRef(1);
@@ -410,6 +440,7 @@ export default function ReactorSimulator() {
   const rpmAutoSteamReadyRef = useRef(false);
   const rpmAutoInPhaseSinceRef = useRef<number | null>(null);
   const islandGovernorHoldRef = useRef(false);
+  const restoredSteamAdmissionCalibrated = useRef(false);
   const turbineAuxRef = useRef({
     coldOilValve: 0,
     warmOilValve: 0,
@@ -682,6 +713,25 @@ export default function ReactorSimulator() {
     ? thermalOutput.steamKgS * steamPathCapacity * (bypassValve / 100) * steamPressureFactor
     : 0;
   const steamFlow = turbineSteamFlow + bypassSteamFlow;
+  // Persisted sessions created under the earlier pressure equation can carry
+  // a fully-open main valve at nominal pressure.  With either governor armed,
+  // bring that stale lineup straight into the usable operating band instead
+  // of spending a restart dropping pressure while the governor backs it off.
+  useEffect(() => {
+    if (
+      restoredSteamAdmissionCalibrated.current ||
+      !sessionRestored ||
+      !isRunning ||
+      !isLocked ||
+      !mainSteamInletOpen ||
+      !(turbinePressureAuto || turbineRpmAuto)
+    ) return;
+    restoredSteamAdmissionCalibrated.current = true;
+    if (pressure >= 6000 && pressure <= 8000 && valveValue > 90 && bypassValve < 3) {
+      setValveValue(58);
+      setEvent("RESTORED STEAM ADMISSION CALIBRATED — main valve returned to nominal control range.");
+    }
+  }, [sessionRestored, isRunning, isLocked, mainSteamInletOpen, turbinePressureAuto, turbineRpmAuto, pressure, valveValue, bypassValve]);
   // The condenser is at its best around 52 mbar.  Keep the specified
   // 40–70 mbar operating band close to rated performance, then apply a
   // progressively stronger exhaust-loss penalty as back-pressure rises.
@@ -1020,9 +1070,9 @@ export default function ReactorSimulator() {
     {
       id: "recirc-a-cavitation",
       label: "RECIRC A CAVITATION",
-      // Low-power operation is an intentional recirculation startup regime;
-      // suppress the cavitation model until the core has reached 19% APRM.
-      active: recircPumpA && recircSpeedA > 30 && rodAprm >= 19,
+      // Once rods have established at least 19% APRM the core flow is stable
+      // enough that this simplified low-power cavitation condition clears.
+      active: recircPumpA && recircSpeedA > 30 && rodAprm < 19,
       priority: "amber",
       tone: "low",
       pan: "left",
@@ -1031,7 +1081,7 @@ export default function ReactorSimulator() {
     {
       id: "recirc-b-cavitation",
       label: "RECIRC B CAVITATION",
-      active: recircPumpB && recircSpeedB > 30 && rodAprm >= 19,
+      active: recircPumpB && recircSpeedB > 30 && rodAprm < 19,
       priority: "amber",
       tone: "low",
       pan: "right",
@@ -1395,7 +1445,7 @@ export default function ReactorSimulator() {
     channel.onmessage = (event) => {
       const message = event.data;
       if (!message || message.key !== liveStateStorageKey) return;
-      if (message.type === "request-state" && !secondaryWindow) {
+      if (message.type === "request-state" && !secondaryWindow && isPhysicsAuthority) {
         try {
           channel.postMessage({ type: "state", key: liveStateStorageKey, snapshot: JSON.parse(sessionStorage.getItem(liveStateStorageKey) || "{}") });
         } catch { /* no complete snapshot yet */ }
@@ -1405,10 +1455,45 @@ export default function ReactorSimulator() {
         suppressPanelBroadcastUntil.current = Date.now() + 160;
         applyPanelSnapshot(message.snapshot);
       }
+      if (message.type === "control-state" && message.snapshot?.controls) {
+        // Station windows exchange operator inputs, not an independent copy
+        // of reactor physics. MCR remains the single source of pressure/RPM.
+        suppressPanelBroadcastUntil.current = Date.now() + 160;
+        applyPanelSnapshot({ controls: message.snapshot.controls });
+      }
     };
     if (secondaryWindow) channel.postMessage({ type: "request-state", key: liveStateStorageKey });
     return () => { channel.close(); panelSyncChannel.current = null; };
-  }, [liveStateStorageKey, secondaryWindow]);
+  }, [liveStateStorageKey, secondaryWindow, isPhysicsAuthority]);
+  useEffect(() => {
+    if (!plantAssignment || secondaryWindow) return;
+    const channel = openUnitLiveChannel(plantAssignment, (snapshot, sourceStationId) => {
+      if (!snapshot || sourceStationId === plantAssignment.stationId) return;
+      suppressPanelBroadcastUntil.current = Date.now() + 200;
+      applyPanelSnapshot(snapshot as Record<string, unknown>);
+    });
+    unitRealtimeChannel.current = channel;
+    return () => { channel?.unsubscribe(); unitRealtimeChannel.current = null; };
+  }, [plantAssignment, secondaryWindow, plantTransportEpoch]);
+  useEffect(() => {
+    if (!plantAssignment || secondaryWindow || !isPhysicsAuthority) return;
+    const publishAuthoritySnapshot = () => {
+      try {
+        broadcastUnitSnapshot(
+          unitRealtimeChannel.current,
+          JSON.parse(sessionStorage.getItem(liveStateStorageKey) || "{}"),
+          plantAssignment.stationId,
+        );
+      } catch { /* a first snapshot will be published after state hydration */ }
+    };
+    publishAuthoritySnapshot();
+    // A full control-room snapshot is intentionally kept to a modest rate.
+    // Realtime Broadcast is for live displays, not the high-frequency physics
+    // clock; publishing on every physics update quickly exhausts free-tier
+    // Realtime quotas when several stations are open.
+    const timer = window.setInterval(publishAuthoritySnapshot, 2_000);
+    return () => window.clearInterval(timer);
+  }, [plantAssignment, secondaryWindow, isPhysicsAuthority, liveStateStorageKey]);
   useEffect(() => {
     if (!sessionRestored) return;
     sessionStorage.setItem(
@@ -1439,8 +1524,11 @@ export default function ReactorSimulator() {
         valveValue,
         aprm,
         turbineOutputMW,
+        offsitePowerAvailable,
+        daTemperature,
+        daPressure,
         physicsTuning,
-        controls: { mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel },
+        controls: { mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, condenserCirculationPumpB, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel },
         updatedAt: Date.now(),
       }),
     );
@@ -1453,10 +1541,12 @@ export default function ReactorSimulator() {
     );
     if (Date.now() >= suppressPanelBroadcastUntil.current) {
       try {
+        const snapshot = JSON.parse(sessionStorage.getItem(liveStateStorageKey) || "{}");
+        const primaryAuthority = !secondaryWindow && isPhysicsAuthority;
         panelSyncChannel.current?.postMessage({
-          type: "state",
+          type: primaryAuthority ? "state" : "control-state",
           key: liveStateStorageKey,
-          snapshot: JSON.parse(sessionStorage.getItem(liveStateStorageKey) || "{}"),
+          snapshot: primaryAuthority ? snapshot : { controls: snapshot.controls || {} },
         });
       } catch { /* storage is the fallback synchronisation path */ }
     }
@@ -1485,7 +1575,7 @@ export default function ReactorSimulator() {
     bypassValve,
     valveValue,
     sessionRestored, aprm, physicsTuning, liveStateStorageKey,
-    turbineOutputMW, mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel,
+    turbineOutputMW, offsitePowerAvailable, daTemperature, daPressure, mainSteamInletOpen, reliefOpen, reliefValveB, exciterOn, isLocked, turbinePressureAuto, turbineRpmAuto, pump1Online, pump2Online, daIntakeOpen, daOutputOpen, daIntakeValve, daOuttakeValve, daIntakeDirection, daOuttakeDirection, daAuto, recircPumpA, recircPumpB, recircSpeedA, recircSpeedB, malfunctions, selectedRodId, rodDirection, selectionScope, autoEnabled, autoTarget, autoSpeed, autoMode, condensateFlow, condensatePumpBFlow, feedwaterFlow, feedwaterPumpBFlow, condenserPumpOn, condenserPumpB, condenserValve, condenserValveDirection, condenserAuto, carAOn, carBOn, sjaeOn, mccPumpOn, mccAutoOn, condenserCirculationPumpOn, condenserCirculationPumpB, startupBusA, busATransformer, turbineBusB, safetyBusS, edgBreaker, acDcInterlock, safetyToDcBreaker, busEToDcBreaker, mainBatteryCharge, rolldownProtection, cstLevel, cstMakeup, cstDrain, hotwellMakeup, hotwellDrain, rcicValve, rcicFlow, eccsPumpA, eccsPumpB, eccsPumpAMode, eccsPumpBMode, srvOpen, adsActive, lubePumpSource, hydraulicPumpSource, coldOilValve, warmOilValve, turningGear, preheatValve, tutorialEnabled, tutorialLevel, secondaryWindow, isPhysicsAuthority,
   ]);
   useEffect(() => {
     localStorage.setItem("unit2-tutorial-enabled", String(tutorialEnabled));
@@ -2201,10 +2291,11 @@ export default function ReactorSimulator() {
       setMccPumpOn(true);
       setCondenserPumpOn(true);
       setPump1Online(true);
-      if (startupBusAvailable) {
-        setHotwellMakeup(hotwellLevel < -0.15);
-        setHotwellDrain(hotwellLevel > 0.15);
-      }
+      // Hotwell makeup/drain are coarse inventory tools. Keep both idle in a
+      // ±0.25 m deadband so MCC Auto does not chatter or consume Bus A power
+      // while the level is already acceptably centred.
+      setHotwellMakeup(startupBusAvailable && hotwellLevel < -0.25);
+      setHotwellDrain(startupBusAvailable && hotwellLevel > 0.25);
       dispatch(condensateTarget, 2000, setCondensateFlow, setCondensatePumpBFlow);
       dispatch(feedTarget, 2000, setFeedwaterFlow, setFeedwaterPumpBFlow);
       if (busBAvailable && condensateTarget > 2000) setCondenserPumpB(true);
@@ -2440,13 +2531,13 @@ export default function ReactorSimulator() {
           void heartbeatPlantStation(plantAssignment).then((owned) => {
             if (!owned && mounted) setStationControlsLocked(true);
           }).catch(() => {});
-        }, 5000);
+        }, 10_000);
       }
     }).catch((error) => {
       if (mounted) setPlantSyncError(error instanceof Error ? error.message : "Unable to join the plant room.");
     });
     return () => { mounted = false; channel?.unsubscribe(); if (heartbeat) window.clearInterval(heartbeat); };
-  }, [plantAssignment, operatorName, secondaryWindow]);
+  }, [plantAssignment, operatorName, secondaryWindow, plantTransportEpoch]);
 
   useEffect(() => {
     if (stationControlsLocked) setSimulationPaused(true);
@@ -2487,7 +2578,7 @@ export default function ReactorSimulator() {
       }).catch((error) => setPlantSyncError(error instanceof Error ? error.message : "Unable to publish unit telemetry."));
     };
     publish();
-    const timer = window.setInterval(publish, 1500);
+    const timer = window.setInterval(publish, 5_000);
     return () => window.clearInterval(timer);
   }, [plantAssignment, sessionRestored, stationControlsLocked]);
   const automationPenaltySystems = [
@@ -2513,6 +2604,10 @@ export default function ReactorSimulator() {
     : 0;
   useEffect(() => {
     if (!operatorName) return;
+    if (getPlantTransport() === "local") {
+      setRemoteLeaderboardReady(false);
+      return;
+    }
     let cancelled = false;
     const connect = async () => {
       try {
@@ -2748,6 +2843,7 @@ export default function ReactorSimulator() {
     turbineSteamFlow,
     bypassSteamFlow,
     aprm,
+    thermalSteamKgS: thermalOutput.steamKgS,
     pump1Online,
     pump2Online,
     isLocked,
@@ -3245,8 +3341,8 @@ export default function ReactorSimulator() {
       localStorage.setItem("unit2-operator-name", name);
       setOperatorName(name);
       setLeaderboard((previous) => previous[name] ? previous : { ...previous, [name]: { points: 0, lastSeen: Date.now() } });
-      void ensureLeaderboardPlayer(name).catch(() => {});
-      return `LOGIN ACCEPTED — ${name}. Points will be recorded while you match grid demand.`;
+      if (getPlantTransport() !== "local") void ensureLeaderboardPlayer(name).catch(() => {});
+      return `LOGIN ACCEPTED — ${name}. Points will be recorded while you match grid demand.${getPlantTransport() === "local" ? " LOCAL-ONLY SCORE PROFILE ACTIVE." : ""}`;
     }
     if (target === "logout") {
       pendingScoreRef.current = 0;
@@ -3605,6 +3701,48 @@ export default function ReactorSimulator() {
     if (legacyCommand) pendingCommands.push(legacyCommand);
     pendingCommands.forEach(runConsoleCommand);
   }, []);
+  // A supervisor can operate a live unit from another browser or computer.
+  // The unit remains the sole physics authority: this only feeds the same
+  // command dispatcher used by its own CLI, never edits snapshots directly.
+  useEffect(() => {
+    if (!plantAssignment || secondaryWindow || stationControlsLocked || !sessionRestored) return;
+    let active = true;
+    const executeQueuedCommand = (rawCommand: string) => {
+      const command = rawCommand.trim();
+      const friendlySet = command.match(/^set\s+([^\s]+)\s+(.+)$/i);
+      const forwarded = friendlySet ? `${friendlySet[1]} set ${friendlySet[2]}` : command;
+      if (/^call\s+(0027|0028|0029|0100|5682|\*#99)$/i.test(command)) {
+        const result = `SUPERVISOR LINE CONNECTED — ${command.toUpperCase()}. Department call is ready on this unit.`;
+        setEvent(result);
+        return result;
+      }
+      if (/^editor$/i.test(command)) {
+        const result = "SUPERVISOR TERMINAL — simulation editor command channel enabled.";
+        setEvent(result);
+        return result;
+      }
+      const result = runConsoleCommand(forwarded);
+      setEvent(`SUPERVISOR COMMAND EXECUTED — ${forwarded.toUpperCase()}${result ? ` · ${result}` : ""}`);
+      return result || "Command accepted.";
+    };
+    const claim = () => {
+      void claimPlantRemoteCommands(plantAssignment).then((commands) => {
+        if (!active) return;
+        commands.forEach(({ id, command }) => {
+          const result = executeQueuedCommand(command);
+          void completePlantRemoteCommand(id, result).catch(() => {});
+        });
+      }).catch(() => {
+        // A temporary offline database connection must not interrupt physics.
+      });
+    };
+    claim();
+    const interval = window.setInterval(claim, 2_500);
+    return () => { active = false; window.clearInterval(interval); };
+    // runConsoleCommand captures current simulation state; recreating this
+    // polling loop on every physics render would starve its interval.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plantAssignment, secondaryWindow, stationControlsLocked, sessionRestored]);
   const consoleContent = (
     <SimulatorConsolePanel
       temperature={temperature}
@@ -3701,7 +3839,7 @@ export default function ReactorSimulator() {
               {secondaryWindow ? `${names[active]} — Panel Window` : "Unit 2 Reactor Control Room"}
             </h1>
             {plantAssignment && <p className="mt-1 text-[11px] font-bold tracking-wide text-violet-200">
-              PLANT {plantAssignment.roomCode} · UNIT {plantAssignment.unitNumber} · {unitDemandMW.toFixed(0)} MW UNIT TARGET · {plantOutputMW.toFixed(1)} / {plantDemandMW.toFixed(0)} MW PLANT · {demandManagerOnline ? `DEMAND MANAGER · T−${plantDemandSeconds}s` : "LOCAL DEMAND"}{interlockBusAFeed ? " · BUS A TIE FEED" : ""}
+              {getPlantTransport() === "local" ? "OFFLINE LOCAL PLANT · " : ""}{unitStation.label.toUpperCase()} · EXT {unitStation.extension} · PLANT {plantAssignment.roomCode} · UNIT {plantAssignment.unitNumber} · {unitDemandMW.toFixed(0)} MW UNIT TARGET · {plantOutputMW.toFixed(1)} / {plantDemandMW.toFixed(0)} MW PLANT · {demandManagerOnline ? `DEMAND MANAGER · T−${plantDemandSeconds}s` : "LOCAL DEMAND"}{interlockBusAFeed ? " · BUS A TIE FEED" : ""}
             </p>}
             {plantSyncError && <p className="mt-1 text-[11px] text-amber-300">PLANT LINK: {plantSyncError}</p>}
           </div>
@@ -3806,7 +3944,7 @@ export default function ReactorSimulator() {
           aria-label="Simulator panels"
           className="mb-5 -mx-3 flex snap-x gap-2 overflow-x-auto border-y border-slate-700 bg-slate-900/80 px-3 py-2 sm:mx-0 sm:rounded-xl sm:border"
         >
-          {panels.map((panel) => (
+          {panels.filter((panel) => unitStation.role === "mcr" || unitStation.panels.includes(panel)).map((panel) => (
             <Button
               key={panel}
               size="sm"
@@ -3819,14 +3957,16 @@ export default function ReactorSimulator() {
             </Button>
           ))}
         </nav>
-        <div className={`rounded-xl border border-slate-700 bg-slate-900/75 p-3 sm:rounded-2xl sm:p-4 md:p-6 ${!busEAvailable && active !== "electrical" ? "pointer-events-none opacity-45" : ""}`}>
+        <div className={`rounded-xl border border-slate-700 bg-slate-900/75 p-3 sm:rounded-2xl sm:p-4 md:p-6 ${!busEAvailable && active !== "electrical" ? "pointer-events-none opacity-45" : ""} ${stationCanOperate ? "" : "pointer-events-none opacity-45"}`}>
           {content}
         </div>
       </main>
       <SimulatorCliMode
         open={consoleOpen}
         onClose={() => setConsoleOpen(false)}
+        onIncomingCall={() => setConsoleOpen(true)}
         onCommand={runConsoleCommand}
+        plantAssignment={plantAssignment}
         liveStatus={`CLOCK ${simulationPaused ? "PAUSED" : "RUNNING"}\n\nREACTOR\nAPRM ${aprm.toFixed(2)}% · ${temperature.toFixed(1)} °C\nRPV ${pressure.toFixed(0)} kPa · LEVEL ${reactorLevel.toFixed(2)} m\n\nMCC\nHOTWELL ${hotwellLevel.toFixed(2)} m · DA ${deaeratorLevel.toFixed(2)} m\nCST ${cstLevel.toFixed(2)} m · COND ${Math.round(condenserVacuum * 1000)} mbar\n\nTURBINE\n${actualRPM.toFixed(0)} RPM · ${turbineOutputMW.toFixed(1)} MW\nMAIN ${valveValue.toFixed(1)}% · BYPASS ${bypassValve.toFixed(1)}%\n\nELECTRICAL\nBUS A ${startupBusAvailable ? "ON" : "OFF"} · BUS B ${busBAvailable ? "ON" : "OFF"}\nBUS S ${safetyBusAvailable ? "ON" : "OFF"} · DC ${dcBusAvailable ? "ON" : "OFF"}`}
       />
       {tutorialEnabled && <TutorialCoach progress={{ level: tutorialLevel, objectiveMet: tutorialObjectiveMet, aprmHeld: tutorialAprmHold }} onAdvance={advanceTutorial} onExit={() => { setTutorialEnabled(false); setEvent("ADVANCED MODE ENABLED — tutorial exited."); }} />}
@@ -3982,6 +4122,8 @@ export default function ReactorSimulator() {
         recircPumpB={recircPumpB}
         recircSpeedA={recircSpeedA}
         recircSpeedB={recircSpeedB}
+        recircAFlow={recircAFlow}
+        recircBFlow={recircBFlow}
         onRecircPumpAChange={(value) => {
           setRecircPumpA(value);
           if (value) setRecircSpeedA((speed) => speed || 25);

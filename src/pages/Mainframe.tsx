@@ -20,7 +20,7 @@ const COMMAND_HELP: Record<string, string> = {
   get: "GET <value>\nReads one live/saved measurement without changing the simulator.\n\nAvailable values:\nREACTOR.TEMP · REACTOR.PRESSURE · REACTOR.LEVEL\nHOTWELL.LEVEL · DA.LEVEL · DA.TEMP · DA.PRESSURE · CST.LEVEL\nCONDENSER.PRESSURE · CONDENSER.VALVE · CONDENSATE.A|B · FEEDWATER.A|B\nRECIRC.A|B · TURBINE.RPM · TURBINE.MAINVALVE · TURBINE.BYPASS · AUTO.APRM\n\nExample: GET REACTOR.PRESSURE",
   login: "LOGIN <account>\nSigns into a simulated operator role. Accounts: MCC, REACTOR, TURBINE, ECCS, ELECTRICAL, SUPERVISOR.\nExample: LOGIN SUPERVISOR",
   status: "STATUS\nShows the concise status display for the currently logged-in operator role.",
-  multiunit: "MULTIUNIT\nPrints the V2.3 shared-plant operating manual.",
+  multiunit: "MULTIUNIT\nPrints the V2.3.2 shared-plant and local-operation manual.",
   reactor: "REACTOR\nOpens the Control Room. A Mainframe login is required before access is granted.",
   scram: "SCRAM\nInserts the control rods when applied in the Control Room. Restricted to REACTOR or SUPERVISOR.",
   mode: "MODE SET SD|SRM|IPR|RUN\nSelects the reactor rod-control operating mode. Example: MODE SET RUN",

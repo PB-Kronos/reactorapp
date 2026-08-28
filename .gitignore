@@ -29,3 +29,4 @@ dist-ssr
 tmp/
 desktop.ini
 .megaignore
+ngrok.yml
