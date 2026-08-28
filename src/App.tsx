@@ -205,5 +205,16 @@ const ControlTooltips = () => {
   return <div aria-live="polite" className="pointer-events-none fixed z-[100] w-72 -translate-x-1/2 rounded-lg border border-cyan-300/70 bg-slate-950/95 px-3 py-2 font-mono shadow-[0_8px_30px_rgba(0,0,0,.55)]" style={{ left: tooltip.x, top: tooltip.below ? tooltip.y + 14 : tooltip.y - 10, transform: `translate(-50%, ${tooltip.below ? "0" : "-100%"})` }}><div className="text-xs font-black tracking-wide text-cyan-200">{tooltip.title}</div><p className="mt-1 text-[11px] leading-snug text-slate-300">{tooltip.description}</p></div>;
 };
 
-const App = () => <QueryClientProvider client={queryClient}><TooltipProvider><ControlTooltips /><Toaster /><Sonner /><BrowserRouter><Suspense fallback={<Loading />}><Routes><Route path="/" element={<Index />} /><Route path="/reactor" element={<ReactorSimulator />} /><Route path="/mainframe" element={<Mainframe />} /><Route path="/supervisor" element={<Supervisor />} /><Route path="/status-desk" element={<StatusDesk />} /><Route path="*" element={<NotFound />} /></Routes></Suspense></BrowserRouter></TooltipProvider></QueryClientProvider>;
+const SupabaseStatusNotice = () => {
+  const [visible, setVisible] = useState(() => localStorage.getItem("unit2-supabase-outage-notice") !== "dismissed");
+  if (!visible) return null;
+  return <div className="sticky top-0 z-[200] border-b border-amber-300/60 bg-amber-950/95 px-4 py-2 font-mono text-xs text-amber-100 shadow-lg backdrop-blur sm:px-6">
+    <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
+      <p><strong className="text-amber-300">SUPABASE SERVICE DEGRADED.</strong> Online scores and cross-computer plant features may be delayed. For uninterrupted one-computer operation, open <a className="underline underline-offset-2 hover:text-white" href="/supervisor">Supervisor Room</a> and select <strong>LOCAL / OFFLINE</strong>.</p>
+      <button type="button" onClick={() => { localStorage.setItem("unit2-supabase-outage-notice", "dismissed"); setVisible(false); }} className="rounded border border-amber-300/50 px-2 py-1 font-bold text-amber-100 hover:bg-amber-400 hover:text-slate-950">DISMISS</button>
+    </div>
+  </div>;
+};
+
+const App = () => <QueryClientProvider client={queryClient}><TooltipProvider><ControlTooltips /><Toaster /><Sonner /><BrowserRouter><SupabaseStatusNotice /><Suspense fallback={<Loading />}><Routes><Route path="/" element={<Index />} /><Route path="/reactor" element={<ReactorSimulator />} /><Route path="/mainframe" element={<Mainframe />} /><Route path="/supervisor" element={<Supervisor />} /><Route path="/status-desk" element={<StatusDesk />} /><Route path="*" element={<NotFound />} /></Routes></Suspense></BrowserRouter></TooltipProvider></QueryClientProvider>;
 export default App;
