@@ -193,7 +193,7 @@ const Index = () => {
     }
     else if (lower === "reactor") {
       await fullscreen();
-      navigate("/reactor");
+      navigate("/reactor?solo=1");
       return;
     } else if (lower === "console") {
       if (!operatorName) {
@@ -315,7 +315,7 @@ const Index = () => {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      void fullscreen().then(() => navigate("/reactor"));
+                      void fullscreen().then(() => navigate("/reactor?solo=1"));
                     }}
                     className="h-7 border-emerald-600 bg-emerald-950/30 px-2 text-[10px] tracking-wide text-emerald-200 hover:bg-emerald-500 hover:text-black"
                   >

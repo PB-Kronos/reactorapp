@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { MaintainedSwitch } from "@/components/HardwareControls";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export type ElectricalMachine = { name: string; commanded: boolean; powered: boolean; demand: number };
 interface Props {
   startupBusA: boolean; busATransformer: boolean; turbineBusB: boolean; safetyBusS: boolean; edgBreaker: boolean;
-  busAAvailable?: boolean;
+  busAAvailable?: boolean; safetyBusAvailable?: boolean;
   acDcInterlock: boolean; safetyToDcBreaker: boolean; busEToDcBreaker: boolean; busEAvailable: boolean; dcBusAvailable: boolean;
   mainBatteryCharge: number; batteryCharging: boolean;
   unitInterlockStatus?: string; unitInterlockActive?: boolean;
@@ -18,6 +19,7 @@ interface Props {
   onStartupBusAChange: (value: boolean) => void; onBusATransformerChange: (value: boolean) => void; onTurbineBusBChange: (value: boolean) => void;
   onSafetyBusSChange: (value: boolean) => void; onEdgBreakerChange: (value: boolean) => void; onAcDcInterlockChange: (value: boolean) => void;
   onSafetyToDcBreakerChange: (value: boolean) => void; onBusEToDcBreakerChange: (value: boolean) => void; onRolldownProtectionChange: (value: boolean) => void;
+  edgReady?: boolean; edgRunning?: boolean; onRemoteEdgStart?: () => void;
 }
 type Tone = "amber" | "green" | "blue" | "red" | "white";
 const nodeStyle: Record<Tone, string> = { amber: "border-amber-400 bg-amber-950/70 text-amber-100", green: "border-emerald-400 bg-emerald-950/70 text-emerald-100", blue: "border-sky-400 bg-sky-950/70 text-sky-100", red: "border-red-400 bg-red-950/70 text-red-100", white: "border-slate-200 bg-slate-950/80 text-slate-100" };
@@ -37,7 +39,7 @@ export const ElectricalPanel = (p: Props) => {
   // the direct unit-interlock tie, which deliberately bypasses Startup TR.
   const busA = p.busAAvailable ?? (p.startupBusA || (p.busATransformer && p.turbineBusEligible));
   const busB = p.turbineBusB && p.turbineBusEligible;
-  const busS = p.safetyBusS && busA;
+  const busS = p.safetyBusAvailable ?? (p.safetyBusS && busA);
   const sharedTurbinePool = Boolean(p.sharedTurbineCapacityActive);
   const busACapacity = sharedTurbinePool ? 150 : p.busATransformer && p.turbineBusEligible ? 60 : 38;
   return <div className="space-y-6">
@@ -76,9 +78,10 @@ export const ElectricalPanel = (p: Props) => {
           </div>
         </div>
       </div></div>
-      <p className="mt-4 text-xs text-slate-400">EDG is intentionally excluded. White is the Bus E route and blue is the DC route. Downward flow routes use downward arrowheads.</p>
+      <p className="mt-4 text-xs text-slate-400">EDG supply is controlled from the separate EDG Bay. White is the Bus E route and blue is the DC route. Downward flow routes use downward arrowheads.</p>
     </CardContent></Card>
     <section><div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-slate-100">Bus machinery monitors</h2><span className="text-xs text-slate-400">Live LED and kW draw per connected machine</span></div>{sharedTurbinePool && <div className="mb-3 rounded border border-amber-400/50 bg-amber-950/30 px-3 py-2 text-center text-xs font-bold text-amber-100">TURBINE AUXILIARY POOL — BUS A + BUS B SHARE {(p.sharedTurbineLoad ?? 0).toFixed(1)} / 150 kW</div>}<div className="grid gap-5 xl:grid-cols-3"><MachineBus label={sharedTurbinePool ? "BUS A (SHARED)" : "BUS A"} active={busA} load={p.startupLoad ?? 0} limit={busACapacity} machines={p.startupMachines} /><MachineBus label={sharedTurbinePool ? "BUS B (SHARED)" : "BUS B"} active={busB} load={p.busBLoad ?? 0} limit={sharedTurbinePool ? 150 : 60} machines={p.busBMachines} /><MachineBus label="SAFETY BUS S" active={busS} load={p.safetyLoad ?? 0} limit={30} machines={p.safetyMachines} /></div></section>
     <Card className="border-red-500/30 bg-slate-900/70"><CardContent className="flex flex-wrap items-center justify-between gap-4 p-5"><div><strong>ROLLDOWN PROTECTION</strong><p className="text-xs text-slate-400">RPS Channel B turbine-trip path.</p></div><MaintainedSwitch label="PROTECTION BREAKER" on={p.rolldownProtection} onChange={p.onRolldownProtectionChange} /></CardContent></Card>
+    <Card className="border-emerald-500/30 bg-slate-900/70"><CardContent className="flex flex-wrap items-center justify-between gap-4 p-5"><div><strong>EDG REMOTE STARTUP</strong><p className="text-xs text-slate-400">Starts the ready U2 EDG from MCR. EDG Bay still owns ignition, output and main-breaker alignment.</p></div><Button disabled={!p.edgReady || p.edgRunning} onClick={p.onRemoteEdgStart}>{p.edgRunning ? "EDG RUNNING" : p.edgReady ? "REMOTE START READY EDG" : "NO READY EDG"}</Button></CardContent></Card>
   </div>;
 };
