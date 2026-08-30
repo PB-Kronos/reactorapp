@@ -107,6 +107,7 @@ const Index = () => {
       login: "LOGIN <yourname>\nRegisters your public operator name in this browser and lets the leaderboard track your score.\nExample: LOGIN UnitOperator",
       logout: "LOGOUT\nEnds the score-recording session and switches to guest mode. The reactor remains available, but guest operation earns no points.",
       reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Guest entry is allowed; LOGIN <yourname> is recommended to record points.",
+      naramo: "NARAMO\nOpens the separate Naramo Plant simulator. It uses simple aggregate IN/OUT control rods, coolant, feedwater, FRV/TAS turbine control, grids, and meltdown response.",
       console: "CONSOLE\nOpens the advanced Mainframe terminal. Use LOGIN SUPERVISOR there for full simulator command access.",
       supervisor: "SUPERVISOR\nOpens the plant supervisor terminal. Use it to create a shared room, assign Unit 1 and Unit 2 demand, manage optional interlock, and copy station invite links.",
       start: "START — BASIC OPERATOR PATH\n1. LOGIN <yourname> to record points (guest operation is allowed).\n2. Enter REACTOR and check Overview plus RPS for clear trip conditions.\n3. Energize Bus A, establish condenser vacuum, and start MCC circulation.\n4. Start with the tutorial, Auto APRM, or the normal SRM → IRM rod sequence.\n5. When steam conditions are ready, run up, synchronize, and load the turbine.",
@@ -194,6 +195,10 @@ const Index = () => {
     else if (lower === "reactor") {
       await fullscreen();
       navigate("/reactor?solo=1");
+      return;
+    } else if (lower === "naramo") {
+      await fullscreen();
+      navigate("/naramo");
       return;
     } else if (lower === "console") {
       if (!operatorName) {

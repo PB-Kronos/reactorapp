@@ -3144,7 +3144,9 @@ export default function ReactorSimulator() {
       // a few kPa either side of nominal repeatedly commanded opposing valve
       // movements and stalled the turbine around 7,250 kPa.
       if (pressure >= 7100) rpmAutoSteamReadyRef.current = true;
-      if (pressure < 4500 && actualRPM < 100) rpmAutoSteamReadyRef.current = false;
+      if (pressure < 4500 && actualRPM < 100) {
+        rpmAutoSteamReadyRef.current = false;
+      }
 
       // Stage 1: build the main-steam inventory by closing bypass before any
       // turbine admission. This prevents an empty steam header run-up.
@@ -3158,47 +3160,25 @@ export default function ReactorSimulator() {
         return;
       }
 
-      // Only intervene at a genuinely unsafe pressure excursion. Normal
-      // run-up deliberately holds its calculated steam path rather than
-      // swapping back and forth across a narrow pressure threshold.
-      if (pressureError > 1400 || pressureRate > 600) {
-        setValveValue((value) =>
-          Math.round(clamp(value + clamp(pressureError / 1200, 0.08, 0.32), 0, 100) * 10) / 10,
-        );
-        setBypassValve((value) =>
-          Math.round(clamp(value + clamp(pressureError / 1000, 0.1, 0.42), 0, 100) * 10) / 10,
-        );
-        return;
-      }
-
-      // Once phase has remained stable, lock the established steam flow and
-      // nominal shaft speed for easy island operation. The hold releases only
-      // for an intentional valve movement or a severe deviation above.
-      if (inPhaseSeconds >= 6) {
-        islandGovernorHoldRef.current = true;
-        setTurbineSpeed(66.67);
-        setTargetTurbineSpeed(66.67);
-        return;
-      }
-      const settleFactor = inPhaseSeconds >= 2 ? 0.2 : 1;
-
-      // Stage 2: calculate the main-valve setting which should pass roughly
-      // Predict the exact no-load flow required for the current RPM error.
-      // This is symmetric: it asks for more than 200 kg/s below 3,000 RPM
-      // and less above it, preventing a stable 3,100 RPM overspeed.
+      // Stage 2: Auto RPM is a no-load steam-flow governor. It targets about
+      // 200 kg/s turbine admission and deliberately does not chase shaft RPM
+      // after that. RPM can settle naturally or be handled by the operator.
       const availableSteam = Math.max(1, thermalOutput.steamKgS * steamPressureFactor * steamPathCapacity);
-      const targetNoLoadFlow = clamp(200 + rpmError * 0.1, 180, 220);
-      const predictedMainValve = clamp(targetNoLoadFlow / availableSteam * 100, 0, 100);
-      const rpmTrim = clamp(rpmError / 100, -1, 1);
-      const pressureTrim = clamp((7100 - pressure) / 220, -2, 2);
-      const targetMainValve = clamp(predictedMainValve + rpmTrim + pressureTrim, 0, 100);
+      const targetMainValve = clamp(200 / availableSteam * 100, 0, 100);
       setValveValue((value) =>
-        Math.round(clamp(value + clamp(targetMainValve - value, -0.18, 0.18) * settleFactor, 0, 100) * 10) / 10,
+        Math.round(clamp(value + clamp(targetMainValve - value, -0.1, 0.1), 0, 100) * 10) / 10,
       );
-      setBypassValve((value) => Math.round(clamp(value - 0.2 * settleFactor, 0, 100) * 10) / 10);
+      setBypassValve((value) => {
+        // Protect the header without introducing RPM-based hunting. Bypass
+        // only opens at genuinely high pressure and closes again below the
+        // safe band so the 200 kg/s turbine-flow target can recover.
+        if (pressure > 8500 || pressureRate > 450) return Math.round(clamp(value + 0.25, 0, 100) * 10) / 10;
+        if (pressure < 5500 || pressureRate < -450) return Math.round(clamp(value - 0.2, 0, 100) * 10) / 10;
+        return Math.round(clamp(value - 0.05, 0, 100) * 10) / 10;
+      });
     }, 125);
     return () => window.clearInterval(governor);
-  }, [turbineRpmAuto, isRunning, mainSteamInletOpen, isLocked, actualRPM, pressure, pressureRate, valveDirection, bypassDirection, thermalOutput.steamKgS, steamPressureFactor]);
+  }, [turbineRpmAuto, isRunning, mainSteamInletOpen, isLocked, actualRPM, pressure, pressureRate, turbineSteamFlow, valveDirection, bypassDirection, thermalOutput.steamKgS, steamPressureFactor]);
   const lubePressure =
     simpleMode ||
     lubePumpSource === "aux" ||
