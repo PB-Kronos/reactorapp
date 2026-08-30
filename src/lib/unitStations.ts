@@ -24,6 +24,12 @@ export const U2_STATIONS: UnitStationDefinition[] = [
   { role: "deaerator", stationId: "U2-DA", extension: "0040", label: "Deaerator Hall", panels: ["status", "deaerator"] },
 ];
 
+// Unit 1 is deliberately the approachable plant. Its unified console keeps
+// the operating systems needed for reactor-to-grid operation, while Unit 2's
+// specialist chemistry, local pump, EDG, and turbine-preparation stations are
+// not exposed there.
+const U1_UNIFIED_PANELS = ["status", "control-rods", "mcc", "safety", "condenser", "power-grid", "electrical", "systems", "rps", "deaerator"];
+
 // A link to a removed or unknown external station must never fall back to the
 // MCR, otherwise an old invite could accidentally receive full-unit access.
 const UNASSIGNED_STATION: UnitStationDefinition = {
@@ -34,15 +40,15 @@ export const getUnitStation = (stationId?: string | null): UnitStationDefinition
   if (!stationId) return U2_STATIONS[0];
 
   const normalizedStationId = stationId.toUpperCase();
-  // The supervisor creates a unified link for either plant unit.  The panel
-  // assignment is identical; preserving the unit number here keeps the
-  // station identity clear to the operator and phone/network features.
+  // Unit 1 intentionally has a shorter, simpler unified operating lineup.
+  // Unit 2 retains its additional specialist panels for advanced operation.
   if (/^U[12]-UNIT$/.test(normalizedStationId)) {
     const unitNumber = normalizedStationId.charAt(1);
     return {
       ...U2_STATIONS[0],
       stationId: normalizedStationId,
       label: `Unit ${unitNumber} Unified Operator Console`,
+      panels: unitNumber === "1" ? U1_UNIFIED_PANELS : U2_STATIONS[0].panels,
     };
   }
 
