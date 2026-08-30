@@ -851,13 +851,24 @@ export default function ReactorSimulator() {
   // leaves the operator useful room to regulate at mid-power instead of
   // parking either steam path at 90–100% merely to hold nominal pressure.
   const steamPathCapacity = 1.8;
-  const turbineSteamFlow =
+  const requestedTurbineSteamFlow =
     isRunning && mainSteamInletOpen
       ? thermalOutput.steamKgS * steamPathCapacity * (valveValue / 100) * steamPressureFactor
       : 0;
-  const bypassSteamFlow = isRunning
+  const requestedBypassSteamFlow = isRunning
     ? thermalOutput.steamKgS * steamPathCapacity * (bypassValve / 100) * steamPressureFactor
     : 0;
+  // Steam admission is pressure-driven, but the turbine and bypass cannot
+  // remove more mass than the reactor is producing.  Without this shared
+  // source limit, a wide-open path removed 1.8× production and made main
+  // steam pressure fall as APRM rose.  Scaling both paths together preserves
+  // their operator-selected split while keeping the steam balance physical.
+  const requestedSteamFlow = requestedTurbineSteamFlow + requestedBypassSteamFlow;
+  const steamAllocation = requestedSteamFlow > 0
+    ? Math.min(1, thermalOutput.steamKgS / requestedSteamFlow)
+    : 1;
+  const turbineSteamFlow = requestedTurbineSteamFlow * steamAllocation;
+  const bypassSteamFlow = requestedBypassSteamFlow * steamAllocation;
   const steamFlow = turbineSteamFlow + bypassSteamFlow;
   // Persisted sessions created under the earlier pressure equation can carry
   // a fully-open main valve at nominal pressure.  With either governor armed,
