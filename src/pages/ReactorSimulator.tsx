@@ -4587,9 +4587,8 @@ export default function ReactorSimulator() {
           pressureRate={pressureRate}
           turbinePressureAuto={turbinePressureAuto}
           turbineRpmAuto={turbineRpmAuto}
-          // MCR intentionally has only manual steam/grid controls.  The
-          // unified Unit console is an all-panels single-operator workspace,
-          // so it must retain both turbine automation switches.
+          // MCR owns steam admission and turbine automation. TCR remains
+          // responsible only for the preparation/auxiliary systems.
           mcrControlScope={unitStation.role === "mcr"}
           onMainSteamInletChange={setMainSteamInletOpen}
           onMainValveDirection={setValveDirection}

@@ -270,8 +270,8 @@ export default function Supervisor() {
     const number = Number(second);
     try {
       if (command === "clear") { setTerminalHistory([]); setTerminalInput(""); return; }
-      if (command === "help") return terminalAppend(raw, "SUPERVISOR COMMANDS\nSTATUS\nCODE <plant-code>                 connect/create a plant room\nINVITE <1|2> [station-code]       create a unit invite link\nDEMAND <MW>                       set current site demand\nNEXTDEMAND <MW>                   set scheduled next demand\nUNIT <1|2> DEMAND <MW>            assign unit demand\nMANAGER ON|OFF                    enable/disable shared demand manager\nINTERLOCK ON|OFF | 1>2 | 2>1      configure electrical interlock\nINTERLOCK BREAKER ON|OFF          operate the tie breaker\nPHONE                             list active plant phone extensions\nPHONE LOG                         show recent PMS traffic\nCALL <manual-extension>           dial a private pickup line\nCALL <auto-extension> <request>   operate an automated unit service\nCONNECT <1|2>                     select a remote unit terminal\nSEND <command>                    queue a command on selected unit\nREMOTE <1|2> <command>            queue a command directly\n\nExample: CALL 0020\nExample: CALL 0029 refuel\nExample: CONNECT 1, then SEND set auto.aprm 20");
-      if (command === "status") return terminalAppend(raw, `PLANT ${roomCode}\nDEMAND ${plantDemand.toFixed(0)} MW · OUTPUT ${totalOutput.toFixed(1)} MW\nU1 ${Number(unitState(snapshot, 1)?.output_mw || 0).toFixed(1)} / ${unitDemand[1].toFixed(0)} MW\nU2 ${Number(unitState(snapshot, 2)?.output_mw || 0).toFixed(1)} / ${unitDemand[2].toFixed(0)} MW\nINTERLOCK ${snapshot.room?.interlock_enabled ? `U${snapshot.room.interlock_source_unit} → U${snapshot.room.interlock_target_unit}` : "OFF"}\nREMOTE TERMINAL: UNIT ${terminalUnit}`);
+      if (command === "help") return terminalAppend(raw, "SUPERVISOR COMMANDS\nSTATUS\nCODE <plant-code>                 connect/create a plant room\nINVITE <1|2> [station-code]       create a unit invite link\nDEMAND <MW>                       set current site demand\nNEXTDEMAND <MW>                   set scheduled next demand\nNEXTTIME <seconds>                set seconds until scheduled demand takes effect\nUNIT <1|2> DEMAND <MW>            assign unit demand\nMANAGER ON|OFF                    enable/disable shared demand manager\nINTERLOCK ON|OFF | 1>2 | 2>1      configure electrical interlock\nINTERLOCK BREAKER ON|OFF          operate the tie breaker\nPHONE                             list active plant phone extensions\nPHONE LOG                         show recent PMS traffic\nCALL <manual-extension>           dial a private pickup line\nCALL <auto-extension> <request>   operate an automated unit service\nCONNECT <1|2>                     select a remote unit terminal\nSEND <command>                    queue a command on selected unit\nREMOTE <1|2> <command>            queue a command directly\n\nExample: NEXTTIME 180\nExample: CALL 0029 refuel\nExample: CONNECT 1, then SEND set auto.aprm 20");
+      if (command === "status") return terminalAppend(raw, `PLANT ${roomCode}\nDEMAND ${plantDemand.toFixed(0)} MW · NEXT ${nextDemand.toFixed(0)} MW IN ${secondsToDemand}s · OUTPUT ${totalOutput.toFixed(1)} MW\nU1 ${Number(unitState(snapshot, 1)?.output_mw || 0).toFixed(1)} / ${unitDemand[1].toFixed(0)} MW\nU2 ${Number(unitState(snapshot, 2)?.output_mw || 0).toFixed(1)} / ${unitDemand[2].toFixed(0)} MW\nINTERLOCK ${snapshot.room?.interlock_enabled ? `U${snapshot.room.interlock_source_unit} → U${snapshot.room.interlock_target_unit}` : "OFF"}\nREMOTE TERMINAL: UNIT ${terminalUnit}`);
       if (command === "code") {
         const next = normaliseRoom([second, ...rest].join(" "));
         if (next.length < 3) throw new Error("Use a plant code with at least three characters.");
@@ -321,6 +321,13 @@ export default function Supervisor() {
         const demand = Number(second); if (!Number.isFinite(demand) || demand < 0) throw new Error("Usage: NEXTDEMAND <MW>");
         await updatePlantDispatch(roomCode, { next_plant_demand_mw: demand });
         return terminalAppend(raw, `NEXT SITE DEMAND SET TO ${demand.toFixed(0)} MW.`);
+      }
+      if (command === "nexttime") {
+        const seconds = Math.round(Number(second));
+        if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) throw new Error("Usage: NEXTTIME <seconds> (1–86400)");
+        const effectiveAt = new Date(Date.now() + seconds * 1000).toISOString();
+        await updatePlantDispatch(roomCode, { demand_effective_at: effectiveAt });
+        return terminalAppend(raw, `NEXT DEMAND TIMER SET — ${seconds}s remaining; ${nextDemand.toFixed(0)} MW will take effect at ${new Date(effectiveAt).toLocaleTimeString()}.`);
       }
       if (command === "manager") {
         if (!/^(on|off)$/i.test(second)) throw new Error("Usage: MANAGER ON|OFF");

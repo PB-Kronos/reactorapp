@@ -87,11 +87,79 @@ const specificGuidance: Record<string, string> = {
   emerg: "Selects emergency Safety Bus S pump power. Use only when normal auxiliary or shaft pressure is unavailable and Safety Bus S is energized.",
   shaft: "Uses shaft-driven pump pressure, available only above roughly 1800 RPM. Select after run-up to avoid relying on auxiliary pumps.",
   off: "Removes the selected auxiliary pump command. For lube/hydraulic pumps this becomes shaft-driven only after sufficient RPM; otherwise pressure is lost.",
+  "irm range selector": "Momentary range selector for the Intermediate Range Monitor. Tap + or − to change displayed R1–R8 range; it returns automatically and never changes rod position or APRM.",
+  "pump a speed": "Sets Recirculation Pump A command. Higher flow adds core-flow APRM and electrical load; make small changes and monitor the period and cavitation annunciator.",
+  "pump b speed": "Sets Recirculation Pump B command. It operates independently of Pump A and requires its available electrical source; keep the two flows reasonably balanced.",
+  "mcc circulation pump": "Enables physical inventory transfer around the steam–hotwell–DA–reactor circuit. With it off, normal vessel levels remain still except for makeup, drain, RCIC, or LPCI.",
+  "mcc auto": "Lets MCC Auto command condensate and feedwater percentages from actual flow mismatch and vessel-level error. It overrides released manual slider positions; it does not alter water levels directly.",
+  "condensate pump a": "Makes Condensate Pump A available to move hotwell inventory toward DA. Set its flow on MCC and match it to steam output to hold hotwell level.",
+  "condensate pump b": "Makes Condensate Pump B available on Bus B. Use it when A cannot meet hotwell demand or when increasing plant load.",
+  "feedwater pump a": "Makes Feedwater Pump A available to return DA inventory to the reactor. Its MCC flow should normally follow hotwell outflow.",
+  "feedwater pump b": "Makes Feedwater Pump B available on Bus B. A feedwater-demand annunciator remains active if MCC needs this pump but its bus/breaker is unavailable.",
+  "condenser circulation a": "Starts Condenser Circulation Pump A. It supplies heat rejection required for deep vacuum and good turbine efficiency.",
+  "condenser circulation b": "Starts Condenser Circulation Pump B on Bus B. Use it to add condenser capacity at higher steam flow.",
+  "condenser auto": "Automatically adjusts the condenser vacuum control from current pressure and steam load. It uses one-decimal commands so it should not hunt in microscopic increments.",
+  "condenser vacuum control": "Sets the condenser vacuum-valve direction. Open gradually after circulation and air removal are running; its effect becomes slower near deep vacuum.",
+  "car a": "Enables Condenser Air Remover A. CARs pull down initial/offgas pressure while it is above about 850 mbar; they do not provide final deep vacuum.",
+  "car b": "Enables Condenser Air Remover B. It supplements CAR A during initial evacuation and becomes ineffective below its threshold.",
+  "steam jet air ejector": "Starts the steam-jet air ejector used with condenser circulation to maintain deep vacuum after CAR operation.",
+  "turbine pressure auto": "Automatically balances main valve and bypass around 7,100 kPa. It prefers main admission for normal load control and uses bypass for faster correction.",
+  "turbine rpm auto": "Runs the turbine toward synchronizing speed using main valve and bypass. Near 3,000 RPM it changes more gently and holds the established steam flow unless a large correction is needed.",
+  "main steam inlet": "Isolates the turbine steam-admission path upstream of the main valve. Keep it closed during initial plant setup and open only when condenser/turbine conditions are ready.",
+  "main steam valve": "Commands main steam admission to the turbine. Open it to increase turbine steam flow and MW after pressure is available; return to neutral to stop movement.",
+  "turbine bypass": "Routes main steam around the turbine. Use it for pressure handling during startup, rapid load rejection, and turbine trip—not as normal condenser control.",
+  "exciter breaker": "Energizes generator field excitation. Excitation must be available before grid synchronization can close.",
+  "startup tr. brk": "Connects offsite startup-transformer supply toward Bus A. It is the normal pre-turbine power source and is limited to 38 kW outside training levels.",
+  "bus a tr. brk": "Connects turbine-backed generation to Bus A. With turbine power available it gives Bus A normal operating capacity rather than startup-transformer capacity.",
+  "bus b brk": "Connects turbine-backed Bus B. Bus B is separate from Bus A and supplies its B-rated pumps; it needs turbine/island generation to remain energized.",
+  "bus a → bus s": "Feeds Safety Bus S from Bus A. Closing it supplies safety loads but is interlocked against an EDG feeding Bus S.",
+  "bus s → dc": "Feeds the 125 V DC bus from Safety Bus S. DC availability provides illumination and normal simulator control power.",
+  "bus e → dc": "Feeds the DC bus from battery-backed Bus E. Use as the essential-control alternative when Safety-to-DC is unavailable.",
+  "ac-dc 1 interlock": "Connects Safety Bus S to battery-backed Bus E through the LVAC/DC route, keeping essential control and emergency auxiliary circuits charged.",
+  "unit interlock brk": "Closes the direct Unit-to-Unit Bus A tie. The source unit needs healthy turbine-backed Bus A and closed Bus A transformer breaker; the tie never goes through startup transformer.",
+  "edg auto": "Maintains a ready EDG selection for remote MCR startup. It does not instantly energize Bus S; the engine must run up and its breakers must be aligned.",
+  "ignition breaker (bus e)": "Supplies EDG ignition from Bus E. Close it before requesting EDG start; without Bus E the starter control is unavailable.",
+  "edg output breaker": "Connects the selected EDG alternator output to its main output path. Close before the EDG main breaker after normal start alignment.",
+  "edg main breaker → bus s": "Connects a running EDG to Safety Bus S. It opens Bus A-to-S automatically to prevent paralleling sources.",
+  "main fuel valve": "Opens fuel from EDG local storage to the selected fuel path. Keep it open only when supplying or refuelling a generator.",
+  "main fuel pump": "Pumps local storage fuel to the selected EDG. It is forced off during a 0027 automated storage-tank refuel transfer.",
+  "edg-2a fuel valve": "Selects local fuel flow to EDG-2A. Open with main fuel valve and pump for running/refuelling that generator.",
+  "edg-2b fuel valve": "Selects local fuel flow to EDG-2B. Open with main fuel valve and pump for running/refuelling that generator.",
+  "fwp aux auto": "Automatically keeps available feedwater-pump support equipment prepared. MCC still controls the actual water-flow demand.",
+  "pump oil preheat": "Warms feedwater-pump oil before sustained demand. It improves readiness but does not itself power or start a pump.",
+  "da auto": "Balances DA intake and outtake commands to keep DA pressure/temperature in band. It affects DA air handling only, never MCC water-flow demand directly.",
+  "da intake valve": "Changes DA heating-air admission. More opening raises intake flow and DA temperature; maximum intake flow is 10 kg/s.",
+  "da outtake valve": "Changes DA exhaust-air flow. More opening lowers DA pressure; maximum outtake flow is 20 kg/s.",
+  "da air bypass valve": "Bypasses the DA air outlet for rupture-disk maintenance. Open this FIRST before closing the DA main air valve.",
+  "da main air valve": "Normal DA air-outlet path. Close it only after DA air bypass is open for rupture-disk work.",
+  "cix bypass": "Routes condensate around the chosen polisher for regeneration. Bypass and stop the target train before starting any flush.",
+  "polisher train a": "Places Polisher A in service to clean condensate. Stop it and align CIX bypass before regenerating its resin.",
+  "polisher train b": "Places Polisher B in service to clean condensate. It is the alternate train during Polisher A regeneration.",
+  "cix auto": "Maintains normal polisher selection automatically where possible. Disable/override only when lining up a deliberate regeneration procedure.",
+  "turning gear": "Slow-rolls the turbine at roughly 50 RPM for even preheating. Disengage it before run-up or the turbine may trip.",
+  "preheat valve": "Admits heat for turbine prewarming while turning gear is engaged. Raise gradually; turbine metal preheat is limited to 280 °C.",
+  "lubrication pump": "Selects the lube-oil pressure source. Use AUX for run-up, SHAFT after speed supports it, or EMERG from Safety Bus as a backup.",
+  "hydraulic pump": "Selects turbine hydraulic-pressure source. Keep one reliable source at all times so admission controls remain available.",
+  "sealing steam supply": "Provides sealing steam to turbine glands. Keep it available during turbine operation to protect the steam-seal boundary.",
+  "sealing steam leak": "Simulates/indicates steam-seal leakage. It is separate from supply; investigate a persistent leak rather than treating it as a normal supply command.",
+  "malfunctions": "Permits random plant malfunctions to occur during play. It does not select or immediately fail a specific component.",
+  "random events": "Permits low-probability events at network-demand changes, including an offsite-power warning and eventual LOOP when it occurs.",
+  "instant startup": "Test shortcut that places the core in a post-startup ready condition. It does not line up turbine, MCC, condenser, or electrical systems for you.",
+  "normal stop": "Requests a controlled reactor stop. Use for planned shutdown; establish RHR/decay-heat cooling afterward as conditions require.",
+  "start reactor": "Sets the reactor available to begin a normal rod startup when protection nodes are clear. Actual reactivity is still controlled on the Control Rods page.",
 };
 const controlGuidance = (label: string, fallback: string) => {
   const key = label.toLowerCase().replace(/\s+/g, " ");
   if (specificGuidance[key]) return specificGuidance[key];
-  return `${label}: ${fallback}`;
+  // Directional positions are generated by the reusable hardware controls as
+  // "CONTROL NAME: OPEN/CLOSE". Resolve only that exact parent control rather
+  // than using substring matching, which previously confused unrelated fast
+  // close buttons.
+  const parentKey = key.split(":")[0].trim();
+  if (parentKey !== key && specificGuidance[parentKey]) return `${specificGuidance[parentKey]} ${fallback}`;
+  return fallback === "Use this control to change the associated system setting, then monitor the matching meter or annunciator for its response."
+    ? `${label}: operates only the equipment named on this control. Read the current page manual before using an unfamiliar control; monitor its matching meter, status lamp, and annunciator for the physical response.`
+    : `${label}: ${fallback}`;
 };
 const ControlTooltips = () => {
   const [tooltip, setTooltip] = useState<{ title: string; description: string; x: number; y: number; below: boolean } | null>(null);
