@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Plus, Save, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type Snapshot = Record<string, any>;
+type Snapshot = Record<string, unknown>;
 type Widget = { id: string; key: string; x: number; y: number; width: number; height: number };
 const LIVE_KEY = "rbwr-live-plant-state";
 const LAYOUT_KEY = "unit2-status-desk-current";

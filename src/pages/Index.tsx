@@ -179,7 +179,7 @@ const Index = () => {
         const remote = await getLeaderboard();
         const scores = remote.length ? Object.fromEntries(remote.map(entry => [entry.display_name, { points: entry.points }])) : JSON.parse(localStorage.getItem("unit2-operator-scores") || "{}");
         const ranked = Object.entries(scores)
-          .map(([name, entry]: [string, any]) => [name, Number((entry as any)?.points || 0)] as const)
+          .map(([name, entry]: [string, unknown]) => [name, Number((entry as { points?: unknown } | undefined)?.points || 0)] as const)
           .sort(([, left], [, right]) => right - left);
         const topFive = ranked.slice(0, 5);
         const rows = topFive.length

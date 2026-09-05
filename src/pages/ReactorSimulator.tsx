@@ -233,6 +233,9 @@ export default function ReactorSimulator() {
   // Early lessons use the previous safe bypasses; later lessons progressively
   // expose the full plant instead of offering a separate Simple Mode.
   const simpleMode = tutorialEnabled && tutorialLevel === 6;
+  // Snapshot payloads may originate from storage, BroadcastChannel, or a remote unit.
+  // Keep their boundary permissive, then validate individual fields before applying them.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const applyPanelSnapshot = (saved: any) => {
     if (!saved || typeof saved !== "object") return;
     if (saved.rods?.length === 36) setRods(saved.rods);
@@ -261,9 +264,9 @@ export default function ReactorSimulator() {
     if (typeof saved.offsitePowerAvailable === "boolean") setOffsitePowerAvailable(saved.offsitePowerAvailable);
     if (typeof saved.daTemperature === "number") setDaTemperature(saved.daTemperature);
     if (typeof saved.daPressure === "number") setDaPressure(saved.daPressure);
-    if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning((current: any) => ({ ...current, ...saved.physicsTuning }));
+    if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning(current => ({ ...current, ...saved.physicsTuning }));
     const controls = saved.controls || {};
-    const apply = (key: string, setter: (value: any) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key]); };
+    const apply = (key: string, setter: (value: never) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key] as never); };
     apply("mainSteamInletOpen", setMainSteamInletOpen); apply("reliefOpen", setReliefOpen); apply("reliefValveB", setReliefValveB); apply("exciterOn", setExciterOn); apply("isLocked", setIsLocked); apply("turbinePressureAuto", setTurbinePressureAuto); apply("turbineRpmAuto", setTurbineRpmAuto);
     apply("pump1Online", setPump1Online); apply("pump2Online", setPump2Online); apply("daIntakeOpen", setDaIntakeOpen); apply("daOutputOpen", setDaOutputOpen); apply("daIntakeValve", setDaIntakeValve); apply("daOuttakeValve", setDaOuttakeValve); apply("daIntakeDirection", setDaIntakeDirection); apply("daOuttakeDirection", setDaOuttakeDirection); apply("daAuto", setDaAuto); apply("daBypassValve", setDaBypassValve); apply("daMainAirValve", setDaMainAirValve); apply("daRuptureDisk", setDaRuptureDisk);
     apply("recircPumpA", setRecircPumpA); apply("recircPumpB", setRecircPumpB); apply("recircSpeedA", setRecircSpeedA); apply("recircSpeedB", setRecircSpeedB); apply("selectedRodId", setSelectedRodId); apply("rodDirection", setRodDirection); apply("selectionScope", setSelectionScope); apply("autoEnabled", setAutoEnabled); apply("autoTarget", setAutoTarget); apply("autoSpeed", setAutoSpeed); apply("autoMode", setAutoMode); apply("malfunctions", setMalfunctions);
@@ -1588,7 +1591,7 @@ export default function ReactorSimulator() {
       if (typeof saved.pressure === "number") pressureSample.current = { value: saved.pressure, time: performance.now() };
       if (saved.physicsTuning && typeof saved.physicsTuning === "object") setPhysicsTuning(current => ({ ...current, ...saved.physicsTuning }));
       const controls = saved.controls || {};
-      const apply = (key: string, setter: (value: any) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key]); };
+      const apply = (key: string, setter: (value: never) => void) => { if (typeof controls[key] !== "undefined") setter(controls[key] as never); };
       apply("mainSteamInletOpen", setMainSteamInletOpen); apply("reliefOpen", setReliefOpen); apply("reliefValveB", setReliefValveB); apply("exciterOn", setExciterOn); apply("isLocked", setIsLocked); apply("turbinePressureAuto", setTurbinePressureAuto); apply("turbineRpmAuto", setTurbineRpmAuto);
       apply("pump1Online", setPump1Online); apply("pump2Online", setPump2Online); apply("daIntakeOpen", setDaIntakeOpen); apply("daOutputOpen", setDaOutputOpen); apply("daIntakeValve", setDaIntakeValve); apply("daOuttakeValve", setDaOuttakeValve); apply("daIntakeDirection", setDaIntakeDirection); apply("daOuttakeDirection", setDaOuttakeDirection); apply("daAuto", setDaAuto); apply("daBypassValve", setDaBypassValve); apply("daMainAirValve", setDaMainAirValve); apply("daRuptureDisk", setDaRuptureDisk);
       apply("recircPumpA", setRecircPumpA); apply("recircPumpB", setRecircPumpB); apply("recircSpeedA", setRecircSpeedA); apply("recircSpeedB", setRecircSpeedB); apply("selectedRodId", setSelectedRodId); apply("rodDirection", setRodDirection); apply("selectionScope", setSelectionScope); apply("autoEnabled", setAutoEnabled); apply("autoTarget", setAutoTarget); apply("autoSpeed", setAutoSpeed); apply("autoMode", setAutoMode);
@@ -1599,7 +1602,7 @@ export default function ReactorSimulator() {
       apply("lubePumpSource", setLubePumpSource); apply("hydraulicPumpSource", setHydraulicPumpSource); apply("coldOilValve", setColdOilValve); apply("warmOilValve", setWarmOilValve); apply("turningGear", setTurningGear); apply("preheatValve", setPreheatValve); apply("steamSealing", setSteamSealing); apply("steamSealingLeak", setSteamSealingLeak); apply("polisherTrainA", setPolisherTrainA); apply("polisherTrainB", setPolisherTrainB); apply("polisherAuto", setPolisherAuto); apply("polisherBypass", setPolisherBypass); apply("polisherTarget", setPolisherTarget); apply("polisherTanks", setPolisherTanks);
       apply("tutorialEnabled", setTutorialEnabled);
       apply("tutorialLevel", setTutorialLevel);
-    } catch {} finally { setSessionRestored(true); }
+    } catch { /* corrupt persisted state falls back to the safe initial panel */ } finally { setSessionRestored(true); }
   }, []);
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -1656,10 +1659,12 @@ export default function ReactorSimulator() {
       suppressPanelBroadcastUntil.current = isPhysicsAuthority && controlOnly ? 0 : Date.now() + 200;
       const ownedKeys = STATION_CONTROL_KEYS[unitStation.role] || [];
       const pendingControls = pendingSpecialistControls.current;
-      const acknowledged = Boolean(pendingControls && controlsMatch(pendingControls, (snapshot as any).controls || {}));
+      const snapshotRecord = snapshot as Record<string, unknown>;
+      const snapshotControls = snapshotRecord.controls && typeof snapshotRecord.controls === "object" ? snapshotRecord.controls as Record<string, unknown> : {};
+      const acknowledged = Boolean(pendingControls && controlsMatch(pendingControls, snapshotControls));
       if (acknowledged) pendingSpecialistControls.current = null;
-      if (!isPhysicsAuthority && ownedKeys.length && pendingControls && !acknowledged && (snapshot as any).controls) {
-        const incomingControls = { ...(snapshot as any).controls };
+      if (!isPhysicsAuthority && ownedKeys.length && pendingControls && !acknowledged && Object.keys(snapshotControls).length) {
+        const incomingControls = { ...snapshotControls };
         ownedKeys.forEach((key) => delete incomingControls[key]);
         applyPanelSnapshot({ ...(snapshot as Record<string, unknown>), controls: incomingControls });
       } else applyPanelSnapshot(snapshot as Record<string, unknown>);
@@ -2323,7 +2328,7 @@ export default function ReactorSimulator() {
         source.connect(gain).connect(player.context.destination);
         player.source = source;
         source.start();
-      } catch {}
+      } catch { /* optional fast-close audio is non-critical */ }
     })();
     return () => {
       cancelled = true;

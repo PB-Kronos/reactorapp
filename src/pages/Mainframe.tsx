@@ -57,7 +57,7 @@ const Mainframe = () => {
   const [operatorName] = useState(
     () => localStorage.getItem("unit2-operator-name") || "",
   );
-  const [saved, setSaved] = useState<Record<string, any>>(() => {
+  const [saved, setSaved] = useState<Record<string, unknown>>(() => {
     try {
       return JSON.parse(
         sessionStorage.getItem("rbwr-live-plant-state") ||
@@ -68,7 +68,7 @@ const Mainframe = () => {
       return {};
     }
   });
-  const store = (next: Record<string, any>) => {
+  const store = (next: Record<string, unknown>) => {
     const updated = { ...next, updatedAt: Date.now() };
     sessionStorage.setItem("rbwr-live-plant-state", JSON.stringify(updated));
     setSaved(updated);
@@ -420,7 +420,7 @@ const Mainframe = () => {
     else if (target === "rods.withdraw" && verb === "set") {
       const withdrawn = clamp(value, 0, 100);
       next.rods = Array.isArray(next.rods)
-        ? next.rods.map((rod: any) => ({ ...rod, position: 100 - withdrawn }))
+        ? next.rods.map((rod: unknown) => typeof rod === "object" && rod !== null ? { ...(rod as Record<string, unknown>), position: 100 - withdrawn } : rod)
         : next.rods;
       changed = true;
     } else if (target.startsWith("physics.") && verb === "set") {

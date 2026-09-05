@@ -98,7 +98,7 @@ export const AnnunciatorPanel = ({ annunciators, page = document.body.dataset.rb
     ambienceSource.current?.stop(); ambienceSource.current = null;
     if (!ambienceEnabled || !enabled) return;
     let cancelled = false;
-    const startGaplessHum = async () => { try { if (!context.current) context.current = new AudioContext(); const audio = context.current; if (audio.state === "suspended") await audio.resume(); const response = await fetch("/sounds/control-room-hum.mp3"); const buffer = await audio.decodeAudioData(await response.arrayBuffer()); if (cancelled) return; const source = audio.createBufferSource(); const gain = audio.createGain(); source.buffer = buffer; source.loop = true; source.loopStart = 0; source.loopEnd = buffer.duration; gain.gain.value = .16; source.connect(gain).connect(audio.destination); source.start(); ambienceSource.current = source; } catch {} };
+    const startGaplessHum = async () => { try { if (!context.current) context.current = new AudioContext(); const audio = context.current; if (audio.state === "suspended") await audio.resume(); const response = await fetch("/sounds/control-room-hum.mp3"); const buffer = await audio.decodeAudioData(await response.arrayBuffer()); if (cancelled) return; const source = audio.createBufferSource(); const gain = audio.createGain(); source.buffer = buffer; source.loop = true; source.loopStart = 0; source.loopEnd = buffer.duration; gain.gain.value = .16; source.connect(gain).connect(audio.destination); source.start(); ambienceSource.current = source; } catch { /* optional ambience must never block annunciators */ } };
     void startGaplessHum();
     return () => { cancelled = true; ambienceSource.current?.stop(); ambienceSource.current = null; };
   }, [ambienceEnabled, enabled]);
