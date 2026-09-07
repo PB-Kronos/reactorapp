@@ -38,10 +38,12 @@ export interface ButtonProps
     React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /** Exact hover guidance for plant controls. Kept separate from native title so the shared tooltip panel can render it. */
+  tooltip?: string;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, title, children, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, title, tooltip, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
     const textLabel = React.Children.toArray(children)
       .filter((child): child is string => typeof child === "string")
@@ -52,6 +54,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         data-tooltip-title={title ?? (textLabel ? textLabel : undefined)}
+        data-tooltip-description={tooltip}
         {...props}
       >
         {children}

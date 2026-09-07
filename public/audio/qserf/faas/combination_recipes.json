@@ -1,0 +1,24 @@
+{
+  "preferred_strategy": "Use the precombined file directly to prevent timing gaps or token-order mistakes.",
+  "fallback_strategy": "If dynamic composition is required, concatenate fuel_cell.mp3, one number token, then STATE_locked.mp3 or STATE_unlocked.mp3.",
+  "combined_assets": {
+    "fuel_cell_1_locked": "03_Maintenance/Combined_Status/fuel_cell_1_locked.mp3",
+    "fuel_cell_1_unlocked": "03_Maintenance/Combined_Status/fuel_cell_1_unlocked.mp3",
+    "fuel_cell_2_locked": "03_Maintenance/Combined_Status/fuel_cell_2_locked.mp3",
+    "fuel_cell_2_unlocked": "03_Maintenance/Combined_Status/fuel_cell_2_unlocked.mp3",
+    "fuel_cell_3_locked": "03_Maintenance/Combined_Status/fuel_cell_3_locked.mp3",
+    "fuel_cell_3_unlocked": "03_Maintenance/Combined_Status/fuel_cell_3_unlocked.mp3"
+  },
+  "component_assets": {
+    "prefix": "03_Maintenance/Combination_Tokens/fuel_cell.mp3",
+    "numbers": {
+      "1": "03_Maintenance/Combination_Tokens/number_1.mp3",
+      "2": "03_Maintenance/Combination_Tokens/number_2.mp3",
+      "3": "03_Maintenance/Combination_Tokens/number_3.mp3"
+    },
+    "states": {
+      "locked": "03_Maintenance/STATE_locked.mp3",
+      "unlocked": "03_Maintenance/STATE_unlocked.mp3"
+    }
+  }
+}

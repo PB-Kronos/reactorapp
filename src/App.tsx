@@ -16,6 +16,9 @@ const NaramoPlant = lazy(() => import("./pages/NaramoPlant"));
 const ReactorArchive = lazy(() => import("./pages/ReactorArchive"));
 const ACoreGame = lazy(() => import("./pages/ACoreGame"));
 const ApolloFacility = lazy(() => import("./pages/ApolloFacility"));
+const IitppPlant = lazy(() => import("./pages/IitppPlant"));
+const QserfPlant = lazy(() => import("./pages/QserfPlant"));
+const Foxtrot9 = lazy(() => import("./pages/Foxtrot9"));
 const queryClient = new QueryClient();
 const Loading = () => (
   <div className="grid min-h-screen place-items-center bg-slate-950 font-mono text-cyan-300">
@@ -273,6 +276,119 @@ const specificGuidance: Record<string, string> = {
     "Requests a controlled reactor stop. Use for planned shutdown; establish RHR/decay-heat cooling afterward as conditions require.",
   "start reactor":
     "Sets the reactor available to begin a normal rod startup when protection nodes are clear. Actual reactivity is still controlled on the Control Rods page.",
+  // Reactor Archive — Naramo Plant
+  "authorize ignition": "Arms the Naramo reactor ignition circuit. Complete the grid lineup and establish cooling before authorizing ignition.",
+  "shutdown pumps": "Keeps the shutdown cooling pumps running while the unit is parked. Turn them off before the normal startup sequence; they are not the main operating coolant pumps.",
+  "ignite reactor": "Starts heat generation only after ignition is authorized and normal shutdown-pump lineup is cleared. Rod insertion, coolant, and feedwater still determine whether the core remains stable.",
+  "main coolant": "Enables the Naramo main coolant header. Both individual coolant-pump switches also need an energized bus before reactor heat can be removed.",
+  "coolant pump 1": "Starts the Primary-bus Naramo coolant pump. Use with Pump 2 to meet the normal reactor cooling requirement.",
+  "coolant pump 2": "Starts the Auxiliary-bus Naramo coolant pump. Both coolant pumps and the Main Coolant header are required for normal operation.",
+  "feedwater valve": "Opens the common feedwater path. It must be open along with both feedwater pumps before steam production can be controlled safely.",
+  "feedwater pump 1": "Starts the Primary-bus feedwater pump. Keep its utilization below the cavitation limit while matching reactor steam demand.",
+  "feedwater pump 2": "Starts the Auxiliary-bus feedwater pump. Run it with Pump 1 for the required operating feedwater capacity.",
+  "external grid / transformers": "Connects the external Naramo supply into the selected grid configuration. It is the normal startup source before turbine generation is synchronized.",
+  "grid configuration": "Selects the Naramo electrical routing. Configurations decide which sources feed Primary, Auxiliary, and DC buses; configuration 5 controls the DC tie.",
+  "generator start": "Starts an available Naramo auxiliary generator. Generators consume the common fuel inventory and support configurations that use auxiliary generation.",
+  "dc tie": "Connects the selected Naramo DC route. DC is needed for the station’s controls and instrumentation.",
+  "scram": "Immediately inserts the aggregate rod bank, cuts reactor heat generation, and opens protective steam relief as required. Reset only after temperature and pressure are safe.",
+  "refueler lock": "Locks the refuelling crane at its current location and disables Driving Mode. A locked crane is required before selecting a slot and swapping a rod.",
+  "driving mode": "Releases the refuelling crane for movement. It cannot be used while Refueler Lock is engaged.",
+  "rod swap": "Transfers the rod at the crane position into the selected crane fuel slot, or installs the selected slot’s rod into that position. It works on any reachable position, not only the suggested target.",
+  "dump empty rod": "Moves the crane’s selected empty rod to the empty-rod pool. Drive to the pool, lock the crane, select the slot, then perform the swap.",
+  "load full rod": "Loads a fresh rod from the full-rod pool into a selected empty crane slot. The crane must be at the full pool and locked.",
+  "hazard pay": "Corporate policy toggle that raises rewards while the plant is near meltdown temperature; it does not change reactor physics.",
+  "stability bonus": "Corporate policy toggle that rewards sustained stable operation. It is an incentives setting, not an automatic control system.",
+  "safety first": "Corporate policy toggle that emphasizes safe operation rewards. It does not override SCRAM or protective interlocks.",
+
+  // Reactor Archive — A Core Game
+  "startup primer": "Charges the PRC startup sequence. The containment field cannot be established until this primer is on.",
+  "containment field": "Establishes the plasma containment field after the startup primer. Primary ignition remains blocked until the field is established.",
+  "primary ignition": "Starts the plasma reaction after containment is established. Immediately monitor temperature, laser output, and coolant flow.",
+  "primary power lasers": "Sets the main laser heating level. Higher settings create more plasma heat and demand more cooling.",
+  "secondary power lasers": "Sets supplemental laser heating. Use it to trim output after the primary laser level is stable.",
+  "stabilization lasers": "Sets the stabilizer-laser level, improving the effectiveness of coolant removal and reducing temperature excursions.",
+  "intake fan": "Raises intake-air speed for PRC heat removal. Combine with exhaust flow; either fan alone provides limited cooling.",
+  "exhaust fan": "Raises exhaust-air speed for PRC heat removal. Balance it with intake and liquid coolant to maintain the stable band.",
+  "coolant flow to core": "Opens the coolant path from the pool to the PRC. Pump output is ineffective until this path is enabled.",
+  "pool valve a": "Opens one pool makeup valve. Both makeup valves refill the coolant pool while pumps consume inventory.",
+  "pool valve b": "Opens the second pool makeup valve. Keep at least one valve available when high pump flow is draining the pool.",
+  "e-valve 1": "Controls one E-coolant isolation valve. All three E-valves must be closed before emergency coolant can discharge.",
+  "e-valve 2": "Controls one E-coolant isolation valve. All three E-valves must be closed before emergency coolant can discharge.",
+  "e-valve 3": "Controls one E-coolant isolation valve. All three E-valves must be closed before emergency coolant can discharge.",
+  "discharge e-coolant": "Discharges the E-coolant reserve for a short emergency cooling burst. It requires closed E-valves and at least 20% storage.",
+  "authorize shutdown": "Arms the Emergency Manual Termination System after its three termination keys and all six emergency buttons are set.",
+  "engage emts": "Executes PRC emergency termination. It rapidly removes heat but is only available after the full manual shutdown sequence is complete.",
+
+  // Reactor Archive — Innovation Inc. Thermal Power Plant
+  "enable facility power": "Energizes the IITPP training facility bus. All coolant, alignment, and startup controls remain unavailable until this supply is online.",
+  "facility power online": "De-energizes or confirms the IITPP facility supply. Do not remove it while reactor support equipment is running.",
+  "arm startup primer": "Arms IITPP’s startup sequence after facility power is established. Coolant and core-alignment permissives must still be completed.",
+  "startup primer ready": "Returns the IITPP startup primer to standby. Doing so removes a required startup permissive.",
+  "stabilizer": "Aligns the IITPP stabilizer before core ignition. It is one of the required core-alignment permissives.",
+  "crystal": "Raises the IITPP crystal into its operating position. It is required for a successful controlled startup.",
+  "ring": "Energizes the IITPP containment ring. Keep it online before starting the Geo-Thermonuclear Core.",
+  "start geo-thermonuclear core": "Starts the IITPP core only after facility power, primer, coolant, stabilizer, crystal, ring, and laser alignment are ready.",
+  "controlled shutdown": "Performs a normal IITPP reactor shutdown. Use it before taking support systems offline.",
+  "activate safeguard": "Starts the IITPP safeguard response during a high-temperature event. It is available only when the reactor is online and temperatures are in the danger band.",
+  "safeguard active": "Returns the IITPP safeguard control to standby. Do not deactivate it while the core still requires active protection.",
+  "simulate generator fire": "Starts the IITPP generator-fire training event and its matching announcement. It is a test scenario, not normal generator operation.",
+  "fire suppression active": "Clears the simulated IITPP generator-fire condition after the fire-suppression response has been activated.",
+  "test code red pa": "Plays the IITPP Code Red announcement without changing the underlying reactor state.",
+  "startup success": "Loads the IITPP startup-success training event and its matching announcement caption.",
+  freezedown: "Loads the IITPP cold-ending training event and its matching announcement caption.",
+  safeguard: "Loads the IITPP near-meltdown safeguard training event and its matching announcement caption.",
+  meltdown: "Loads the IITPP meltdown training event and its matching announcement caption. This is a test trigger, not a reactor control.",
+  "generator fire": "Loads the IITPP generator-fire training event and its matching announcement caption.",
+  "acknowledge caption": "Stops the currently displayed IITPP ASAS caption and any local fallback speech playback.",
+  "enable asas audio": "Enables browser audio for IITPP’s local ASAS announcement fallback. A user gesture is required by browser autoplay rules.",
+  "pa audio enabled — test event to hear": "Disables or confirms the IITPP local ASAS announcement audio. Test an event to hear the fallback voice.",
+  "open official asas player": "Opens the supplied official IITPP announcement playlist in an embedded player; playback is controlled by YouTube.",
+  "open soundtrack player": "Opens the supplied official IITPP soundtrack playlist in an embedded player; playback is controlled by YouTube.",
+
+  // Reactor Archive — QSERF DMR and Foxtrot-9
+  "insert / turn key": "Inserts and turns the DMR ignition key. It authorizes startup only when fuel cells are locked, catalyzer feed is latched, and the selected grid is available.",
+  "start dark matter reactor": "Begins the DMR startup sequence after all startup interlocks are satisfied. It does not bypass fuel, grid, or catalyzer-feed checks.",
+  "enter maintenance mode": "Places the DMR in maintenance mode while it is offline, allowing fuel-cell service and non-operating lineup changes.",
+  "exit maintenance mode": "Returns the DMR from maintenance mode to normal startup readiness after fuel-cell servicing is complete.",
+  "enable catalyzer feed (6 pumps required)": "Latches catalyzer feed online once all six Pump Station Alpha trains are running. This action cannot be undone during the operating cycle.",
+  "catalyzer feed online — latched": "Catalyzer feed is permanently latched for the current DMR cycle. The six pump trains are intentionally locked in their running state.",
+  "global mode": "Makes one catalyzer-level command apply to all DMR catalyzers together. Use for broad power changes.",
+  "fine mode": "Enables individual catalyzer adjustment. Use it to balance heat distribution after the overall reactor level is established.",
+  "activate efss": "Starts the Emergency Fire Suppression System, rapidly cooling the DMR while consuming the EFSS water inventory.",
+  "efss active": "Stops or starts the EFSS water discharge. Preserve water until an abnormal temperature rise requires emergency cooling.",
+  "acknowledge": "Acknowledges currently active DMR alarms. It stops their visual unacknowledged state but does not clear the underlying condition.",
+  "mute alarms": "Mutes warning and emergency FAAS alarm audio only. It does not acknowledge alarms or stop normal FAAS traffic.",
+  "unmute alarms": "Restores warning and emergency FAAS alarm audio. Alarm acknowledgement remains separate.",
+  "test human call": "Plays a non-event human PA call for audio testing. ALT-07 automatically schedules its ALT-08 follow-up three seconds later.",
+  "test evacuation": "Plays the DMR evacuation announcement for PA testing without changing reactor state.",
+  "music on": "Enables optional QSERF background music. It does not automatically resume a previous event track.",
+  "music off": "Disables optional QSERF background music without affecting FAAS announcements or alarms.",
+  "foxtrot 9 control rod insertion command": "Commands Foxtrot-9 rod insertion. The drive moves first and neutron flux, heat, and pressure follow gradually rather than changing instantly.",
+  "withdraw": "Withdraws Foxtrot-9 control rods, lowering insertion and increasing neutron flux, heat, pressure, and converter output.",
+  "insert": "Inserts Foxtrot-9 control rods, reducing neutron flux and thermal output. Use it to arrest a rising temperature or prepare for shutdown.",
+  "cont. transit": "Keeps the Foxtrot-9 rod drive moving after a command. Disable it for small, measured positioning changes.",
+  "sync to aux grid": "Closes the Foxtrot-9 auxiliary-grid breaker only when all four converter pistons are connected and the synchronoscope is in range.",
+  "scram f-9": "Immediately inserts Foxtrot-9 rods, opens all relief valves, and disconnects the auxiliary-grid breaker.",
+  "reset scram": "Releases the Foxtrot-9 SCRAM only after temperature and pressure have returned below the reset interlocks.",
+
+  // Reactor Archive — Apollo CRC and TNER
+  "main battery grid connect": "Connects the charged Apollo main battery to the facility bus as a temporary source before the emergency generators are synchronized.",
+  "battery charge": "Enables battery charging from Sector Master Power. It has no effect until a valid facility source is online.",
+  "fill all edg tanks": "Fills the three initially empty Apollo emergency-generator tanks for this training sequence.",
+  "crc control": "Starts the Central Reactor Core after the coolant check and ignition-key checks pass. Its conductors then discharge on the timed central buildup cycle.",
+  "prime array": "Arms the CRC conductor array for automatic 8,500 V central buildup and the next sequential conductor discharge.",
+  "mass driver access": "At 300 kV, opens the conductor safety panels and forces every selectable conductor discharge to 8,000 V.",
+  "control room purge": "At 500 kV, executes the simultaneous conductor purge only after all four Mass Driver Brakes are lowered and conductor purges are primed.",
+  "tner generator on": "Connects the started TNER mini generator to its sector. The starter must have been pulled exactly three times first.",
+  "supercharger enable": "Starts all eight TNER supercharger flywheels, increasing output voltage and heat.",
+  "f.e.s. enable": "Enables TNER Fuel Enrichment System. It reduces fuel consumption but is part of the overload prerequisite set.",
+  "radiator clamps": "Raises and locks all four TNER radiators onto the magnetic generators, enabling reactor cooling.",
+  "fuse hatch closed": "Closes and locks the TNER fuse hatch. The Reactor Driver cannot complete startup while the hatch is open.",
+  "reactor driver": "Deploys the TNER Reactor Driver cylinder after the startup or shutdown code has been accepted.",
+  "driver breaker": "Closes the non-electrical Reactor Driver permissive. Loaded, locked fuel and a closed fuse hatch are required.",
+  "pull driver switch": "Completes the normal TNER startup cylinder protocol and starts TNER when every permissive is satisfied.",
+  "unstable mode": "Arms TNER unstable mode only after the overload prerequisites are met. It is an intentional destructive-test control.",
+  "overload": "Deploys the overload Reactor Driver cylinder. Overload does not start until its keycard, breaker, and pull-switch sequence completes.",
 };
 const controlGuidance = (label: string, fallback: string) => {
   const key = label.toLowerCase().replace(/\s+/g, " ");
@@ -501,6 +617,9 @@ const App = () => (
             <Route path="/archive" element={<ReactorArchive />} />
             <Route path="/a-core-game" element={<ACoreGame />} />
             <Route path="/apollo/*" element={<ApolloFacility />} />
+            <Route path="/iitpp" element={<IitppPlant />} />
+            <Route path="/qserf" element={<QserfPlant />} />
+            <Route path="/qserf/foxtrot-9" element={<Foxtrot9 />} />
             <Route path="/reactor" element={<ReactorSimulator />} />
             <Route path="/naramo" element={<NaramoPlant />} />
             <Route path="/mainframe" element={<Mainframe />} />

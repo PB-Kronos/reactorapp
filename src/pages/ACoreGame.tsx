@@ -144,6 +144,7 @@ export default function ACoreGame() {
             key={option}
             size="sm"
             variant={value === option ? "default" : "outline"}
+            tooltip={`Sets ${label.toLowerCase()} to level ${option} of 5. Higher power-laser levels add heat; higher stabilization or pump levels improve heat removal but can consume coolant inventory.`}
             onClick={() => onChange(option)}
           >
             {option}
@@ -244,16 +245,19 @@ export default function ACoreGame() {
                 label="STARTUP PRIMER"
                 on={primer}
                 onChange={setPrimer}
+                tooltip="Charges the PRC startup chain. It must be on before the containment field can be established."
               />
               <SpringButton
                 label="CONTAINMENT FIELD"
                 disabled={!primer || containment}
                 onClick={() => setContainment(true)}
+                tooltip="Establishes the plasma containment field after Startup Primer is charged. It is a one-way startup step."
               />
               <SpringButton
                 label="PRIMARY IGNITION"
                 variant="danger"
                 disabled={!containment || online}
+                tooltip="Starts the plasma reaction once containment is established. Immediately establish coolant and monitor temperature."
                 onClick={() => {
                   setOnline(true);
                   setTemp((v) => Math.max(v, 350));
@@ -268,6 +272,7 @@ export default function ACoreGame() {
               <input
                 className="mt-2 w-full accent-cyan-400"
                 type="range"
+                aria-label="Intake fan speed"
                 min="0"
                 max="165"
                 value={intake}
@@ -279,6 +284,7 @@ export default function ACoreGame() {
               <input
                 className="mt-2 w-full accent-cyan-400"
                 type="range"
+                aria-label="Exhaust fan speed"
                 min="0"
                 max="165"
                 value={exhaust}
@@ -307,17 +313,20 @@ export default function ACoreGame() {
               label="COOLANT FLOW TO CORE"
               on={flow}
               onChange={setFlow}
+              tooltip="Opens the liquid-coolant path to the PRC. Pump output cannot cool the core until this path is open."
             />
             <div className="grid grid-cols-2 gap-3">
               <MaintainedSwitch
                 label="POOL VALVE A"
                 on={poolValves[0]}
                 onChange={(next) => setPoolValves((old) => [next, old[1]])}
+                tooltip="Opens one coolant-pool makeup path. Pool inventory is replenished while it is open."
               />
               <MaintainedSwitch
                 label="POOL VALVE B"
                 on={poolValves[1]}
                 onChange={(next) => setPoolValves((old) => [old[0], next])}
+                tooltip="Opens the second coolant-pool makeup path. Use both at high cooling demand to recover pool inventory."
               />
             </div>
             <Meter label="COOLANT POOL" value={pool.toFixed(1)} unit="%" />
@@ -334,6 +343,7 @@ export default function ACoreGame() {
                       ),
                     )
                   }
+                  tooltip="Isolates one E-coolant branch. All three E-valves must be closed before the emergency coolant discharge is permitted."
                 />
               ))}
             </div>
@@ -351,6 +361,7 @@ export default function ACoreGame() {
               variant="danger"
               disabled={!eReady || !!ecoolantTime}
               onClick={() => setEcoolantTime(12)}
+              tooltip="Releases the emergency coolant reserve for 12 seconds. It requires all E-valves closed and at least 20% stored coolant."
             />
           </CardContent>
         </Card>
@@ -370,6 +381,7 @@ export default function ACoreGame() {
                 <Button
                   key={index}
                   variant={active ? "default" : "outline"}
+                  tooltip="Sets one Emergency Manual Termination System consent. Three buttons expose the termination panel; all six are required to engage it."
                   onClick={() =>
                     setEmergency((old) =>
                       old.map((item, itemIndex) =>
@@ -397,6 +409,7 @@ export default function ACoreGame() {
                           ),
                         )
                       }
+                      tooltip="Turns one EMTS authorization key. All three keys are required with all six emergency consents before shutdown can be authorized."
                     />
                   ))}
                 </div>
@@ -404,12 +417,14 @@ export default function ACoreGame() {
                   label="AUTHORIZE SHUTDOWN"
                   on={shutdownAuth}
                   onChange={setShutdownAuth}
+                  tooltip="Arms Emergency Manual Termination after all six emergency consents and the three termination keys are set."
                 />
                 <SpringButton
                   label="ENGAGE EMTS"
                   variant="danger"
                   disabled={!shutdownAuth || !allEmergency}
                   onClick={() => setShutdown(true)}
+                  tooltip="Executes Emergency Manual Termination. This rapidly removes plasma heat once the full manual authorization sequence is satisfied."
                 />
               </>
             )}

@@ -5,6 +5,7 @@ import {
   BookOpen,
   Cpu,
   Gauge,
+  Orbit,
   Radiation,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -35,6 +36,14 @@ const entries = [
     icon: Radiation,
     description:
       "A Plasma Reactor Core training simulator with startup primer, laser heating, coolant pools, E-coolant, shield degradation and EMTS.",
+  },
+  {
+    title: "QS Energy Research Facility",
+    route: "/qserf",
+    status: "Archive simulation",
+    icon: Orbit,
+    description:
+      "A DMR-01 dark-matter reactor control-room reconstruction with fuel cells, Pump Station Alpha, startup interlocks, and FAAS operating logs.",
   },
   {
     title: "Computer Core APOLLO",

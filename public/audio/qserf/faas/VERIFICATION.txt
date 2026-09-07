@@ -1,0 +1,26 @@
+QSERF FAAS SPLIT PACKAGE - VERIFICATION
+Date: 2026-09-06
+
+Original source compilations: 9 (left unchanged in the parent folder)
+Generated MP3 clips: 141
+Manifest CSV rows: 141
+Manifest JSON entries: 141
+
+Full decode failures: 0
+Files missing from manifest: 0
+Manifest entries missing from disk: 0
+Non-mono files: 0
+Files not at 48,000 Hz: 0
+Files not at 192 kbps: 0
+Broken event playback-plan references: 0
+
+Event playback model:
+- Startup evacuation samples are represented as selectable variants.
+- Warhead priming, primed, authorization, countdown, and cancellation are independent triggers.
+- Meltdown countdown, failure, shutdown, and recovery paths are separate branches.
+- Folder sorting is not used as an event playback instruction.
+
+Shortest asset: 0.400 seconds (intentional modular word)
+Longest asset: 42.550 seconds (final warhead countdown)
+
+All files were decoded end-to-end with FFmpeg after export.

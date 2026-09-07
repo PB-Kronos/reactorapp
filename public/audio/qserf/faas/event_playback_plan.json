@@ -1,0 +1,89 @@
+{
+  "rule": "Never autoplay a whole event folder. Play assets only when their named trigger fires.",
+  "startup": {
+    "startup_requested": {
+      "selection": "random_one_variant_or_configured_variant",
+      "variants": {
+        "A_immediately": [
+          "01_Startup_Sequence/STARTUP_BEGIN_A_01_sequence_initiated.mp3",
+          "01_Startup_Sequence/STARTUP_BEGIN_A_02_vacate_immediately.mp3"
+        ],
+        "B_at_this_time": [
+          "01_Startup_Sequence/STARTUP_BEGIN_B_ignition_initialized_vacate_at_this_time.mp3"
+        ]
+      }
+    },
+    "nominal_state_order": [
+      "startup_requested",
+      "gravitational_lasers_online",
+      "superstructure_raise_started",
+      "superstructure_centered",
+      "power_lasers_activating",
+      "power_lasers_online",
+      "combustion_intake_opening",
+      "startup_completed"
+    ],
+    "state_triggers": {
+      "gravitational_lasers_online": "01_Startup_Sequence/GRAVITATIONAL_LASERS_ONLINE.mp3",
+      "superstructure_raise_started": "01_Startup_Sequence/SUPERSTRUCTURE_RAISING.mp3",
+      "superstructure_centered": "01_Startup_Sequence/SUPERSTRUCTURE_CENTERED.mp3",
+      "power_lasers_activating": "01_Startup_Sequence/POWER_LASERS_ACTIVATING.mp3",
+      "power_lasers_online": "01_Startup_Sequence/POWER_LASERS_ONLINE.mp3",
+      "combustion_intake_opening": "01_Startup_Sequence/COMBUSTION_INTAKE_OPENING.mp3",
+      "startup_completed": [
+        "01_Startup_Sequence/STARTUP_COMPLETED.mp3",
+        "01_Startup_Sequence/REACTOR_CORE_ONLINE.mp3"
+      ]
+    }
+  },
+  "warhead": {
+    "rule": "Priming, primed, detonation authorization, timer thresholds, and cancellation are independent simulator triggers.",
+    "triggers": {
+      "protocol_saletum_activated": "05_Warhead/TRIGGER_PROTOCOL_ACTIVATED.mp3",
+      "warhead_priming_started": "05_Warhead/TRIGGER_PRIMING_STARTED_T40.mp3",
+      "warhead_primed": "05_Warhead/TRIGGER_WARHEAD_PRIMED_READY.mp3",
+      "warhead_detonation_authorized": "05_Warhead/TRIGGER_DETONATION_AUTHORIZED.mp3",
+      "warhead_timer_200": "05_Warhead/TRIGGER_TIMER_T200.mp3",
+      "warhead_timer_60": "05_Warhead/TRIGGER_TIMER_T60.mp3",
+      "warhead_timer_30": "05_Warhead/TRIGGER_TIMER_T30_FULL_COUNTDOWN.mp3",
+      "warhead_cancelled": "05_Warhead/TRIGGER_WARHEAD_CANCELLED.mp3"
+    }
+  },
+  "meltdown": {
+    "rule": "Timer, failure, shutdown, and recovery clips are separate branches; never concatenate all of them.",
+    "countdown_triggers": {
+      "meltdown_timer_10_minutes": "06_Meltdown/TRIGGER_TIMER_T10_explosion_warning.mp3",
+      "meltdown_timer_5_minutes": "06_Meltdown/TRIGGER_TIMER_T5_explosion_warning.mp3",
+      "meltdown_timer_2_minutes": "06_Meltdown/TRIGGER_TIMER_T2_explosion_warning.mp3",
+      "meltdown_timer_1_minute": "06_Meltdown/TRIGGER_TIMER_T1_explosion_warning.mp3"
+    },
+    "shutdown_window_opened": {
+      "selection": "configured_sequence_or_variant_pool",
+      "candidates_in_logical_order": [
+        "06_Meltdown/TRIGGER_SHUTDOWN_DEADLINE_T5.mp3",
+        "06_Meltdown/TRIGGER_SHUTDOWN_OPTION_NOW_ACTIVE.mp3",
+        "06_Meltdown/TRIGGER_SHUTDOWN_TEMPERATURE_REQUIREMENT.mp3"
+      ],
+      "note": "The target simulator decides which samples are live, unused, or randomly selected. Do not assume all three must play."
+    },
+    "failure_triggers": {
+      "shutdown_window_expired": "06_Meltdown/TRIGGER_SHUTDOWN_EXPIRED_ESTIMATING_DESTRUCTION.mp3",
+      "gravitational_anomaly": "06_Meltdown/FAILURE_01_gravitational_anomaly_detected.mp3",
+      "integrity_monitor_failed": "06_Meltdown/FAILURE_02_integrity_monitor_reboot_failure_unknown.mp3",
+      "reactor_instability": "06_Meltdown/FAILURE_03_instability_power_fluctuations.mp3",
+      "pressure_purge_failed": "06_Meltdown/FAILURE_04_pressure_purge_ineffective_pressure_rising.mp3",
+      "pressure_monitor_failed": "06_Meltdown/FAILURE_05_pressure_monitor_failure_status_unknown.mp3",
+      "pressure_release_engaged": "06_Meltdown/FAILURE_06_pressure_emergency_release_engaged.mp3",
+      "facility_evacuation": "06_Meltdown/FAILURE_07_evacuate_immediately.mp3",
+      "superstructure_breached": "06_Meltdown/FAILURE_08_superstructure_breach.mp3",
+      "severe_system_damage": "06_Meltdown/FAILURE_09_severe_damage_shutting_down.mp3",
+      "portal_power_failure_imminent": "06_Meltdown/FAILURE_10_instability_portal_power_failure_imminent.mp3"
+    },
+    "recovery_triggers": {
+      "combustion_stall_succeeded": "06_Meltdown/RECOVERY_01_fuel_ejected_combustion_stalled.mp3",
+      "post_stall_lowering": "06_Meltdown/RECOVERY_02_lowering_superstructure_for_maintenance.mp3",
+      "emergency_shutdown_succeeded": "06_Meltdown/RECOVERY_05_shutdown_successful_crisis_averted.mp3",
+      "post_shutdown_lowering": "06_Meltdown/RECOVERY_06_lowering_reactor_for_maintenance.mp3"
+    }
+  }
+}
