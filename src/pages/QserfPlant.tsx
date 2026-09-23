@@ -120,7 +120,6 @@ const Meter = ({
 );
 
 export default function QserfPlant() {
-  const operatorName = localStorage.getItem("unit2-operator-name") || "GUEST";
   const [gridSource, setGridSource] = useState<GridSource>("EXTERNAL");
   const [foxtrotGridOnline, setFoxtrotGridOnline] = useState(
     () => localStorage.getItem("qserf-foxtrot-grid-online") === "true",
@@ -253,10 +252,7 @@ export default function QserfPlant() {
     setMusicKey,
     musicVolumePercent,
     setMusicVolumePercent,
-    musicElapsedSeconds,
-    musicDurationSeconds,
     fadeOutMusic,
-    activeEffect,
     playEffect,
     stopSoundscape,
   } = useQserfSoundscape(faasEnabled, alarmsMuted);
@@ -335,7 +331,7 @@ export default function QserfPlant() {
       ? warheadStandbySeconds > 0 ? "WARHEAD STATUS: STANDBY" : "WARHEAD STATUS: READY"
       : warheadStage === "ACTIVATED"
         ? warheadAnnouncementBusy
-          ? "PROTOCOL ACTIVATION TRANSMISSION IN PROGRESS"
+          ? "STAGE 1A — AUTHORIZATION PENDING"
           : "AWAITING CONFIRM AUTHORIZATION"
         : warheadStage === "RAIDER_HACK"
           ? "RAIDER CREDENTIAL HACK IN PROGRESS"
@@ -1798,13 +1794,6 @@ export default function QserfPlant() {
     );
     addLog(`Fuel Cell ${index + 1} ejected. Slot is empty.`);
   };
-  const debugStartMeltdown = () => {
-    if (meltdownInProgress || ending) return;
-    setStartupPhase("ONLINE");
-    setTemperature(4000);
-    setIntegrity(0);
-    addLog("DEBUG: DMR forced to 4000 K and 0% structural integrity.");
-  };
   const reset = () => {
     setGridSource("EXTERNAL");
     setMaintenance(false);
@@ -2093,10 +2082,6 @@ export default function QserfPlant() {
                 >
                   {ignitionKey ? "KEY TURNED" : "INSERT / TURN KEY"}
                 </Button>
-                <p className="mt-3 text-[11px] leading-5 text-slate-500">
-                  The key authorizes the red ignition button only after the
-                  maintenance and operations teams have cleared the DMR.
-                </p>
               </div>
               <div className="rounded border border-red-400/30 bg-black/35 p-3">
                 <p className="text-xs font-black tracking-wider text-red-200">
@@ -2109,11 +2094,6 @@ export default function QserfPlant() {
                 >
                   START DARK MATTER REACTOR
                 </Button>
-                <p className="mt-3 text-[11px] leading-5 text-slate-500">
-                  {startupReady
-                    ? "All startup interlocks cleared."
-                    : "Awaiting locked fuel, latched feed, an available grid, and turned ignition key."}
-                </p>
               </div>
             </CardContent>
           </Card>
@@ -2185,11 +2165,6 @@ export default function QserfPlant() {
                     ? "EXIT MAINTENANCE MODE"
                     : "ENTER MAINTENANCE MODE"}
                 </Button>
-                <p className="mt-3 text-xs leading-5 text-slate-400">
-                  Primary is turbine-backed DMR supply; Auxiliary is generator
-                  supply; External is startup supply; Foxtrot-9 is available
-                  only after its test-bed reactor is synchronized.
-                </p>
                 <Button asChild className="mt-3 w-full" variant="outline">
                   <Link to="/qserf/foxtrot-9">
                     OPEN PROJECT HELIOS / FOXTROT-9
@@ -2231,17 +2206,8 @@ export default function QserfPlant() {
                       {pump.enabled ? "PUMP STARTED — LATCHED" : "START PUMP"}
                     </Button>
                   </div>
-                  <p className="mt-2 text-[10px] text-slate-500">
-                    A single pump command. Catalyzer feed becomes available only
-                    when all six pumps are online.
-                  </p>
                 </div>
               ))}
-            </CardContent>
-            <CardContent className="pt-0 text-xs leading-5 text-slate-400">
-              {catalyzerFeedLatched
-                ? "CATALYZER FEED ONLINE — permanently latched after all six pumps were started."
-                : `${runningPumps}/6 pump trains started. Feed latches automatically when the sixth pump starts.`}
             </CardContent>
           </Card>
           <Card className="border-violet-400/30 bg-slate-900/75">
@@ -2996,36 +2962,6 @@ export default function QserfPlant() {
                   }
                 />
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!faasEnabled}
-                  onClick={() => {
-                    playRandomHumanCall();
-                    setAmbientScheduleRevision((revision) => revision + 1);
-                  }}
-                >
-                  TEST HUMAN CALL
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!faasEnabled}
-                  onClick={() => playFaas(faasClips.emergencyEvacuate, 0)}
-                >
-                  TEST EVACUATION
-                </Button>
-              </div>
-              <Button
-                size="sm"
-                className="w-full border border-red-400/60 bg-red-950/50 text-red-100 hover:bg-red-900"
-                variant="outline"
-                disabled={meltdownInProgress || ending !== null}
-                onClick={debugStartMeltdown}
-              >
-                DEBUG: FORCE MELTDOWN — 4000 K / 0% INTEGRITY
-              </Button>
               <div className="border-t border-slate-700 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-black tracking-[.12em] text-violet-200">
@@ -3068,19 +3004,7 @@ export default function QserfPlant() {
                     }
                   />
                 </label>
-                <p className="mt-2 text-[10px] text-slate-500">
-                  {activeEffect
-                    ? `EFFECT ACTIVE: ${activeEffect.toUpperCase()}`
-                    : musicEnabled
-                      ? "Music is armed. A matching event will select the next track."
-                      : "Music, FAAS, and effects use independent volume levels."}
-                </p>
               </div>
-              <p className="text-[10px] text-slate-500">
-                The system queues normal traffic, interrupts it only for higher
-                priority emergency traffic, and does not automatically play
-                whole folders.
-              </p>
             </CardContent>
           </Card>
           <Card className="border-slate-700 bg-slate-950/80">
@@ -3094,12 +3018,6 @@ export default function QserfPlant() {
                 {log.map((line, index) => (
                   <p key={`${line}-${index}`}>{line}</p>
                 ))}
-              </div>
-              <div className="mt-4 rounded border border-red-400/25 bg-red-950/20 p-3 text-[11px] leading-5 text-red-200">
-                <AlertTriangle className="mr-1 inline h-3 w-3" /> Above 3500 K
-                with integrity below 10%, the DMR enters its meltdown sequence.
-                The Phase 1 and Phase 2 shutdown procedures appear on the
-                emergency panel when their timed windows open.
               </div>
             </CardContent>
           </Card>
@@ -3125,7 +3043,6 @@ export default function QserfPlant() {
                   <p className="text-[10px] font-black tracking-[.16em] text-zinc-300 md:text-sm">{warheadTimerDescription}</p>
                   {warheadProminentTimer && <p className={`mt-2 font-black tracking-[.08em] ${warheadStage === "COUNTDOWN" ? "animate-pulse text-6xl text-red-500 md:text-8xl" : "text-4xl text-amber-200 md:text-6xl"}`}>{warheadProminentTimer}</p>}
                   <p className={`mt-3 text-2xl font-black tracking-[.06em] md:text-5xl ${warheadStage === "COUNTDOWN" ? "text-red-400" : "text-zinc-100"}`}>{warheadStatusText}</p>
-                  <p className="mt-2 text-[10px] tracking-[.16em] text-zinc-400">OPERATOR {operatorName.toUpperCase()} // ROLE {(warheadActor || warheadRoleSelection || "UNSELECTED").replaceAll("_", " ")}</p>
                 </div>
 
                 <div className="mt-3 grid grid-cols-3 gap-1 text-[9px] font-black tracking-wide sm:grid-cols-6">

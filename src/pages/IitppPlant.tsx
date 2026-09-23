@@ -44,7 +44,58 @@ const announcements: Record<string, Announcement> = {
     kind: "alert",
     text: "Attention. Thermal generator fire detected. Facility control, activate fire suppression immediately.",
   },
+  ambientTransit: {
+    id: "ambientTransit",
+    kind: "normal",
+    text: "Facility transit notice. Use the secured rail lines only for their designated access areas.",
+  },
+  ambientMaintenance: {
+    id: "ambientMaintenance",
+    kind: "normal",
+    text: "Maintenance team blue, verify heat-exchange coolant inventory at the next inspection point.",
+  },
+  ambientSecurity: {
+    id: "ambientSecurity",
+    kind: "normal",
+    text: "All facility personnel and visitors must carry valid identification in restricted areas.",
+  },
+  ambientMedical: {
+    id: "ambientMedical",
+    kind: "normal",
+    text: "Personnel experiencing illness or equipment exposure should report to the nearest medical station.",
+  },
+  ambientLogistics: {
+    id: "ambientLogistics",
+    kind: "normal",
+    text: "Materials handling notice. Cargo transit has cleared the warehouse route.",
+  },
+  ambientSafety: {
+    id: "ambientSafety",
+    kind: "normal",
+    text: "Facility safety reminder. Report damaged equipment to security or maintenance without delay.",
+  },
+  ambientComms: {
+    id: "ambientComms",
+    kind: "normal",
+    text: "Communications relay check complete. Routine facility data traffic is operating normally.",
+  },
+  ambientRecruitment: {
+    id: "ambientRecruitment",
+    kind: "normal",
+    text: "Innovation security recruitment remains open. Contact personnel services for assignment information.",
+  },
 };
+
+const ambientAnnouncementIds = [
+  "ambientTransit",
+  "ambientMaintenance",
+  "ambientSecurity",
+  "ambientMedical",
+  "ambientLogistics",
+  "ambientSafety",
+  "ambientComms",
+  "ambientRecruitment",
+] as const;
 
 // When the clean official downloads are copied into public/audio, they take
 // precedence over the browser speech fallback without changing event logic.
@@ -117,9 +168,12 @@ export default function IitppPlant() {
   const audioContext = useRef<AudioContext | null>(null);
   const announcementAudio = useRef<HTMLAudioElement | null>(null);
   const lastAnnouncement = useRef<string | null>(null);
+  const playHtAudioUrlCache = useRef<Record<string, string>>({});
+  const lastAmbientAnnouncement = useRef<string | null>(null);
 
   const alphaPumpOnline = coolantPumps[0];
   const betaPumpOnline = coolantPumps[1];
+  const coolantCount = coolantPumps.filter(Boolean).length;
   const laserCount = powerLasers.filter((mode) => mode !== "OFF" && mode !== "DESTROYED").length;
   const coolantLaserCount = coolantLasers.filter(Boolean).length;
   const startupReady =
@@ -195,19 +249,49 @@ export default function IitppPlant() {
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     };
+    const playAudioUrl = (url: string, onFailure: () => void) => {
+      announcementAudio.current?.pause();
+      const audio = new Audio(url);
+      audio.volume = 0.9;
+      announcementAudio.current = audio;
+      audio.addEventListener("error", onFailure, { once: true });
+      void audio.play().catch(onFailure);
+    };
+    const playBundledFallback = () => {
+      const asset = announcementAssets[id];
+      if (!asset) {
+        speakFallback();
+        return;
+      }
+      playAudioUrl(asset, speakFallback);
+    };
+    const playPlayHt = async () => {
+      const cachedUrl = playHtAudioUrlCache.current[id];
+      if (cachedUrl) {
+        playAudioUrl(cachedUrl, playBundledFallback);
+        return;
+      }
+      try {
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: announcement.text }),
+        });
+        if (!response.ok) throw new Error("PlayHT synthesis unavailable");
+        const audio = await response.blob();
+        if (!audio.size || !audio.type.startsWith("audio/")) {
+          throw new Error("PlayHT returned no audio");
+        }
+        const audioUrl = URL.createObjectURL(audio);
+        playHtAudioUrlCache.current[id] = audioUrl;
+        playAudioUrl(audioUrl, playBundledFallback);
+      } catch {
+        playBundledFallback();
+      }
+    };
     window.setTimeout(
       () => {
-        const asset = announcementAssets[id];
-        if (!asset) {
-          speakFallback();
-          return;
-        }
-        announcementAudio.current?.pause();
-        const audio = new Audio(asset);
-        audio.volume = 0.9;
-        announcementAudio.current = audio;
-        audio.addEventListener("error", speakFallback, { once: true });
-        void audio.play().catch(speakFallback);
+        void playPlayHt();
       },
       announcement.kind === "alert" ? 340 : 120,
     );
@@ -269,6 +353,25 @@ export default function IitppPlant() {
     else if (temperature >= 3500 && !safeguard) announce("safeguard");
     else if (temperature < 500) announce("cold");
   }, [online, temperature, safeguard]);
+
+  useEffect(() => {
+    const eventActive =
+      generatorFire || temperature < 500 || temperature >= 3500 || safeguard;
+    if (!online || !paAudioEnabled || eventActive) return;
+
+    const timeout = window.setTimeout(
+      () => {
+        const eligible = ambientAnnouncementIds.filter(
+          (id) => id !== lastAmbientAnnouncement.current,
+        );
+        const id = eligible[Math.floor(Math.random() * eligible.length)];
+        lastAmbientAnnouncement.current = id;
+        announce(id, true);
+      },
+      70_000 + Math.random() * 40_000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [online, paAudioEnabled, generatorFire, temperature < 500, temperature >= 3500, safeguard]);
 
   const eventLabel = useMemo(() => {
     if (temperature >= 4500) return "CODE RED — MELTDOWN";
@@ -453,7 +556,7 @@ export default function IitppPlant() {
         />
         <Meter
           label="COOLANT PUMPS"
-          value={`${coolantCount} / 4`}
+          value={`${coolantCount} / ${coolantPumps.length}`}
           tone={coolantCount >= 2 ? "text-emerald-300" : "text-red-300"}
         />
         <Meter
@@ -674,7 +777,7 @@ export default function IitppPlant() {
                     {safeguardStage === "IDLE"
                       ? safeguardRisk === null
                         ? "AVAILABLE ONLY AT 3,500–4,499 K"
-                        : `${safeguardRisk} RISK${safeguardRisk === 1 ? "" : "S"}`
+                        : `${safeguardRisk} RISKS`
                       : `SEQUENCE: ${safeguardStage}`}
                   </span>
                 </div>

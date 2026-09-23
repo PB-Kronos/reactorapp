@@ -359,8 +359,6 @@ const specificGuidance: Record<string, string> = {
   "acknowledge": "Acknowledges currently active DMR alarms. It stops their visual unacknowledged state but does not clear the underlying condition.",
   "mute alarms": "Mutes warning and emergency FAAS alarm audio only. It does not acknowledge alarms or stop normal FAAS traffic.",
   "unmute alarms": "Restores warning and emergency FAAS alarm audio. Alarm acknowledgement remains separate.",
-  "test human call": "Plays a non-event human PA call for audio testing. ALT-07 automatically schedules its ALT-08 follow-up three seconds later.",
-  "test evacuation": "Plays the DMR evacuation announcement for PA testing without changing reactor state.",
   "music on": "Enables optional QSERF background music. It does not automatically resume a previous event track.",
   "music off": "Disables optional QSERF background music without affecting FAAS announcements or alarms.",
   "foxtrot 9 control rod insertion command": "Commands Foxtrot-9 rod insertion. The drive moves first and neutron flux, heat, and pressure follow gradually rather than changing instantly.",
