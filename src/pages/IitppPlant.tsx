@@ -13,6 +13,11 @@ type Announcement = {
   text: string;
 };
 
+type PowerLaserMode = "OFF" | "LOW" | "REG" | "MAX" | "DESTROYED";
+type FanSpeed = "OFF" | "SLOW" | "REGULAR" | "FAST";
+type RingMode = "LOW" | "NORMAL" | "HIGH";
+type SafeguardStage = "IDLE" | "SEQUENCING" | "ACTIVE" | "FAILED";
+
 const announcements: Record<string, Announcement> = {
   startup: {
     id: "startup",
@@ -77,21 +82,32 @@ const Meter = ({
 export default function IitppPlant() {
   const [facilityPower, setFacilityPower] = useState(false);
   const [primer, setPrimer] = useState(false);
-  const [coolantPumps, setCoolantPumps] = useState([
+  const [coolantPumps, setCoolantPumps] = useState([false, false]);
+  const [stabilizer, setStabilizer] = useState(false);
+  const [crystalRaised, setCrystalRaised] = useState(false);
+  const [ringOnline, setRingOnline] = useState(false);
+  const [powerLasers, setPowerLasers] = useState<PowerLaserMode[]>([
+    "OFF",
+    "OFF",
+    "OFF",
+    "OFF",
+  ]);
+  const [overloadedLasers, setOverloadedLasers] = useState([
     false,
     false,
     false,
     false,
   ]);
-  const [stabilizer, setStabilizer] = useState(false);
-  const [crystalRaised, setCrystalRaised] = useState(false);
-  const [ringOnline, setRingOnline] = useState(false);
-  const [powerLasers, setPowerLasers] = useState([false, false, false, false]);
   const [coolantLasers, setCoolantLasers] = useState([false, false, false]);
+  const [fanSpeed, setFanSpeed] = useState<FanSpeed>("REGULAR");
+  const [ringMode, setRingMode] = useState<RingMode>("NORMAL");
   const [online, setOnline] = useState(false);
   const [temperature, setTemperature] = useState(293);
   const [output, setOutput] = useState(0);
   const [safeguard, setSafeguard] = useState(false);
+  const [safeguardCoreKey, setSafeguardCoreKey] = useState(false);
+  const [safeguardFacilityKey, setSafeguardFacilityKey] = useState(false);
+  const [safeguardStage, setSafeguardStage] = useState<SafeguardStage>("IDLE");
   const [generatorFire, setGeneratorFire] = useState(false);
   const [musicOpen, setMusicOpen] = useState(false);
   const [officialPaOpen, setOfficialPaOpen] = useState(false);
@@ -102,13 +118,14 @@ export default function IitppPlant() {
   const announcementAudio = useRef<HTMLAudioElement | null>(null);
   const lastAnnouncement = useRef<string | null>(null);
 
-  const coolantCount = coolantPumps.filter(Boolean).length;
-  const laserCount = powerLasers.filter(Boolean).length;
+  const alphaPumpOnline = coolantPumps[0];
+  const betaPumpOnline = coolantPumps[1];
+  const laserCount = powerLasers.filter((mode) => mode !== "OFF" && mode !== "DESTROYED").length;
   const coolantLaserCount = coolantLasers.filter(Boolean).length;
   const startupReady =
     facilityPower &&
     primer &&
-    coolantCount >= 2 &&
+    alphaPumpOnline &&
     stabilizer &&
     crystalRaised &&
     ringOnline &&
@@ -119,10 +136,20 @@ export default function IitppPlant() {
     : temperature < 500
       ? "FREEZEDOWN RISK"
       : temperature < 3500
-        ? "NOMINAL"
+        ? temperature < 750
+          ? "LOW ENERGY"
+          : "NOMINAL"
         : temperature < 4500
           ? "SAFEGUARD WINDOW"
           : "MELTDOWN";
+  const safeguardRisk =
+    temperature < 3500 || temperature >= 4500
+      ? null
+      : temperature < 3850
+        ? 0
+        : temperature < 4200
+          ? 4
+          : 12;
 
   const soundChime = (priority: Announcement["kind"]) => {
     const context = audioContext.current;
@@ -137,6 +164,22 @@ export default function IitppPlant() {
     oscillator.connect(gain).connect(context.destination);
     oscillator.start();
     oscillator.stop(context.currentTime + 0.27);
+  };
+  const powerLaserHeat = powerLasers.reduce(
+    (total, mode) =>
+      total + (mode === "LOW" ? 1 : mode === "REG" ? 2 : mode === "MAX" ? 3 : 0),
+    0,
+  );
+  const fanCooling =
+    fanSpeed === "SLOW" ? 3 : fanSpeed === "REGULAR" ? 6 : fanSpeed === "FAST" ? 8 : 0;
+  const ringRiskMultiplier = (rawDelta: number) => {
+    if (!ringOnline) return rawDelta;
+    const movingTowardHighEvent = temperature >= 3000 && rawDelta > 0;
+    const movingTowardLowEvent = temperature <= 500 && rawDelta < 0;
+    if (!movingTowardHighEvent && !movingTowardLowEvent) return rawDelta;
+    if (ringMode === "HIGH") return rawDelta * 0.6;
+    if (ringMode === "LOW") return rawDelta * 1.3;
+    return rawDelta;
   };
   const announce = (id: keyof typeof announcements, force = false) => {
     const announcement = announcements[id];
@@ -179,35 +222,42 @@ export default function IitppPlant() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (!online) return;
-      const heating = laserCount * 18 + (crystalRaised ? 4 : 0);
+      // IITPP's core has a temperature-dependent natural heating rate. The
+      // lasers and cooling controls then move that rate; they do not set a
+      // fixed target temperature.
+      const naturalHeating =
+        temperature < 1000 ? 5 : temperature < 2000 ? 3 : temperature < 3000 ? 4 : temperature < 3500 ? 5 : 16;
+      const lowEnergyHeating = temperature < 500 ? 2 : naturalHeating;
       const cooling =
-        coolantCount * 14 + coolantLaserCount * 8 + (stabilizer ? 8 : 0);
-      const runaway = temperature > 3500 ? (temperature - 3400) / 65 : 0;
-      const safeguardCooling = safeguard ? 92 : 0;
+        fanCooling +
+        (alphaPumpOnline ? coolantLaserCount * 10 : 0);
+      const rawDelta = lowEnergyHeating + powerLaserHeat - cooling;
+      const stabilizedDelta = ringRiskMultiplier(rawDelta);
+      const safeguardCooling = safeguard ? 130 : 0;
       setTemperature((current) =>
         clamp(
-          current + (heating - cooling + runaway - safeguardCooling) * 0.5,
+          current + (stabilizedDelta - safeguardCooling) * 0.5,
           0,
           6000,
         ),
       );
-      setOutput(() =>
-        clamp(
-          (laserCount * 18 + (temperature - 500) * 0.02) *
-            (ringOnline ? 1 : 0.25),
-          0,
-          120,
-        ),
-      );
+      setOutput(() => {
+        if (safeguard) return 0;
+        if (temperature <= 100) return 0;
+        if (temperature < 500) return 5 + ((temperature - 100) / 400) * 10;
+        if (temperature >= 4500) return clamp(500 + (temperature - 4500) * 0.27, 500, 900);
+        if (temperature < 750) return 15 + ((temperature - 500) / 250) * 45;
+        return clamp(60 + ((temperature - 750) / 2250) * 15, 60, 75);
+      });
     }, 500);
     return () => window.clearInterval(interval);
   }, [
     online,
-    laserCount,
-    coolantCount,
+    powerLaserHeat,
+    alphaPumpOnline,
     coolantLaserCount,
-    stabilizer,
-    crystalRaised,
+    fanCooling,
+    ringMode,
     ringOnline,
     temperature,
     safeguard,
@@ -231,16 +281,22 @@ export default function IitppPlant() {
   const reset = () => {
     setFacilityPower(false);
     setPrimer(false);
-    setCoolantPumps([false, false, false, false]);
+    setCoolantPumps([false, false]);
     setStabilizer(false);
     setCrystalRaised(false);
     setRingOnline(false);
-    setPowerLasers([false, false, false, false]);
+    setPowerLasers(["OFF", "OFF", "OFF", "OFF"]);
+    setOverloadedLasers([false, false, false, false]);
     setCoolantLasers([false, false, false]);
+    setFanSpeed("REGULAR");
+    setRingMode("NORMAL");
     setOnline(false);
     setTemperature(293);
     setOutput(0);
     setSafeguard(false);
+    setSafeguardCoreKey(false);
+    setSafeguardFacilityKey(false);
+    setSafeguardStage("IDLE");
     setGeneratorFire(false);
     setActiveAnnouncement(null);
   };
@@ -251,11 +307,12 @@ export default function IitppPlant() {
     if (event === "startup") {
       setFacilityPower(true);
       setPrimer(true);
-      setCoolantPumps([true, true, true, false]);
+      setCoolantPumps([true, true]);
       setStabilizer(true);
       setCrystalRaised(true);
       setRingOnline(true);
-      setPowerLasers([true, true, true, true]);
+      setPowerLasers(["REG", "REG", "REG", "REG"]);
+      setOverloadedLasers([false, false, false, false]);
       setCoolantLasers([true, true, true]);
       setOnline(true);
       setTemperature(950);
@@ -287,6 +344,68 @@ export default function IitppPlant() {
     setter((previous) =>
       previous.map((value, item) => (item === index ? !value : value)),
     );
+  const cyclePowerLaser = (index: number) => {
+    const modes: PowerLaserMode[] = ["OFF", "LOW", "REG", "MAX"];
+    setPowerLasers((previous) =>
+      previous.map((mode, item) => {
+        if (item !== index || mode === "DESTROYED") return mode;
+        return modes[(modes.indexOf(mode) + 1) % modes.length];
+      }),
+    );
+  };
+  const overloadPowerLaser = (index: number) => {
+    if (
+      !online ||
+      temperature < 100 ||
+      temperature > 500 ||
+      overloadedLasers[index] ||
+      powerLasers[index] === "DESTROYED"
+    )
+      return;
+    // The documented early-startup overload has a roughly 60% failure rate.
+    // A surviving laser is consumed by the procedure and no longer adds heat.
+    const failed = Math.random() < 0.6;
+    setOverloadedLasers((previous) =>
+      previous.map((value, item) => (item === index ? !failed : value)),
+    );
+    setPowerLasers((previous) =>
+      previous.map((mode, item) =>
+        item === index ? (failed ? "DESTROYED" : "OFF") : mode,
+      ),
+    );
+    if (!failed) {
+      const nextSuccesses = overloadedLasers.filter(Boolean).length + 1;
+      if (nextSuccesses >= 2) setTemperature(1500);
+    }
+  };
+  const attemptSafeguard = () => {
+    if (
+      !online ||
+      temperature < 3500 ||
+      temperature >= 4500 ||
+      !safeguardCoreKey ||
+      !safeguardFacilityKey ||
+      safeguardStage !== "IDLE"
+    )
+      return;
+    const risk = temperature < 3850 ? 0 : temperature < 4200 ? 4 : 12;
+    const successChance = risk === 0 ? 1 : risk === 4 ? 0.75 : 0.4;
+    setSafeguardStage("SEQUENCING");
+    announce("safeguard", true);
+    if (risk === 0) setPowerLasers(["OFF", "OFF", "OFF", "OFF"]);
+    if (risk === 4) setPowerLasers(["OFF", "OFF", "OFF", powerLasers[3]]);
+    window.setTimeout(() => {
+      if (Math.random() <= successChance) {
+        setSafeguard(true);
+        setSafeguardStage("ACTIVE");
+        setTemperature(1500);
+      } else {
+        setSafeguard(false);
+        setSafeguardStage("FAILED");
+        setTemperature((current) => Math.max(current, 4500));
+      }
+    }, 2600);
+  };
 
   return (
     <main className="min-h-screen bg-[#070a0e] p-4 font-mono text-slate-100 md:p-7">
@@ -396,13 +515,13 @@ export default function IitppPlant() {
                       variant={running ? "default" : "outline"}
                       onClick={() => toggleAt(setCoolantPumps, index)}
                     >
-                      PUMP {index + 1}: {running ? "ON" : "OFF"}
+                      {index === 0 ? "ALPHA / CORE" : "BETA / GENERATORS"}: {running ? "ON" : "OFF"}
                     </Button>
                   ))}
                 </div>
                 <p className="text-xs text-slate-400">
-                  At least two pumps are required before core startup. More
-                  running pumps give stronger heat removal.
+                  Alpha supplies the reactor core and coolant lasers. Beta
+                  cools the thermal generators and prevents generator fires.
                 </p>
               </div>
               <div className="space-y-3 rounded border border-slate-700 bg-slate-950/60 p-4">
@@ -433,23 +552,44 @@ export default function IitppPlant() {
                   </Button>
                 </div>
                 <div className="grid grid-cols-4 gap-2">
-                  {powerLasers.map((active, index) => (
+                  {powerLasers.map((mode, index) => (
                     <Button
                       key={index}
                       disabled={!facilityPower}
                       size="sm"
-                      variant={active ? "default" : "outline"}
-                      onClick={() => toggleAt(setPowerLasers, index)}
+                      variant={mode === "OFF" || mode === "DESTROYED" ? "outline" : "default"}
+                      onClick={() => cyclePowerLaser(index)}
                     >
-                      P-L {index + 1}
+                      P-L {index + 1}: {mode}
                     </Button>
                   ))}
                 </div>
+                {online && temperature >= 100 && temperature <= 500 && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {powerLasers.map((mode, index) => (
+                      <Button
+                        key={`overload-${index}`}
+                        size="sm"
+                        variant="destructive"
+                        disabled={
+                          mode === "DESTROYED" || overloadedLasers[index]
+                        }
+                        onClick={() => overloadPowerLaser(index)}
+                      >
+                        {mode === "DESTROYED"
+                          ? `P-L ${index + 1} DESTROYED`
+                          : overloadedLasers[index]
+                            ? `P-L ${index + 1} OVERLOADED`
+                            : `OVERLOAD P-L ${index + 1}`}
+                      </Button>
+                    ))}
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-2">
                   {coolantLasers.map((active, index) => (
                     <Button
                       key={index}
-                      disabled={!facilityPower}
+                      disabled={!facilityPower || !alphaPumpOnline}
                       size="sm"
                       variant={active ? "default" : "outline"}
                       onClick={() => toggleAt(setCoolantLasers, index)}
@@ -458,6 +598,34 @@ export default function IitppPlant() {
                     </Button>
                   ))}
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const speeds: FanSpeed[] = ["OFF", "SLOW", "REGULAR", "FAST"];
+                      setFanSpeed(speeds[(speeds.indexOf(fanSpeed) + 1) % speeds.length]);
+                    }}
+                  >
+                    CORE FANS: {fanSpeed}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const modes: RingMode[] = ["LOW", "NORMAL", "HIGH"];
+                      setRingMode(modes[(modes.indexOf(ringMode) + 1) % modes.length]);
+                    }}
+                  >
+                    RING MODE: {ringMode}
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Power lasers heat by 1/2/3 K/s at LOW/REG/MAX. Fans cool by
+                  0/3/6/8 K/s. The ring on HIGH reduces movement toward an event;
+                  LOW accelerates it. Between 100–500 K, an overload can bring
+                  the core back to 1,500 K if at least two lasers survive.
+                </p>
               </div>
               <div className="rounded border border-slate-700 bg-slate-950/60 p-4">
                 <p className="text-xs font-black tracking-wider text-slate-400">
@@ -484,7 +652,7 @@ export default function IitppPlant() {
                 <p className="mt-3 text-xs text-slate-400">
                   {startupReady
                     ? "All startup permissives are satisfied."
-                    : "Startup permissives incomplete."}
+                    : "Startup permissives incomplete. Alpha pump, all four power lasers, and all coolant lasers must be aligned."}
                 </p>
               </div>
             </CardContent>
@@ -497,16 +665,58 @@ export default function IitppPlant() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-3">
-              <Button
-                disabled={!online || temperature < 3500}
-                variant={safeguard ? "default" : "destructive"}
-                onClick={() => {
-                  setSafeguard((value) => !value);
-                  if (!safeguard) announce("safeguard");
-                }}
-              >
-                {safeguard ? "SAFEGUARD ACTIVE" : "ACTIVATE SAFEGUARD"}
-              </Button>
+              <div className="rounded border border-red-400/25 bg-black/30 p-3 md:col-span-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-black tracking-[.13em] text-red-200">
+                    SAFEGUARD KEYS + COMBUSTION STALL
+                  </p>
+                  <span className="text-xs text-slate-400">
+                    {safeguardStage === "IDLE"
+                      ? safeguardRisk === null
+                        ? "AVAILABLE ONLY AT 3,500–4,499 K"
+                        : `${safeguardRisk} RISK${safeguardRisk === 1 ? "" : "S"}`
+                      : `SEQUENCE: ${safeguardStage}`}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <Button
+                    size="sm"
+                    variant={safeguardCoreKey ? "default" : "outline"}
+                    disabled={!online || safeguardStage !== "IDLE"}
+                    onClick={() => setSafeguardCoreKey((value) => !value)}
+                  >
+                    CORE ROOM KEY: {safeguardCoreKey ? "INSERTED" : "OUT"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={safeguardFacilityKey ? "default" : "outline"}
+                    disabled={!online || safeguardStage !== "IDLE"}
+                    onClick={() => setSafeguardFacilityKey((value) => !value)}
+                  >
+                    FACILITY KEY: {safeguardFacilityKey ? "INSERTED" : "OUT"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={safeguard ? "default" : "destructive"}
+                    disabled={
+                      safeguard ||
+                      safeguardRisk === null ||
+                      !safeguardCoreKey ||
+                      !safeguardFacilityKey ||
+                      safeguardStage !== "IDLE"
+                    }
+                    onClick={attemptSafeguard}
+                  >
+                    {safeguard ? "SAFEGUARD ACTIVE" : "ACTIVATE SAFEGUARD"}
+                  </Button>
+                </div>
+                <p className="mt-3 text-xs text-slate-400">
+                  Two keys are required. The documented risk bands are 0 risks
+                  below 3,850 K, 4 risks below 4,200 K, and 12 risks below 4,500 K.
+                  A successful safeguard shuts down the lasers and rapidly returns
+                  the core to 1,500 K.
+                </p>
+              </div>
               <Button
                 variant={generatorFire ? "destructive" : "outline"}
                 onClick={() => {
@@ -516,7 +726,9 @@ export default function IitppPlant() {
               >
                 {generatorFire
                   ? "FIRE SUPPRESSION ACTIVE"
-                  : "SIMULATE GENERATOR FIRE"}
+                  : betaPumpOnline
+                    ? "SIMULATE GENERATOR FIRE (BETA ONLINE)"
+                    : "SIMULATE GENERATOR FIRE"}
               </Button>
               <Button variant="outline" onClick={() => announce("meltdown")}>
                 <AlertTriangle className="mr-2 h-4 w-4" /> TEST CODE RED PA

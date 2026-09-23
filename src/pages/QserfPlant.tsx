@@ -34,11 +34,15 @@ type EvacuationLocation = "CONTROL_ROOM" | "BLAST_SHELTER" | "TARTARUS_ZONE";
 type WarheadActor = "RAIDER" | "ADMINISTRATOR";
 type WarheadStage =
   | "DORMANT"
+  | "ACTIVATED"
   | "RAIDER_HACK"
   | "PRIMING"
+  | "ARM_ANNOUNCING"
   | "ARM_READY"
   | "KEYS"
+  | "DETONATION_BUTTON"
   | "VERIFY"
+  | "FINAL_CONFIRMATION"
   | "COUNTDOWN"
   | "CANCELLED";
 type MeltdownStage =
@@ -68,6 +72,15 @@ const formatMeltdownTime = (totalSeconds: number) => {
   return `${minutes}:${Math.floor(totalSeconds % 60)
     .toString()
     .padStart(2, "0")}`;
+};
+const formatWarheadClock = (remainingMilliseconds: number) => {
+  const safeMilliseconds = Math.max(0, remainingMilliseconds);
+  const minutes = Math.floor(safeMilliseconds / 60_000);
+  const seconds = Math.floor((safeMilliseconds % 60_000) / 1_000);
+  const hundredths = Math.floor((safeMilliseconds % 1_000) / 10);
+  return `${minutes.toString().padStart(2, "0")}:${seconds
+    .toString()
+    .padStart(2, "0")}.${hundredths.toString().padStart(2, "0")}`;
 };
 const freshPumps = (): Pump[] =>
   Array.from({ length: 6 }, () => ({ enabled: false }));
@@ -164,7 +177,14 @@ export default function QserfPlant() {
   const [activeQserfTab, setActiveQserfTab] = useState<"DMR" | "WARHEAD">("DMR");
   const [warheadStage, setWarheadStage] = useState<WarheadStage>("DORMANT");
   const [warheadActor, setWarheadActor] = useState<WarheadActor | null>(null);
+  const [warheadRoleSelection, setWarheadRoleSelection] = useState<WarheadActor | null>(null);
   const [warheadSeconds, setWarheadSeconds] = useState(0);
+  const [warheadRemainingMilliseconds, setWarheadRemainingMilliseconds] = useState(0);
+  const [warheadStandbySeconds, setWarheadStandbySeconds] = useState(60);
+  const [warheadAnnouncementBusy, setWarheadAnnouncementBusy] = useState(false);
+  const [warheadAwaitingAnnouncement, setWarheadAwaitingAnnouncement] = useState<string | null>(null);
+  const [warheadPrimingCountdownActive, setWarheadPrimingCountdownActive] = useState(false);
+  const [warheadVerificationCountdownActive, setWarheadVerificationCountdownActive] = useState(false);
   const [warheadKeys, setWarheadKeys] = useState([false, false]);
   const [warheadKeysTurned, setWarheadKeysTurned] = useState([false, false]);
   const [warheadLocation, setWarheadLocation] = useState<"TOPSIDE" | "BOTTOMSIDE">("BOTTOMSIDE");
@@ -178,6 +198,8 @@ export default function QserfPlant() {
   const [combustionStallFuelPenaltyPending, setCombustionStallFuelPenaltyPending] =
     useState(false);
   const [ending, setEnding] = useState<QserfEndingKey | null>(null);
+  const [warheadDetonationTransition, setWarheadDetonationTransition] =
+    useState<QserfEndingKey | null>(null);
   const [endingAudioNeedsGesture, setEndingAudioNeedsGesture] = useState(false);
   const [meltdownStage, setMeltdownStage] = useState<MeltdownStage>("NORMAL");
   const [meltdownSeconds, setMeltdownSeconds] = useState(0);
@@ -233,7 +255,7 @@ export default function QserfPlant() {
     setMusicVolumePercent,
     musicElapsedSeconds,
     musicDurationSeconds,
-    transitionMusic,
+    fadeOutMusic,
     activeEffect,
     playEffect,
     stopSoundscape,
@@ -268,12 +290,81 @@ export default function QserfPlant() {
   const phase2EndingTimer = useRef<number | null>(null);
   const combustionStallTimer = useRef<number | null>(null);
   const warheadStageTimer = useRef<number | null>(null);
+  const warheadAnnouncementTimer = useRef<number | null>(null);
+  const warheadAdminKeyTimer = useRef<number | null>(null);
+  const warheadAnnouncementStarted = useRef(false);
+  const warheadPrimingDeadline = useRef<number | null>(null);
+  const warheadDetonationTimer = useRef<number | null>(null);
+  const warheadArmDeadline = useRef<number | null>(null);
+  const warheadKeyDeadline = useRef<number | null>(null);
+  const warheadStandbyDeadline = useRef<number | null>(Date.now() + 60_000);
   const warheadCountdownDeadline = useRef<number | null>(null);
   const warheadCountdownCalls = useRef({ t60: false, final: false });
   const gridSourceAtStall = useRef<GridSource>(gridSource);
   const endingVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const online = startupPhase === "ONLINE";
+  const warheadStageIndex =
+    warheadStage === "DORMANT" || warheadStage === "CANCELLED"
+      ? 0
+      : warheadStage === "ACTIVATED" || warheadStage === "RAIDER_HACK" || warheadStage === "PRIMING"
+        ? 2
+        : warheadStage === "ARM_ANNOUNCING" || warheadStage === "ARM_READY"
+          ? 3
+          : warheadStage === "KEYS" || warheadStage === "DETONATION_BUTTON"
+            ? 4
+            : warheadStage === "VERIFY" || warheadStage === "FINAL_CONFIRMATION"
+              ? 5
+              : 5;
+  const warheadTimerDescription =
+    warheadStage === "ARM_READY"
+      ? `WARHEAD ARMING SEQUENCE WILL AUTOMATICALLY CANCEL IN T-${warheadSeconds}`
+      : warheadStage === "ARM_ANNOUNCING"
+        ? "WARHEAD READY TRANSMISSION IN PROGRESS — CONTROLS LOCKED"
+      : warheadStage === "KEYS"
+        ? `WARHEAD KEY AUTHORIZATION WILL AUTOMATICALLY CANCEL IN T-${warheadSeconds}`
+        : warheadStage === "VERIFY"
+          ? `FINAL DETONATION AUTHORIZATION WILL AUTOMATICALLY CANCEL IN T-${warheadSeconds}`
+          : warheadStage === "COUNTDOWN"
+            ? `WARHEAD DETONATION IN T-${warheadSeconds}`
+            : warheadStandbySeconds > 0
+              ? `WARHEAD SYSTEM STANDBY — PRIME ENABLES IN T-${formatWarheadClock(warheadRemainingMilliseconds || warheadStandbySeconds * 1_000)}`
+              : "WARHEAD SYSTEM READY — SELECT A ROLE, THEN PRESS PRIME";
+  const warheadStatusText =
+    warheadStage === "DORMANT" || warheadStage === "CANCELLED"
+      ? warheadStandbySeconds > 0 ? "WARHEAD STATUS: STANDBY" : "WARHEAD STATUS: READY"
+      : warheadStage === "ACTIVATED"
+        ? warheadAnnouncementBusy
+          ? "PROTOCOL ACTIVATION TRANSMISSION IN PROGRESS"
+          : "AWAITING CONFIRM AUTHORIZATION"
+        : warheadStage === "RAIDER_HACK"
+          ? "RAIDER CREDENTIAL HACK IN PROGRESS"
+          : warheadStage === "PRIMING"
+            ? "PRIMING SEQUENCE IN PROGRESS"
+              : warheadStage === "ARM_ANNOUNCING"
+                ? "WARHEAD READY, AWAITING ANNOUNCEMENT COMPLETION"
+            : warheadStage === "ARM_READY"
+              ? "PRIMING SEQUENCE COMPLETED, AWAITING ARMING SIGNAL"
+              : warheadStage === "KEYS"
+                ? "AWAITING KEY AUTHORIZATION"
+                : warheadStage === "DETONATION_BUTTON"
+                  ? "DETONATION BUTTON UNLOCKED"
+                  : warheadStage === "VERIFY"
+                    ? "AWAITING FINAL AUTHORIZATION"
+                    : warheadStage === "FINAL_CONFIRMATION"
+                      ? "FINAL AUTHORIZATION HACK IN PROGRESS"
+                      : "IRREVERSIBLE DETONATION SEQUENCE ACTIVE";
+  const warheadProminentTimer =
+    ["PRIMING", "ARM_READY", "KEYS", "VERIFY", "COUNTDOWN"].includes(warheadStage)
+      ? formatWarheadClock(
+          warheadRemainingMilliseconds ||
+            (warheadStage === "PRIMING" ? 40_000 : warheadSeconds * 1_000),
+        )
+      : warheadStandbySeconds > 0
+        ? formatWarheadClock(
+            warheadRemainingMilliseconds || warheadStandbySeconds * 1_000,
+          )
+        : null;
   const meltdownInProgress =
     meltdownStage !== "NORMAL" &&
     meltdownStage !== "RECOVERED" &&
@@ -291,22 +382,26 @@ export default function QserfPlant() {
   const tartarusSealDeadline = reactorExplosionAt - 20;
   const tartarusSealLockedInTime =
     tartarusSealLockedAt !== null && tartarusSealLockedAt <= tartarusSealDeadline;
-  const p2MusicHasStarted =
-    musicKey === "meltdownP2" && musicElapsedSeconds > 0.05;
-  const p2MusicComplete =
-    p2MusicHasStarted &&
-    musicDurationSeconds > 0 &&
-    musicElapsedSeconds >= musicDurationSeconds - 0.1;
   const catalyzersIntact = catalyzerFailures.length === 0;
   const startupInProgress =
     startupPhase !== "IDLE" && startupPhase !== "ONLINE";
   const eventAnnouncementActive =
     faasCurrentClip !== null && !faasCurrentClip.startsWith("ambient-");
+  const protocolSaletumActive =
+    warheadStage !== "DORMANT" && warheadStage !== "CANCELLED";
+  const warheadInsertedKeyCount = warheadKeys.filter(Boolean).length;
+  const warheadFacilityAlert =
+    protocolSaletumActive && warheadInsertedKeyCount >= 2
+      ? "WARHEAD RED ALERT"
+      : protocolSaletumActive && warheadInsertedKeyCount === 1
+        ? "WARHEAD YELLOW ALERT"
+        : null;
   const facilityEventActive =
     ending !== null ||
     meltdownInProgress ||
     maintenance ||
     startupInProgress ||
+    protocolSaletumActive ||
     eventAnnouncementActive;
   const monitoringLost =
     meltdownStage === "CODE_OMNI" || meltdownStage === "BLACK_HOLE";
@@ -317,22 +412,28 @@ export default function QserfPlant() {
   const sceneState =
     primaryGridBlackout
       ? "PRIMARY GRID BLACKOUT"
-      : meltdownStage === "BLACK_HOLE"
-      ? "BLACK HOLE"
-      : monitoringLost
-        ? "CODE OMNI — NO DATA"
-        : meltdownStage === "CODE_BLACK" ||
-            meltdownStage === "PHASE_2_WINDOW" ||
-            meltdownStage === "EVACUATION"
-          ? "CODE BLACK — DMR GLOW"
-          : meltdownInProgress && meltdownSeconds >= 235
-            ? "CODE RED"
-            : meltdownInProgress
-              ? "EMERGENCY LIGHTING"
-              : "NOMINAL";
+      : warheadFacilityAlert
+        ? warheadFacilityAlert
+        : meltdownStage === "BLACK_HOLE"
+          ? "BLACK HOLE"
+          : monitoringLost
+            ? "CODE OMNI — NO DATA"
+            : meltdownStage === "CODE_BLACK" ||
+                meltdownStage === "PHASE_2_WINDOW" ||
+                meltdownStage === "EVACUATION"
+              ? "CODE BLACK — DMR GLOW"
+              : meltdownInProgress && meltdownSeconds >= 235
+                ? "CODE RED"
+                : meltdownInProgress
+                  ? "EMERGENCY LIGHTING"
+                  : "NOMINAL";
   const sceneBackground =
     sceneState === "PRIMARY GRID BLACKOUT"
       ? "#010204"
+      : sceneState === "WARHEAD RED ALERT"
+        ? "radial-gradient(circle at 50% 18%, #3f0606 0%, #17060b 48%, #080a10 100%)"
+        : sceneState === "WARHEAD YELLOW ALERT"
+          ? "radial-gradient(circle at 50% 18%, #3d2c05 0%, #171106 48%, #080a10 100%)"
       : sceneState === "BLACK HOLE"
       ? "radial-gradient(circle at 50% 17%, #32120f 0%, #11070c 32%, #030408 76%)"
       : monitoringLost
@@ -492,6 +593,11 @@ export default function QserfPlant() {
       if (typeof saved.warheadStage === "string") setWarheadStage(saved.warheadStage as WarheadStage);
       if (saved.warheadActor === "RAIDER" || saved.warheadActor === "ADMINISTRATOR") setWarheadActor(saved.warheadActor);
       if (typeof saved.warheadSeconds === "number") setWarheadSeconds(saved.warheadSeconds);
+      if (typeof saved.warheadStandbySeconds === "number") {
+        const remaining = clamp(saved.warheadStandbySeconds, 0, 60);
+        setWarheadStandbySeconds(remaining);
+        warheadStandbyDeadline.current = Date.now() + remaining * 1_000;
+      }
       if (Array.isArray(saved.warheadKeys) && saved.warheadKeys.length === 2) setWarheadKeys(saved.warheadKeys as boolean[]);
       if (Array.isArray(saved.warheadKeysTurned) && saved.warheadKeysTurned.length === 2) setWarheadKeysTurned(saved.warheadKeysTurned as boolean[]);
       if (saved.warheadLocation === "TOPSIDE" || saved.warheadLocation === "BOTTOMSIDE") setWarheadLocation(saved.warheadLocation);
@@ -514,7 +620,7 @@ export default function QserfPlant() {
       reliefValves, efssWater, efssActive, ignitionKey, startupPhase, temperature,
       integrity, radioactivity, combustionStallState, primaryGridBlackout,
       combustionStallFuelPenaltyPending, activeQserfTab, warheadStage, warheadActor,
-      warheadSeconds, warheadKeys, warheadKeysTurned, warheadLocation,
+      warheadSeconds, warheadStandbySeconds, warheadKeys, warheadKeysTurned, warheadLocation,
       warheadTartarusSealed, raiderFloppyHeld, raiderFloppyEscaped,
     }));
   });
@@ -671,8 +777,72 @@ export default function QserfPlant() {
   }, [combustionStallFuelPenaltyPending, fuelAverage, online]);
 
   useEffect(() => {
-    if (warheadStage !== "RAIDER_HACK" && warheadStage !== "PRIMING") return;
+    if (!warheadAwaitingAnnouncement) {
+      warheadAnnouncementStarted.current = false;
+      return;
+    }
+    if (faasCurrentClip === warheadAwaitingAnnouncement) {
+      warheadAnnouncementStarted.current = true;
+      return;
+    }
+    // Wait for the *actual* audio `ended` event as reflected by useFaasAudio,
+    // rather than guessing the duration of a file that can include a cue tone.
+    if (!warheadAnnouncementStarted.current) return;
+    const completedAnnouncement = warheadAwaitingAnnouncement;
+    warheadAnnouncementStarted.current = false;
+    setWarheadAwaitingAnnouncement(null);
+    setWarheadAnnouncementBusy(false);
+    if (completedAnnouncement === faasClips.warheadPrimingStarted.id) {
+      warheadPrimingDeadline.current = Date.now() + 40_000;
+      setWarheadPrimingCountdownActive(true);
+      addLog("Priming transmission complete. T-minus 40-second arming sequence is now running.");
+      return;
+    }
+    if (completedAnnouncement === faasClips.warheadPrimed.id) {
+      setWarheadStage("ARM_READY");
+      warheadArmDeadline.current = Date.now() + 120_000;
+      setWarheadSeconds(120);
+      setWarheadRemainingMilliseconds(120_000);
+      addLog("Protocol Saletum primed. ARM control is illuminated.");
+      return;
+    }
+    if (completedAnnouncement === faasClips.warheadDetonationAuthorized.id) {
+      warheadKeyDeadline.current = Date.now() + 30_000;
+      setWarheadVerificationCountdownActive(true);
+      addLog("Warhead sequence engaged transmission complete. Final authorization window is now active for 30 seconds.");
+    }
+  }, [faasCurrentClip, warheadAwaitingAnnouncement]);
+
+  useEffect(() => {
+    if (warheadStage !== "PRIMING" || !warheadPrimingCountdownActive) return;
+    const updatePriming = () => {
+      const deadline = warheadPrimingDeadline.current;
+      if (deadline === null) return;
+      const remainingMilliseconds = Math.max(0, deadline - Date.now());
+      setWarheadRemainingMilliseconds(remainingMilliseconds);
+      setWarheadSeconds(Math.ceil(remainingMilliseconds / 1_000));
+      if (remainingMilliseconds > 0) return;
+      warheadPrimingDeadline.current = null;
+      setWarheadPrimingCountdownActive(false);
+      setWarheadStage("ARM_ANNOUNCING");
+      setWarheadAnnouncementBusy(true);
+      setWarheadAwaitingAnnouncement(faasClips.warheadPrimed.id);
+      playFaas(faasClips.warheadPrimed, 0);
+      addLog("Priming timer complete. Waiting for the warhead-ready transmission to finish.");
+    };
+    updatePriming();
+    const interval = window.setInterval(updatePriming, 10);
+    return () => window.clearInterval(interval);
+  }, [playFaas, warheadPrimingCountdownActive, warheadStage]);
+
+  useEffect(() => {
+    if (
+      warheadStage !== "RAIDER_HACK" &&
+      warheadStage !== "FINAL_CONFIRMATION"
+    )
+      return;
     const raiderHack = warheadStage === "RAIDER_HACK";
+    const finalConfirmation = warheadStage === "FINAL_CONFIRMATION";
     warheadStageTimer.current = window.setTimeout(() => {
       warheadStageTimer.current = null;
       if (raiderHack) {
@@ -680,18 +850,98 @@ export default function QserfPlant() {
         playFaas(faasClips.warheadPrimingStarted, 0);
         addLog("Raider Chip accepted. Warhead priming confirmation is in progress.");
       } else {
-        setWarheadStage("ARM_READY");
-        playFaas(faasClips.warheadPrimed, 0);
-        addLog("Protocol Saletum primed. ARM control is illuminated.");
+        setWarheadStage("COUNTDOWN");
+        setWarheadSeconds(200);
+        setWarheadRemainingMilliseconds(200_000);
+        warheadCountdownDeadline.current = Date.now() + 200_000;
+        warheadCountdownCalls.current = { t60: false, final: false };
+        setMusicEnabled(true);
+        setMusicKey("warhead");
+        playFaas(faasClips.warheadTimer200, 0);
+        addLog("Raider confirmation accepted. Final detonation countdown started: T-minus 200 seconds.");
       }
-    }, raiderHack ? 17_000 : 40_000);
+    }, raiderHack || finalConfirmation ? 17_000 : 40_000);
     return () => {
       if (warheadStageTimer.current !== null) {
         window.clearTimeout(warheadStageTimer.current);
         warheadStageTimer.current = null;
       }
     };
+  }, [playFaas, setMusicEnabled, setMusicKey, warheadStage]);
+
+  useEffect(() => {
+    if (warheadStage !== "DORMANT" && warheadStage !== "CANCELLED") return;
+    if (warheadStandbyDeadline.current === null) {
+      warheadStandbyDeadline.current = Date.now() + warheadStandbySeconds * 1_000;
+    }
+    const updateStandby = () => {
+      const deadline = warheadStandbyDeadline.current;
+      if (deadline === null) return;
+      const remainingMilliseconds = Math.max(0, deadline - Date.now());
+      setWarheadRemainingMilliseconds(remainingMilliseconds);
+      setWarheadStandbySeconds(Math.ceil(remainingMilliseconds / 1_000));
+    };
+    updateStandby();
+    const interval = window.setInterval(updateStandby, 10);
+    return () => window.clearInterval(interval);
+  }, [warheadStage]);
+
+  useEffect(() => {
+    if (warheadStage !== "ARM_READY") return;
+    if (warheadArmDeadline.current === null) {
+      warheadArmDeadline.current = Date.now() + 120_000;
+      setWarheadSeconds(120);
+      setWarheadRemainingMilliseconds(120_000);
+    }
+    const updateArmTimer = () => {
+      const deadline = warheadArmDeadline.current;
+      if (deadline === null) return;
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1_000));
+      setWarheadSeconds(remaining);
+      setWarheadRemainingMilliseconds(Math.max(0, deadline - Date.now()));
+      if (remaining > 0) return;
+      warheadArmDeadline.current = null;
+      setWarheadStage("CANCELLED");
+      setWarheadActor(null);
+      setWarheadStandbySeconds(60);
+      warheadStandbyDeadline.current = Date.now() + 60_000;
+      playFaas(faasClips.warheadCancelled, 0);
+      addLog("Warhead prime-off: ARM was not pressed within the Stage 2 authorization window.");
+    };
+    updateArmTimer();
+    const interval = window.setInterval(updateArmTimer, 10);
+    return () => window.clearInterval(interval);
   }, [playFaas, warheadStage]);
+
+  useEffect(() => {
+    if (warheadStage !== "KEYS" && warheadStage !== "VERIFY") return;
+    if (warheadStage === "VERIFY" && !warheadVerificationCountdownActive) return;
+    if (warheadKeyDeadline.current === null) {
+      const defaultSeconds = warheadStage === "KEYS" && warheadActor === "ADMINISTRATOR" ? 60 : warheadStage === "KEYS" ? 700 : 30;
+      warheadKeyDeadline.current = Date.now() + (warheadSeconds || defaultSeconds) * 1_000;
+    }
+    const updateKeyTimer = () => {
+      const deadline = warheadKeyDeadline.current;
+      if (deadline === null) return;
+      const remainingMilliseconds = Math.max(0, deadline - Date.now());
+      setWarheadSeconds(Math.ceil(remainingMilliseconds / 1_000));
+      setWarheadRemainingMilliseconds(remainingMilliseconds);
+    };
+    updateKeyTimer();
+    const interval = window.setInterval(updateKeyTimer, 10);
+    return () => window.clearInterval(interval);
+  }, [warheadActor, warheadStage, warheadVerificationCountdownActive]);
+
+  useEffect(() => {
+    if ((warheadStage !== "KEYS" && warheadStage !== "VERIFY") || warheadSeconds > 0) return;
+    warheadKeyDeadline.current = null;
+    setWarheadStage("CANCELLED");
+    setWarheadActor(null);
+    setWarheadStandbySeconds(60);
+    warheadStandbyDeadline.current = Date.now() + 60_000;
+    playFaas(faasClips.warheadCancelled, 0);
+    addLog("Warhead prime-off: the Stage 3 / Stage 3a authorization timer expired.");
+  }, [playFaas, warheadSeconds, warheadStage]);
 
   useEffect(() => {
     if (warheadStage !== "COUNTDOWN") return;
@@ -701,44 +951,55 @@ export default function QserfPlant() {
     const updateCountdown = () => {
       const deadline = warheadCountdownDeadline.current;
       if (deadline === null) return;
-      setWarheadSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1_000)));
+      const remainingMilliseconds = Math.max(0, deadline - Date.now());
+      setWarheadSeconds(Math.ceil(remainingMilliseconds / 1_000));
+      setWarheadRemainingMilliseconds(remainingMilliseconds);
     };
     updateCountdown();
-    const countdown = window.setInterval(updateCountdown, 100);
+    const countdown = window.setInterval(updateCountdown, 10);
     return () => window.clearInterval(countdown);
   }, [warheadStage]);
 
   useEffect(() => {
     if (warheadStage !== "COUNTDOWN") return;
-    if (warheadSeconds <= 60 && !warheadCountdownCalls.current.t60) {
+    // The recorded T−60 call reaches its spoken timing about nine seconds
+    // after playback begins, so dispatch it at T−69.
+    if (warheadSeconds <= 69 && !warheadCountdownCalls.current.t60) {
       warheadCountdownCalls.current.t60 = true;
       playFaas(faasClips.warheadTimer60, 0);
     }
-    // The final call is a 42.55-second recording: it contains the spoken
-    // T−30 preamble plus the full count. Start it at T−43 so its final count
-    // lands with the detonation instead of more than twelve seconds late.
-    if (warheadSeconds <= 43 && !warheadCountdownCalls.current.final) {
+    // The final-count recording begins its spoken sequence early. Dispatching
+    // at T−41 corrects the measured four-second early callout.
+    if (warheadSeconds <= 41 && !warheadCountdownCalls.current.final) {
       warheadCountdownCalls.current.final = true;
       playFaas(faasClips.warheadTimer30, 0);
     }
     if (warheadSeconds > 0) return;
+    if (warheadDetonationTimer.current !== null) return;
+    const detonationEnding: QserfEndingKey =
+      warheadActor === "RAIDER" && raiderFloppyEscaped
+        ? "forImmediateBroadcast"
+        : warheadActor === "RAIDER" &&
+            warheadLocation === "TOPSIDE" &&
+            warheadTartarusSealed
+          ? "protocolSaletum"
+          : "emergencyDeath";
     setWarheadStage("CANCELLED");
     stopFaas();
-    stopSoundscape();
-    if (warheadActor === "RAIDER" && raiderFloppyEscaped) {
-      setEnding("forImmediateBroadcast");
-    } else if (
-      warheadActor === "RAIDER" &&
-      warheadLocation === "TOPSIDE" &&
-      warheadTartarusSealed
-    ) {
-      setEnding("protocolSaletum");
-    } else {
-      setEnding("emergencyDeath");
-    }
-    addLog("Warhead detonation complete. Facility destruction outcome projected.");
+    fadeOutMusic(3_000);
+    playEffect(qserfEffects.warheadDetonationRinging, 0);
+    setWarheadDetonationTransition(detonationEnding);
+    warheadDetonationTimer.current = window.setTimeout(() => {
+      warheadDetonationTimer.current = null;
+      stopSoundscape();
+      setWarheadDetonationTransition(null);
+      setEnding(detonationEnding);
+    }, 3_000);
+    addLog("Warhead detonation confirmed. Whiteout and final facility alarm active before aftermath projection.");
   }, [
+    fadeOutMusic,
     playFaas,
+    playEffect,
     raiderFloppyEscaped,
     stopFaas,
     stopSoundscape,
@@ -932,14 +1193,6 @@ export default function QserfPlant() {
     );
     return () => window.clearInterval(timer);
   }, [ending, meltdownInProgress]);
-
-  useEffect(() => {
-    if (!musicEnabled || codeBlackStartedAt === null || musicKey === "meltdownP2")
-      return;
-    // Code Black marks the loss of the official P1 route. Crossfade into the
-    // P2 bed rather than abruptly restarting a new track.
-    transitionMusic("meltdownP2", 5_000);
-  }, [codeBlackStartedAt, musicEnabled, musicKey, transitionMusic]);
 
   useEffect(() => {
     if (!ending || !endingVideoRef.current) return;
@@ -1146,9 +1399,7 @@ export default function QserfPlant() {
       addLog("Blast doors sealed. DMR implosion has formed a black hole.");
       return;
     }
-    const reactorExplosionDue = p2MusicHasStarted
-      ? p2MusicComplete
-      : meltdownSeconds >= reactorExplosionAt;
+    const reactorExplosionDue = meltdownSeconds >= reactorExplosionAt;
     if (reactorExplosionDue && meltdownStage !== "TERMINAL") {
       setMeltdownStage("TERMINAL");
       // All live buses are silenced before aftermath playback: the ending
@@ -1183,8 +1434,6 @@ export default function QserfPlant() {
     stopSoundscape,
     evacuationLocation,
     tartarusSealLockedInTime,
-    p2MusicHasStarted,
-    p2MusicComplete,
   ]);
 
   const togglePump = (index: number) =>
@@ -1344,57 +1593,181 @@ export default function QserfPlant() {
     );
   };
   const primeWarhead = (actor: WarheadActor) => {
-    if (warheadStage !== "DORMANT" && warheadStage !== "CANCELLED") return;
+    if (
+      (warheadStage !== "DORMANT" && warheadStage !== "CANCELLED") ||
+      warheadStandbySeconds > 0
+    )
+      return;
     setWarheadActor(actor);
+    setWarheadRoleSelection(actor);
     setWarheadKeys([false, false]);
     setWarheadKeysTurned([false, false]);
+    setWarheadAwaitingAnnouncement(null);
+    setWarheadPrimingCountdownActive(false);
+    setWarheadVerificationCountdownActive(false);
     setRaiderFloppyHeld(false);
     setRaiderFloppyEscaped(false);
+    setWarheadDetonationTransition(null);
     setWarheadTartarusSealed(false);
     setWarheadLocation("BOTTOMSIDE");
+    warheadKeyDeadline.current = null;
+    warheadArmDeadline.current = null;
     warheadCountdownDeadline.current = null;
     warheadCountdownCalls.current = { t60: false, final: false };
+    if (warheadAnnouncementTimer.current !== null) {
+      window.clearTimeout(warheadAnnouncementTimer.current);
+    }
+    if (warheadAdminKeyTimer.current !== null) {
+      window.clearTimeout(warheadAdminKeyTimer.current);
+      warheadAdminKeyTimer.current = null;
+    }
     // Activation/priming is PA-only. The warhead score begins only after
     // final detonation authorization has actually entered the countdown.
     // Priming itself is a direct operator action, so arm the PA bus here.
     // useFaasAudio accepts the transmission immediately in the same gesture.
     if (!faasEnabled) setFaasEnabled(true);
-    if (actor === "ADMINISTRATOR") {
-      setWarheadStage("ARM_READY");
-      playFaas(
-        [faasClips.protocolSaletumActivated, faasClips.warheadPrimed],
-        0,
-      );
-      addLog("Administrator authorization accepted. Warhead ARM control is ready.");
-    } else {
-      setWarheadStage("RAIDER_HACK");
-      playFaas(faasClips.protocolSaletumActivated, 0);
-      addLog("Raider Chip inserted. Hacking confirmation reader for 17 seconds.");
-    }
+    setWarheadStage("ACTIVATED");
+    setWarheadAnnouncementBusy(true);
+    playFaas(faasClips.protocolSaletumActivated, 0);
+    // The confirmation reader is physically locked until the activation PA
+    // transmission has completed. Keep this in step with the catalog clip.
+    warheadAnnouncementTimer.current = window.setTimeout(() => {
+      warheadAnnouncementTimer.current = null;
+      setWarheadAnnouncementBusy(false);
+    }, 16_500);
+    addLog(`Protocol Saletum activated by ${actor.toLowerCase()}. Awaiting Stage 1a confirmation reader.`);
+  };
+  const confirmWarheadPrime = () => {
+    if (warheadStage !== "ACTIVATED" || !warheadActor || warheadAnnouncementBusy) return;
+    // The confirmation reader is the common hand-off point for both roles.
+    // It prepares T-40 immediately, but the countdown itself begins precisely
+    // when FAAS finishes the associated priming transmission.
+    setWarheadStage("PRIMING");
+    setWarheadSeconds(40);
+    setWarheadRemainingMilliseconds(40_000);
+    setWarheadPrimingCountdownActive(false);
+    setWarheadAnnouncementBusy(true);
+    setWarheadAwaitingAnnouncement(faasClips.warheadPrimingStarted.id);
+    playFaas(faasClips.warheadPrimingStarted, 0);
+    addLog(
+      `${warheadActor === "ADMINISTRATOR" ? "Administrator keycard" : "Raider chip"} accepted. Warhead priming sequence started: T-minus 40 seconds.`,
+    );
   };
   const armWarhead = () => {
     if (warheadStage !== "ARM_READY") return;
+    warheadArmDeadline.current = null;
+    const keyWindow = warheadActor === "ADMINISTRATOR" ? 60 : 700;
     setWarheadStage("KEYS");
-    addLog("Warhead armed. Retrieve, insert, and turn both detonation keys.");
+    setWarheadSeconds(keyWindow);
+    setWarheadRemainingMilliseconds(keyWindow * 1_000);
+    warheadKeyDeadline.current = Date.now() + keyWindow * 1_000;
+    if (warheadActor === "ADMINISTRATOR") {
+      setWarheadKeys([true, false]);
+      addLog("Warhead armed. Administrator arming key 1 inserted; facility lighting switched to yellow.");
+      if (warheadAdminKeyTimer.current !== null) {
+        window.clearTimeout(warheadAdminKeyTimer.current);
+      }
+      warheadAdminKeyTimer.current = window.setTimeout(() => {
+        warheadAdminKeyTimer.current = null;
+        setWarheadKeys([true, true]);
+        playEffect(qserfEffects.protocolSaletum, 0);
+        addLog("Administrator arming key 2 inserted. Facility red alert and Protocol Saletum alarm active.");
+      }, 850);
+    } else {
+      addLog("Warhead armed. Locate, insert, and turn both arming keys within 700 seconds.");
+    }
+  };
+  const locateWarheadKey = (key: number) => {
+    if (warheadStage !== "KEYS" || warheadActor !== "RAIDER") return;
+    const nextRequiredKey = warheadKeys.findIndex((found) => !found);
+    if (key !== nextRequiredKey) return;
+    setWarheadKeys((old) => old.map((value, index) => (index === key ? true : value)));
+    if (key === 1) {
+      playEffect(qserfEffects.protocolSaletum, 0);
+      addLog("Arming key 2 inserted. Facility red alert and Protocol Saletum alarm active.");
+    } else {
+      addLog("Arming key 1 inserted. Facility lighting switched to yellow.");
+    }
+  };
+  const engageDetonationButton = () => {
+    if (warheadStage !== "DETONATION_BUTTON") return;
+    setWarheadStage("VERIFY");
+    setWarheadSeconds(30);
+    setWarheadRemainingMilliseconds(30_000);
+    setWarheadVerificationCountdownActive(false);
+    setWarheadAnnouncementBusy(true);
+    setWarheadAwaitingAnnouncement(faasClips.warheadDetonationAuthorized.id);
+    playFaas(faasClips.warheadDetonationAuthorized, 0);
+    addLog("Detonation button pressed. Warhead sequence engaged transmission is in progress.");
+  };
+  const openFinalConfirmation = () => {
+    if (warheadStage !== "VERIFY" || !warheadActor) return;
+    warheadKeyDeadline.current = null;
+    if (warheadActor === "ADMINISTRATOR") {
+      setMusicEnabled(true);
+      setMusicKey("warhead");
+      setWarheadStage("COUNTDOWN");
+      setWarheadSeconds(200);
+      setWarheadRemainingMilliseconds(200_000);
+      warheadCountdownDeadline.current = Date.now() + 200_000;
+      warheadCountdownCalls.current = { t60: false, final: false };
+      playFaas(faasClips.warheadTimer200, 0);
+      addLog("Administrator final authorization accepted. Final detonation countdown started: T-minus 200 seconds.");
+      return;
+    }
+    setWarheadStage("FINAL_CONFIRMATION");
+    addLog("Raider chip inserted for final detonation confirmation. Hacking reader active for 17 seconds.");
   };
   const authorizeWarhead = () => {
-    if (warheadStage !== "VERIFY" || !warheadActor) return;
-    setWarheadStage("COUNTDOWN");
-    setWarheadSeconds(200);
-    warheadCountdownDeadline.current = Date.now() + 200_000;
-    warheadCountdownCalls.current = { t60: false, final: false };
-    if (musicEnabled) setMusicKey("warhead");
-    playFaas([faasClips.warheadDetonationAuthorized, faasClips.warheadTimer200], 0);
-    addLog("Warhead detonation authorized. Facility destruction in T−200 seconds.");
+    openFinalConfirmation();
   };
-  const cancelWarhead = () => {
-    if (warheadStage !== "RAIDER_HACK" && warheadStage !== "PRIMING") return;
+  const cancelWarhead = (authority: "ADMINISTRATOR" | "QSF") => {
+    if (
+      warheadStage !== "RAIDER_HACK" &&
+      warheadStage !== "PRIMING" &&
+      warheadStage !== "ARM_ANNOUNCING"
+    )
+      return;
     setWarheadStage("CANCELLED");
+    setWarheadAnnouncementBusy(false);
+    setWarheadAwaitingAnnouncement(null);
+    setWarheadPrimingCountdownActive(false);
+    setWarheadVerificationCountdownActive(false);
     setWarheadActor(null);
+    setWarheadSeconds(0);
+    setWarheadRemainingMilliseconds(0);
+    setWarheadStandbySeconds(60);
+    warheadStandbyDeadline.current = Date.now() + 60_000;
+    warheadKeyDeadline.current = null;
     warheadCountdownDeadline.current = null;
+    if (warheadAdminKeyTimer.current !== null) {
+      window.clearTimeout(warheadAdminKeyTimer.current);
+      warheadAdminKeyTimer.current = null;
+    }
+    setMusicKey(null);
+    playFaas(faasClips.warheadCancelled, 0);
+    addLog(`${authority} credential accepted. Warhead priming cancelled; Protocol Saletum returned to downtime.`);
+  };
+  const emergencyWarheadOverride = () => {
+    if (warheadStage !== "COUNTDOWN" || warheadActor !== "ADMINISTRATOR") return;
+    warheadCountdownDeadline.current = null;
+    setWarheadStage("CANCELLED");
+    setWarheadAnnouncementBusy(false);
+    setWarheadAwaitingAnnouncement(null);
+    setWarheadPrimingCountdownActive(false);
+    setWarheadVerificationCountdownActive(false);
+    setWarheadActor(null);
+    setWarheadSeconds(0);
+    setWarheadRemainingMilliseconds(0);
+    setWarheadStandbySeconds(60);
+    warheadStandbyDeadline.current = Date.now() + 60_000;
+    if (warheadAdminKeyTimer.current !== null) {
+      window.clearTimeout(warheadAdminKeyTimer.current);
+      warheadAdminKeyTimer.current = null;
+    }
     if (musicEnabled) setMusicKey(null);
     playFaas(faasClips.warheadCancelled, 0);
-    addLog("Warhead priming cancelled. Protocol Saletum returned to downtime.");
+    addLog("Administrator emergency override accepted. Warhead systems are reconfiguring and returning to downtime.");
   };
   const refuel = (index: number) => {
     if (
@@ -1424,6 +1797,13 @@ export default function QserfPlant() {
       old.map((value, current) => (current === index ? 0 : value)),
     );
     addLog(`Fuel Cell ${index + 1} ejected. Slot is empty.`);
+  };
+  const debugStartMeltdown = () => {
+    if (meltdownInProgress || ending) return;
+    setStartupPhase("ONLINE");
+    setTemperature(4000);
+    setIntegrity(0);
+    addLog("DEBUG: DMR forced to 4000 K and 0% structural integrity.");
   };
   const reset = () => {
     setGridSource("EXTERNAL");
@@ -1455,7 +1835,12 @@ export default function QserfPlant() {
     setActiveQserfTab("DMR");
     setWarheadStage("DORMANT");
     setWarheadActor(null);
+    setWarheadRoleSelection(null);
     setWarheadSeconds(0);
+    setWarheadRemainingMilliseconds(0);
+    setWarheadStandbySeconds(60);
+    warheadStandbyDeadline.current = Date.now() + 60_000;
+    warheadKeyDeadline.current = null;
     setWarheadKeys([false, false]);
     setWarheadKeysTurned([false, false]);
     setWarheadLocation("BOTTOMSIDE");
@@ -1503,6 +1888,18 @@ export default function QserfPlant() {
     if (warheadStageTimer.current !== null) {
       window.clearTimeout(warheadStageTimer.current);
       warheadStageTimer.current = null;
+    }
+    if (warheadDetonationTimer.current !== null) {
+      window.clearTimeout(warheadDetonationTimer.current);
+      warheadDetonationTimer.current = null;
+    }
+    if (warheadAnnouncementTimer.current !== null) {
+      window.clearTimeout(warheadAnnouncementTimer.current);
+      warheadAnnouncementTimer.current = null;
+    }
+    if (warheadAdminKeyTimer.current !== null) {
+      window.clearTimeout(warheadAdminKeyTimer.current);
+      warheadAdminKeyTimer.current = null;
     }
     warheadCountdownDeadline.current = null;
     warheadCountdownCalls.current = { t60: false, final: false };
@@ -1610,6 +2007,10 @@ export default function QserfPlant() {
             className={`absolute h-20 w-20 rounded-full border transition-all duration-1000 ${
               sceneState === "BLACK HOLE"
                 ? "scale-150 border-orange-400 bg-black shadow-[0_0_48px_22px_rgba(249,115,22,.58)]"
+                : sceneState === "WARHEAD RED ALERT"
+                  ? "border-red-200 bg-red-600/70 shadow-[0_0_54px_24px_rgba(239,68,68,.7)] animate-pulse"
+                  : sceneState === "WARHEAD YELLOW ALERT"
+                    ? "border-yellow-200 bg-yellow-400/60 shadow-[0_0_48px_20px_rgba(250,204,21,.55)] animate-pulse"
                 : sceneState.includes("GLOW")
                   ? "border-orange-300 bg-orange-500/65 shadow-[0_0_46px_20px_rgba(249,115,22,.55)] animate-pulse"
                   : sceneState === "CODE RED"
@@ -1623,7 +2024,11 @@ export default function QserfPlant() {
             </p>
             <p
               className={`mt-1 text-sm font-black tracking-[.18em] ${
-                sceneState === "NOMINAL" ? "text-cyan-200" : "text-red-200"
+                sceneState === "NOMINAL"
+                  ? "text-cyan-200"
+                  : sceneState === "WARHEAD YELLOW ALERT"
+                    ? "text-yellow-200"
+                    : "text-red-200"
               }`}
             >
               {sceneState}
@@ -2612,6 +3017,15 @@ export default function QserfPlant() {
                   TEST EVACUATION
                 </Button>
               </div>
+              <Button
+                size="sm"
+                className="w-full border border-red-400/60 bg-red-950/50 text-red-100 hover:bg-red-900"
+                variant="outline"
+                disabled={meltdownInProgress || ending !== null}
+                onClick={debugStartMeltdown}
+              >
+                DEBUG: FORCE MELTDOWN — 4000 K / 0% INTEGRITY
+              </Button>
               <div className="border-t border-slate-700 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-black tracking-[.12em] text-violet-200">
@@ -2629,11 +3043,7 @@ export default function QserfPlant() {
                         // Start the track for the event currently in progress;
                         // never revive an unrelated previous track.
                         setMusicKey(
-                          codeBlackStartedAt !== null
-                            ? "meltdownP2"
-                            : meltdownInProgress
-                              ? "meltdownP1"
-                              : null,
+                          meltdownInProgress ? "meltdownP1" : null,
                         );
                         setMusicEnabled(true);
                       }
@@ -2709,85 +3119,75 @@ export default function QserfPlant() {
                 <span className="rounded border border-red-400/35 bg-black/40 px-2 py-1 text-xs tracking-wider text-red-200">{warheadStage.replaceAll("_", " ")}</span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5 text-xs leading-5 text-slate-300">
-              <div className="grid gap-3 rounded border border-red-400/25 bg-black/35 p-4 md:grid-cols-3">
-                <p><span className="font-black text-slate-100">OPERATOR: </span>{operatorName}</p>
-                <p><span className="font-black text-slate-100">ROLE: </span>{warheadActor || "SELECT ROLE"}</p>
-                <p><span className="font-black text-slate-100">DETONATION: </span>{warheadStage === "COUNTDOWN" ? `T−${warheadSeconds}s` : "NOT ACTIVE"}</p>
+            <CardContent className="p-3 text-xs leading-5 text-slate-300 md:p-5">
+              <div className="overflow-hidden rounded-md border-4 border-zinc-700 bg-[#2a2a2b] p-2 shadow-[inset_0_0_40px_rgba(0,0,0,.9)] md:p-4">
+                <div className="border border-zinc-600 bg-[repeating-linear-gradient(0deg,#0a0a0a_0px,#0a0a0a_2px,#111_3px,#111_5px)] px-4 py-5 text-center shadow-inner">
+                  <p className="text-[10px] font-black tracking-[.16em] text-zinc-300 md:text-sm">{warheadTimerDescription}</p>
+                  {warheadProminentTimer && <p className={`mt-2 font-black tracking-[.08em] ${warheadStage === "COUNTDOWN" ? "animate-pulse text-6xl text-red-500 md:text-8xl" : "text-4xl text-amber-200 md:text-6xl"}`}>{warheadProminentTimer}</p>}
+                  <p className={`mt-3 text-2xl font-black tracking-[.06em] md:text-5xl ${warheadStage === "COUNTDOWN" ? "text-red-400" : "text-zinc-100"}`}>{warheadStatusText}</p>
+                  <p className="mt-2 text-[10px] tracking-[.16em] text-zinc-400">OPERATOR {operatorName.toUpperCase()} // ROLE {(warheadActor || warheadRoleSelection || "UNSELECTED").replaceAll("_", " ")}</p>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-1 text-[9px] font-black tracking-wide sm:grid-cols-6">
+                  {[["0", "STANDBY"], ["1", "PRIME"], ["1A", "CONFIRM"], ["2", "ARM"], ["3", "KEYS"], ["4", "DETONATE"]].map(([stage, label], index) => (
+                    <div key={stage} className={`border px-1 py-1 text-center ${index === warheadStageIndex ? "border-red-300 bg-red-900 text-white" : index < warheadStageIndex ? "border-emerald-400 bg-emerald-950 text-emerald-100" : "border-zinc-600 bg-zinc-900 text-zinc-500"}`}>STAGE {stage}<br />{label}</div>
+                  ))}
+                </div>
+
+                <div className="mt-3 border-y-2 border-zinc-800 bg-gradient-to-b from-zinc-500 via-zinc-700 to-zinc-950 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,.35)]">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr_1fr]">
+                    <div className="space-y-2">
+                      <p className="text-center text-[10px] font-black tracking-widest text-zinc-950">ROLE / PRIME CONTROL</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button size="sm" variant={warheadRoleSelection === "RAIDER" ? "destructive" : "outline"} disabled={!(["DORMANT", "CANCELLED"].includes(warheadStage)) || warheadStandbySeconds > 0} onClick={() => setWarheadRoleSelection("RAIDER")}>RAIDER</Button>
+                        <Button size="sm" variant={warheadRoleSelection === "ADMINISTRATOR" ? "default" : "outline"} disabled={!(["DORMANT", "CANCELLED"].includes(warheadStage)) || warheadStandbySeconds > 0} onClick={() => setWarheadRoleSelection("ADMINISTRATOR")}>ADMIN</Button>
+                      </div>
+                      <Button className="w-full bg-red-700 text-white hover:bg-red-600" disabled={warheadStandbySeconds > 0 || !warheadRoleSelection || !["DORMANT", "CANCELLED"].includes(warheadStage)} onClick={() => warheadRoleSelection && primeWarhead(warheadRoleSelection)}>PRIME WARHEAD</Button>
+                      <Button className="w-full" size="sm" variant="outline" disabled={warheadStage !== "ACTIVATED" || warheadAnnouncementBusy} onClick={confirmWarheadPrime}>CONFIRM {warheadAnnouncementBusy ? "TRANSMISSION IN PROGRESS" : warheadActor === "ADMINISTRATOR" ? "ADMIN CARD" : "RAIDER CHIP"}</Button>
+                      <Button className="w-full bg-yellow-400 text-black hover:bg-yellow-300" size="sm" disabled={warheadStage !== "ARM_READY"} onClick={armWarhead}>ARM</Button>
+                      <Button className="w-full" size="sm" variant="outline" disabled={!(["RAIDER_HACK", "PRIMING", "ARM_ANNOUNCING"].includes(warheadStage))} onClick={() => cancelWarhead("QSF")}>QSF / ADMIN CANCEL</Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 border-x border-zinc-800 px-3">
+                      {[0, 1].map((key) => {
+                        const nextRequired = warheadKeys.findIndex((found) => !found);
+                        const located = warheadKeys[key];
+                        const turned = warheadKeysTurned[key];
+                        return <div key={key} className="rounded border border-zinc-950 bg-zinc-800/80 p-2 text-center shadow-inner">
+                          <p className="text-[10px] font-black tracking-widest text-zinc-200">ARMING KEY {key + 1}</p>
+                          <div className={`mx-auto my-2 h-10 w-10 rounded-full border-4 ${turned ? "border-emerald-300 bg-emerald-500" : located ? "border-yellow-300 bg-yellow-500" : "border-zinc-950 bg-zinc-700"}`} />
+                          <Button className="w-full" size="sm" variant="outline" disabled={warheadStage !== "KEYS" || warheadActor !== "RAIDER" || located || key !== nextRequired} onClick={() => locateWarheadKey(key)}>{located ? "INSERTED" : "LOCATE"}</Button>
+                          <Button className="mt-2 w-full" size="sm" variant={turned ? "default" : "destructive"} disabled={warheadStage !== "KEYS" || !located || turned} onClick={() => { const next = warheadKeysTurned.map((value, index) => index === key ? true : value); setWarheadKeysTurned(next); if (next.every(Boolean)) { setWarheadStage("DETONATION_BUTTON"); warheadKeyDeadline.current = null; addLog("Both warhead keys turned. The protected red detonation button is unlocked."); } }}>{turned ? "TURNED" : "TURN KEY"}</Button>
+                        </div>;
+                      })}
+                      <Button className="col-span-2 h-14 bg-red-700 text-base font-black text-white hover:bg-red-600" disabled={warheadStage !== "DETONATION_BUTTON"} onClick={engageDetonationButton}>DETONATE</Button>
+                      <Button className="col-span-2" variant="outline" disabled={warheadStage !== "VERIFY" || warheadAnnouncementBusy || !warheadVerificationCountdownActive} onClick={authorizeWarhead}>FINAL CONFIRM AUTHORIZATION</Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-center text-[10px] font-black tracking-widest text-zinc-950">EVACUATION / DATA</p>
+                      <div className="grid grid-cols-2 gap-2"><Button size="sm" variant={warheadLocation === "TOPSIDE" ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN"} onClick={() => setWarheadLocation("TOPSIDE")}>TOPSIDE</Button><Button size="sm" variant={warheadLocation === "BOTTOMSIDE" ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN"} onClick={() => setWarheadLocation("BOTTOMSIDE")}>BOTTOMSIDE</Button></div>
+                      <Button className="w-full" size="sm" variant={warheadTartarusSealed ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN" || warheadTartarusSealed} onClick={() => setWarheadTartarusSealed(true)}>{warheadTartarusSealed ? "TARTARUS SEALED" : "SEAL TARTARUS"}</Button>
+                      <Button className="w-full" size="sm" variant="outline" disabled={warheadStage !== "COUNTDOWN" || warheadActor !== "RAIDER" || raiderFloppyHeld} onClick={() => { setRaiderFloppyHeld(true); addLog("423 KB floppy drive retrieved from MCR terminal."); }}>{raiderFloppyHeld ? "423 KB FLOPPY SECURED" : "GET 423 KB FLOPPY"}</Button>
+                      <Button className="w-full" size="sm" variant="destructive" disabled={warheadStage !== "COUNTDOWN" || !raiderFloppyHeld || warheadLocation !== "TOPSIDE" || raiderFloppyEscaped} onClick={() => { setRaiderFloppyEscaped(true); addLog("Raider escaped to topside black car with the Epsilon-8 floppy."); }}>{raiderFloppyEscaped ? "BLACK CAR ESCAPE CONFIRMED" : "ESCAPE BLACK CAR"}</Button>
+                      <Button className="w-full" size="sm" variant="destructive" disabled={warheadStage !== "COUNTDOWN" || warheadActor !== "ADMINISTRATOR"} onClick={emergencyWarheadOverride}>ADMIN OVERRIDE</Button>
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-3 text-center text-[10px] tracking-[.12em] text-zinc-400">KEYS: RAIDERS 700s / ADMINISTRATOR 60s • FINAL AUTHORIZATION 30s • DETONATION 200s • T−200, T−60 AND FINAL HUMAN ANNOUNCEMENTS</p>
               </div>
-
-              {(warheadStage === "DORMANT" || warheadStage === "CANCELLED") && (
-                <div className="rounded border border-amber-400/35 bg-amber-950/15 p-4">
-                  <p className="font-black tracking-wide text-amber-200">STAGE 1 — SELECT SCENARIO ROLE AND PRIME</p>
-                  <p className="mt-2 text-slate-400">Role selection replaces multiplayer requirements for this archive simulation. Raider uses the delayed hacked-chip route; Administrator bypasses priming confirmation and proceeds directly to ARM.</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <Button variant="destructive" onClick={() => primeWarhead("RAIDER")}>PRIME AS RAIDER</Button>
-                    <Button variant="outline" onClick={() => primeWarhead("ADMINISTRATOR")}>PRIME AS ADMINISTRATOR</Button>
-                  </div>
-                </div>
-              )}
-
-              {(warheadStage === "RAIDER_HACK" || warheadStage === "PRIMING") && (
-                <div className="rounded border border-yellow-400/40 bg-yellow-950/15 p-4">
-                  <p className="font-black text-yellow-200">{warheadStage === "RAIDER_HACK" ? "RAIDER CHIP HACKING — 17 SECOND READ" : "PRIMING CONFIRMATION — 40 SECOND READ"}</p>
-                  <p className="mt-2 text-slate-400">The original long multiplayer wait is condensed here. Cancellation remains available during this pre-arm phase.</p>
-                  <Button className="mt-3" variant="outline" onClick={cancelWarhead}>CANCEL PRIMING</Button>
-                </div>
-              )}
-
-              {warheadStage === "ARM_READY" && (
-                <div className="rounded border border-yellow-300/60 bg-yellow-950/20 p-4">
-                  <p className="animate-pulse font-black tracking-wide text-yellow-200">ARM LIGHT FLASHING — CONFIRM ARMING</p>
-                  <Button className="mt-3 bg-yellow-500 text-black hover:bg-yellow-400" onClick={armWarhead}>ARM WARHEAD</Button>
-                </div>
-              )}
-
-              {["KEYS", "VERIFY", "COUNTDOWN"].includes(warheadStage) && (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded border border-red-400/35 bg-black/35 p-4">
-                    <p className="font-black tracking-wide text-red-200">STAGE 2 — DETONATION KEYS</p>
-                    <p className="mt-1 text-slate-400">Retrieve each key, insert it into the console, then turn it. The archival simulation omits map-wide key searching but retains separate key actions.</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {[0, 1].map((key) => (
-                        <div key={key} className="rounded border border-slate-700 p-3">
-                          <p className="font-black text-slate-200">ARMING KEY {key + 1}: {warheadKeysTurned[key] ? "TURNED" : warheadKeys[key] ? "INSERTED" : "UNRECOVERED"}</p>
-                          {!warheadKeys[key] ? (
-                            <Button className="mt-2 w-full" size="sm" variant="outline" disabled={warheadStage !== "KEYS"} onClick={() => setWarheadKeys((old) => old.map((value, index) => index === key ? true : value))}>RETRIEVE + INSERT</Button>
-                          ) : (
-                            <Button className="mt-2 w-full" size="sm" variant={warheadKeysTurned[key] ? "default" : "destructive"} disabled={warheadStage !== "KEYS" || warheadKeysTurned[key]} onClick={() => {
-                              const next = warheadKeysTurned.map((value, index) => index === key ? true : value);
-                              setWarheadKeysTurned(next);
-                              if (next.every(Boolean)) {
-                                setWarheadStage("VERIFY");
-                                addLog("Both warhead keys turned. Final authorization reader enabled.");
-                              }
-                            }}>{warheadKeysTurned[key] ? "KEY TURNED" : "TURN KEY"}</Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    {warheadStage === "VERIFY" && <Button className="mt-3 w-full bg-red-600 text-white hover:bg-red-500" onClick={authorizeWarhead}>VERIFY ROLE AND AUTHORIZE DETONATION</Button>}
-                  </div>
-
-                  <div className="rounded border border-violet-400/35 bg-black/35 p-4">
-                    <p className="font-black tracking-wide text-violet-200">EVACUATION / EPSILON-8 DATA HEIST</p>
-                    <p className="mt-1 text-slate-400">Set your final location before detonation. Raider only: recover the 423 KB floppy from MCR, then escape to the topside black car for the broadcast branch.</p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <Button size="sm" variant={warheadLocation === "TOPSIDE" ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN"} onClick={() => setWarheadLocation("TOPSIDE")}>MOVE TOPSIDE</Button>
-                      <Button size="sm" variant={warheadLocation === "BOTTOMSIDE" ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN"} onClick={() => setWarheadLocation("BOTTOMSIDE")}>MOVE BOTTOMSIDE</Button>
-                    </div>
-                    <Button className="mt-2 w-full" size="sm" variant={warheadTartarusSealed ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN" || warheadTartarusSealed} onClick={() => setWarheadTartarusSealed(true)}>{warheadTartarusSealed ? "TARTARUS ZONE SEALED" : "SEAL TARTARUS ZONE"}</Button>
-                    {warheadActor === "RAIDER" && <>
-                      <Button className="mt-3 w-full" size="sm" variant={raiderFloppyHeld ? "default" : "outline"} disabled={warheadStage !== "COUNTDOWN" || raiderFloppyHeld} onClick={() => { setRaiderFloppyHeld(true); addLog("423 KB floppy drive retrieved from MCR terminal."); }}>{raiderFloppyHeld ? "423 KB FLOPPY SECURED" : "GRAB 423 KB FLOPPY — MCR"}</Button>
-                      <Button className="mt-2 w-full" size="sm" variant="destructive" disabled={warheadStage !== "COUNTDOWN" || !raiderFloppyHeld || warheadLocation !== "TOPSIDE" || raiderFloppyEscaped} onClick={() => { setRaiderFloppyEscaped(true); addLog("Raider escaped to topside black car with the Epsilon-8 floppy."); }}>{raiderFloppyEscaped ? "BLACK CAR ESCAPE CONFIRMED" : "ESCAPE TO BLACK CAR"}</Button>
-                    </>}
-                  </div>
-                </div>
-              )}
-              <p className="rounded border border-slate-700 bg-black/30 p-3 text-slate-400">Detonation outcomes: Raider + sealed Tartarus + topside → Protocol Saletum; Raider + escaped 423 KB floppy → For Immediate Broadcast; all other currently implemented routes use the emergency destruction outcome.</p>
             </CardContent>
           </Card>
         </section>
+      )}
+      {warheadDetonationTransition && (
+        <div className="fixed inset-0 z-[99] animate-pulse bg-white" aria-live="assertive">
+          <div className="flex h-full items-center justify-center bg-white/80">
+            <p className="text-center font-mono text-sm font-black tracking-[.32em] text-zinc-900 md:text-xl">
+              FACILITY DETONATION CONFIRMED
+            </p>
+          </div>
+        </div>
       )}
       {ending && (
         <div className="fixed inset-0 z-[100] flex h-[100dvh] w-[100dvw] items-center justify-center overflow-hidden bg-black">

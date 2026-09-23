@@ -7,15 +7,8 @@ export const qserfMusic = {
   maintenance: { label: "MAINTENANCE", path: `${root}music/maintenance.mp3` },
   shutdown: { label: "SHUTDOWN", path: `${root}music/shutdown.mp3` },
   meltdownP1: {
-    label: "MELTDOWN — PHASE 1",
+    label: "MELTDOWN — ORIGINAL FULL SOUNDTRACK",
     path: `${root}music/meltdown.mp3`,
-  },
-  // The archive does not supply a file literally named "meltdown-p2". Final
-  // Chapters is the staged Phase 2 bed, kept as a distinct key so P1 and P2
-  // are never confused with the ordinary shutdown soundtrack.
-  meltdownP2: {
-    label: "MELTDOWN — PHASE 2",
-    path: `${root}music/library/final-chapters.mp3`,
   },
   warhead: { label: "WARHEAD", path: `${root}music/warhead.mp3` },
   nightshift: { label: "NIGHTSHIFT", path: `${root}music/nightshift.mp3` },
@@ -103,6 +96,11 @@ export const qserfEffects = {
     volume: 0.3,
     alarm: true,
   },
+  warheadDetonationRinging: {
+    id: "warhead-detonation-ringing",
+    path: `${root}effects/protocol-saletum-alarm.mp3`,
+    volume: 0.34,
+  },
   combustionStall: {
     id: "combustion-stall",
     path: `${root}effects/combustion-stall.mp3`,
@@ -165,7 +163,7 @@ export function useQserfSoundscape(audioArmed: boolean, alarmsMuted = false) {
     if (!audioArmed || !musicEnabled || !musicKey) return;
     const audio = new Audio(qserfMusic[musicKey].path);
     audio.preload = "auto";
-    audio.loop = musicKey !== "shutdown" && musicKey !== "meltdownP2";
+    audio.loop = musicKey !== "shutdown" && musicKey !== "meltdownP1";
     audio.volume = musicGain;
     audio.addEventListener("loadedmetadata", () =>
       setMusicDurationSeconds(Number.isFinite(audio.duration) ? audio.duration : 0),
@@ -190,7 +188,7 @@ export function useQserfSoundscape(audioArmed: boolean, alarmsMuted = false) {
       const outgoing = musicRef.current;
       const incoming = new Audio(qserfMusic[nextKey].path);
       incoming.preload = "auto";
-      incoming.loop = nextKey !== "shutdown" && nextKey !== "meltdownP2";
+      incoming.loop = nextKey !== "shutdown" && nextKey !== "meltdownP1";
       incoming.volume = 0;
       incoming.addEventListener("loadedmetadata", () =>
         setMusicDurationSeconds(
@@ -295,6 +293,35 @@ export function useQserfSoundscape(audioArmed: boolean, alarmsMuted = false) {
     setActiveEffect(null);
   }, []);
 
+  /** Fade the active music bed without cutting it off at the transition frame. */
+  const fadeOutMusic = useCallback((durationMs = 3_000) => {
+    const outgoing = musicRef.current;
+    if (!outgoing) {
+      setMusicEnabled(false);
+      setMusicKey(null);
+      return;
+    }
+    musicFadeTimersRef.current.forEach((timer) => window.clearInterval(timer));
+    musicFadeTimersRef.current.clear();
+    const originalVolume = outgoing.volume;
+    const steps = Math.max(1, Math.round(durationMs / 50));
+    let step = 0;
+    const timer = window.setInterval(() => {
+      step += 1;
+      outgoing.volume = originalVolume * Math.max(0, 1 - step / steps);
+      if (step < steps) return;
+      window.clearInterval(timer);
+      musicFadeTimersRef.current.delete(timer);
+      outgoing.pause();
+      if (musicRef.current === outgoing) musicRef.current = null;
+      setMusicEnabled(false);
+      setMusicKey(null);
+      setMusicElapsedSeconds(0);
+      setMusicDurationSeconds(0);
+    }, 50);
+    musicFadeTimersRef.current.add(timer);
+  }, []);
+
   useEffect(() => () => stopSoundscape(), [stopSoundscape]);
 
   return {
@@ -307,6 +334,7 @@ export function useQserfSoundscape(audioArmed: boolean, alarmsMuted = false) {
     musicElapsedSeconds,
     musicDurationSeconds,
     transitionMusic,
+    fadeOutMusic,
     activeEffect,
     playEffect,
     stopSoundscape,
