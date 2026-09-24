@@ -7,8 +7,22 @@ export const qserfMusic = {
   maintenance: { label: "MAINTENANCE", path: `${root}music/maintenance.mp3` },
   shutdown: { label: "SHUTDOWN", path: `${root}music/shutdown.mp3` },
   meltdownP1: {
-    label: "MELTDOWN — ORIGINAL FULL SOUNDTRACK",
+    label: "MELTDOWN — PHASE 1",
     path: `${root}music/meltdown.mp3`,
+    // The archived original soundtrack contains both phases as one file.
+    // These virtual in/out points keep them operationally separate without
+    // duplicating the large source asset.
+    startAt: 0,
+    // Keep the quiet handoff at the end of Phase 1. The previous cut ended
+    // before that recorded silence, which made Phase 1 feel abruptly short.
+    endAt: 346,
+  },
+  meltdownP2: {
+    label: "MELTDOWN — PHASE 2",
+    path: `${root}music/meltdown.mp3`,
+    startAt: 346,
+    // Use the actual source endpoint as the detonation reference rather than
+    // a timestamp estimated from a separate video recording.
   },
   warhead: { label: "WARHEAD", path: `${root}music/warhead.mp3` },
   nightshift: { label: "NIGHTSHIFT", path: `${root}music/nightshift.mp3` },
@@ -163,12 +177,28 @@ export function useQserfSoundscape(audioArmed: boolean, alarmsMuted = false) {
     if (!audioArmed || !musicEnabled || !musicKey) return;
     const audio = new Audio(qserfMusic[musicKey].path);
     audio.preload = "auto";
-    audio.loop = musicKey !== "shutdown" && musicKey !== "meltdownP1";
+    const track = qserfMusic[musicKey];
+    audio.loop =
+      track.startAt === undefined && musicKey !== "shutdown";
     audio.volume = musicGain;
-    audio.addEventListener("loadedmetadata", () =>
-      setMusicDurationSeconds(Number.isFinite(audio.duration) ? audio.duration : 0),
-    );
-    audio.addEventListener("timeupdate", () => setMusicElapsedSeconds(audio.currentTime));
+    audio.addEventListener("loadedmetadata", () => {
+      const startAt = track.startAt ?? 0;
+      const endAt = track.endAt ?? audio.duration;
+      audio.currentTime = startAt;
+      setMusicDurationSeconds(
+        Number.isFinite(endAt) ? Math.max(0, endAt - startAt) : 0,
+      );
+    });
+    audio.addEventListener("timeupdate", () => {
+      const startAt = track.startAt ?? 0;
+      const endAt = track.endAt;
+      if (endAt !== undefined && audio.currentTime >= endAt) {
+        audio.pause();
+        setMusicElapsedSeconds(endAt - startAt);
+        return;
+      }
+      setMusicElapsedSeconds(audio.currentTime - startAt);
+    });
     audio.addEventListener("ended", () => setMusicElapsedSeconds(audio.duration));
     musicRef.current = audio;
     void audio.play().catch(() => undefined);
@@ -188,16 +218,27 @@ export function useQserfSoundscape(audioArmed: boolean, alarmsMuted = false) {
       const outgoing = musicRef.current;
       const incoming = new Audio(qserfMusic[nextKey].path);
       incoming.preload = "auto";
-      incoming.loop = nextKey !== "shutdown" && nextKey !== "meltdownP1";
+      const track = qserfMusic[nextKey];
+      incoming.loop = track.startAt === undefined && nextKey !== "shutdown";
       incoming.volume = 0;
-      incoming.addEventListener("loadedmetadata", () =>
+      incoming.addEventListener("loadedmetadata", () => {
+        const startAt = track.startAt ?? 0;
+        const endAt = track.endAt ?? incoming.duration;
+        incoming.currentTime = startAt;
         setMusicDurationSeconds(
-          Number.isFinite(incoming.duration) ? incoming.duration : 0,
-        ),
-      );
-      incoming.addEventListener("timeupdate", () =>
-        setMusicElapsedSeconds(incoming.currentTime),
-      );
+          Number.isFinite(endAt) ? Math.max(0, endAt - startAt) : 0,
+        );
+      });
+      incoming.addEventListener("timeupdate", () => {
+        const startAt = track.startAt ?? 0;
+        const endAt = track.endAt;
+        if (endAt !== undefined && incoming.currentTime >= endAt) {
+          incoming.pause();
+          setMusicElapsedSeconds(endAt - startAt);
+          return;
+        }
+        setMusicElapsedSeconds(incoming.currentTime - startAt);
+      });
       incoming.addEventListener("ended", () =>
         setMusicElapsedSeconds(incoming.duration),
       );

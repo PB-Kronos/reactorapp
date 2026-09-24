@@ -56,6 +56,64 @@ type MeltdownStage =
   | "BLACK_HOLE"
   | "RECOVERED"
   | "TERMINAL";
+type ShiftOrder = {
+  id: number;
+  kind: "TEMPERATURE" | "GRID_OUTPUT";
+  target: number;
+  tolerance: number;
+};
+type ShiftStatus = "IDLE" | "ACTIVE" | "COMPLETE";
+
+// Positions in the archived original meltdown soundtrack. Phase 1 ends on
+// its built-in shutdown-expiry transmission; Code Black and Phase 2 begin
+// after the short silence. The end of Phase 2 is the reactor explosion.
+const MELTDOWN_P1_END = 346;
+const MELTDOWN_CODE_BLACK = 346;
+const MELTDOWN_EXPLOSION = 592;
+// The DMR can exceed the normal safety envelope, but it must remain within a
+// finite simulation range. These ceilings also protect restored sessions from
+// corrupt/legacy runaway values.
+const DMR_MAX_TEMPERATURE_K = 12_000;
+const DMR_MAX_OUTPUT_GW = 300;
+const NIGHTSHIFT_DURATION_SECONDS = 8 * 60;
+const NIGHTSHIFT_ORDER_SECONDS = 45;
+
+const makeNightshiftOrder = (): ShiftOrder => {
+  const outputOrder = Math.random() >= 0.5;
+  const targets = outputOrder
+    ? [15, 25, 35, 45, 55, 65]
+    : [650, 850, 1_050, 1_250, 1_500, 1_750, 2_000, 2_250];
+  const target = targets[Math.floor(Math.random() * targets.length)];
+  return {
+    id: Date.now() + Math.floor(Math.random() * 10_000),
+    kind: outputOrder ? "GRID_OUTPUT" : "TEMPERATURE",
+    target,
+    tolerance: outputOrder ? 5 : 60,
+  };
+};
+
+const nightshiftTierFor = (completedOrders: number) =>
+  completedOrders >= 9 ? 3 : completedOrders >= 6 ? 2 : completedOrders >= 3 ? 1 : 0;
+const nightshiftRewardFor = (tier: number) =>
+  tier === 3 ? 2_000 : tier === 2 ? 1_500 : tier === 1 ? 500 : 0;
+
+const phase1AnnouncementSequence = [
+  faasClips.meltdownInstability,
+  faasClips.integrityMonitorFailed,
+  faasClips.integrityMonitorNoData,
+  faasClips.scientificEvacuation,
+  faasClips.codeRed,
+  faasClips.phase1Window,
+  faasClips.shutdownAttemptWarning,
+  faasClips.phase1TemperatureRequirement,
+] as const;
+
+// These are timestamps from the Phase 1 soundtrack, measured from the first
+// instability transmission.  They deliberately leave the Code Red / Bravo
+// Niner directive late in Phase 1: the shutdown controls only unlock after
+// that directive has finished.  A missing/disabled sound cannot collapse the
+// sequence because the next cue still waits for its recorded time.
+const phase1AnnouncementCueSeconds = [0, 25, 51, 85, 120, 120, 151, 184] as const;
 
 const shutdownCodeLocations = [
   "HADRON COLLIDER CONTROL ROOM",
@@ -199,9 +257,12 @@ export default function QserfPlant() {
   const [ending, setEnding] = useState<QserfEndingKey | null>(null);
   const [warheadDetonationTransition, setWarheadDetonationTransition] =
     useState<QserfEndingKey | null>(null);
+  const [meltdownExplosionTransition, setMeltdownExplosionTransition] =
+    useState(false);
   const [endingAudioNeedsGesture, setEndingAudioNeedsGesture] = useState(false);
   const [meltdownStage, setMeltdownStage] = useState<MeltdownStage>("NORMAL");
   const [meltdownSeconds, setMeltdownSeconds] = useState(0);
+  const [phase1AnnouncementStep, setPhase1AnnouncementStep] = useState(-1);
   const [codeBlackStartedAt, setCodeBlackStartedAt] = useState<number | null>(
     null,
   );
@@ -228,6 +289,19 @@ export default function QserfPlant() {
   const [tartarusSealLockedAt, setTartarusSealLockedAt] = useState<
     number | null
   >(null);
+  const [tartarusSealForced, setTartarusSealForced] = useState(false);
+  const [shiftStatus, setShiftStatus] = useState<ShiftStatus>("IDLE");
+  const [shiftSecondsRemaining, setShiftSecondsRemaining] = useState(
+    NIGHTSHIFT_DURATION_SECONDS,
+  );
+  const [shiftOrder, setShiftOrder] = useState<ShiftOrder | null>(null);
+  const [shiftOrderSeconds, setShiftOrderSeconds] = useState(0);
+  const [shiftMatchSeconds, setShiftMatchSeconds] = useState(0);
+  const [shiftOrdersCompleted, setShiftOrdersCompleted] = useState(0);
+  const [shiftOrdersFailed, setShiftOrdersFailed] = useState(0);
+  const [shiftPoints, setShiftPoints] = useState(0);
+  const [shiftElectrons, setShiftElectrons] = useState(0);
+  const [shiftFinalTier, setShiftFinalTier] = useState(0);
   const [acknowledgedAlarmIds, setAcknowledgedAlarmIds] = useState<string[]>(
     [],
   );
@@ -252,6 +326,9 @@ export default function QserfPlant() {
     setMusicKey,
     musicVolumePercent,
     setMusicVolumePercent,
+    musicElapsedSeconds,
+    musicDurationSeconds,
+    transitionMusic,
     fadeOutMusic,
     playEffect,
     stopSoundscape,
@@ -275,6 +352,8 @@ export default function QserfPlant() {
     phase1Expired: false,
     shelterMinute: false,
     shelterAvailable: false,
+    nearestShelter: false,
+    radiationSealForced: false,
     shelterThirty: false,
     shelterTen: false,
     doorsClosing: false,
@@ -366,16 +445,32 @@ export default function QserfPlant() {
     meltdownStage !== "RECOVERED" &&
     meltdownStage !== "TERMINAL";
   const phase1WindowOpen =
-    meltdownStage === "PHASE_1_WINDOW" && meltdownSeconds < 447;
+    meltdownStage === "PHASE_1_WINDOW" && meltdownSeconds < MELTDOWN_P1_END;
   const phase2WindowOpen = meltdownStage === "PHASE_2_WINDOW";
   // Once Code Black is declared, every remaining event uses that actual point
   // as its clock anchor. A failed P1 attempt can legitimately bring Code
   // Black forward, so absolute timestamps would otherwise compress P2 and
   // the evacuation sequence into only a few seconds.
-  const codeBlackClock = codeBlackStartedAt ?? 463;
-  const reactorExplosionAt = codeBlackClock + 242;
+  const codeBlackClock = codeBlackStartedAt ?? MELTDOWN_CODE_BLACK;
+  const fallbackPhase2Duration = MELTDOWN_EXPLOSION - MELTDOWN_CODE_BLACK;
+  const phase2TrackDuration =
+    musicKey === "meltdownP2" && musicDurationSeconds > 0
+      ? musicDurationSeconds
+      : fallbackPhase2Duration;
+  // All Phase 2 calls use this clock. With music enabled it is the decoded
+  // P2 playback position; a timer-relative fallback remains for muted audio.
+  const phase2TimelineSeconds =
+    musicKey === "meltdownP2" && musicDurationSeconds > 0
+      ? musicElapsedSeconds
+      : Math.max(0, meltdownSeconds - codeBlackClock);
+  const phase2SecondsRemaining = Math.max(
+    0,
+    phase2TrackDuration - phase2TimelineSeconds,
+  );
+  // When P2 music is available, its decoded endpoint is authoritative.
+  const reactorExplosionAt = codeBlackClock + phase2TrackDuration;
   const evacuationAvailable = meltdownInProgress && codeBlackStartedAt !== null;
-  const tartarusSealDeadline = reactorExplosionAt - 20;
+  const tartarusSealDeadline = reactorExplosionAt - 40;
   const tartarusSealLockedInTime =
     tartarusSealLockedAt !== null && tartarusSealLockedAt <= tartarusSealDeadline;
   const catalyzersIntact = catalyzerFailures.length === 0;
@@ -579,7 +674,8 @@ export default function QserfPlant() {
       if (typeof saved.efssActive === "boolean") setEfssActive(saved.efssActive);
       if (typeof saved.ignitionKey === "boolean") setIgnitionKey(saved.ignitionKey);
       if (typeof saved.startupPhase === "string") setStartupPhase(saved.startupPhase as typeof startupPhase);
-      if (typeof saved.temperature === "number") setTemperature(saved.temperature);
+      if (typeof saved.temperature === "number")
+        setTemperature(clamp(saved.temperature, 0, DMR_MAX_TEMPERATURE_K));
       if (typeof saved.integrity === "number") setIntegrity(saved.integrity);
       if (typeof saved.radioactivity === "number") setRadioactivity(saved.radioactivity);
       if (typeof saved.combustionStallState === "string") setCombustionStallState(saved.combustionStallState as typeof combustionStallState);
@@ -600,6 +696,19 @@ export default function QserfPlant() {
       if (typeof saved.warheadTartarusSealed === "boolean") setWarheadTartarusSealed(saved.warheadTartarusSealed);
       if (typeof saved.raiderFloppyHeld === "boolean") setRaiderFloppyHeld(saved.raiderFloppyHeld);
       if (typeof saved.raiderFloppyEscaped === "boolean") setRaiderFloppyEscaped(saved.raiderFloppyEscaped);
+      if (saved.shiftStatus === "IDLE" || saved.shiftStatus === "ACTIVE" || saved.shiftStatus === "COMPLETE") setShiftStatus(saved.shiftStatus);
+      if (typeof saved.shiftSecondsRemaining === "number") setShiftSecondsRemaining(clamp(saved.shiftSecondsRemaining, 0, NIGHTSHIFT_DURATION_SECONDS));
+      if (typeof saved.shiftOrderSeconds === "number") setShiftOrderSeconds(clamp(saved.shiftOrderSeconds, 0, NIGHTSHIFT_ORDER_SECONDS));
+      if (typeof saved.shiftMatchSeconds === "number") setShiftMatchSeconds(clamp(saved.shiftMatchSeconds, 0, 5));
+      if (typeof saved.shiftOrdersCompleted === "number") setShiftOrdersCompleted(Math.max(0, Math.floor(saved.shiftOrdersCompleted)));
+      if (typeof saved.shiftOrdersFailed === "number") setShiftOrdersFailed(Math.max(0, Math.floor(saved.shiftOrdersFailed)));
+      if (typeof saved.shiftPoints === "number") setShiftPoints(Math.max(0, Math.floor(saved.shiftPoints)));
+      if (typeof saved.shiftElectrons === "number") setShiftElectrons(Math.max(0, Math.floor(saved.shiftElectrons)));
+      if (typeof saved.shiftFinalTier === "number") setShiftFinalTier(clamp(Math.floor(saved.shiftFinalTier), 0, 3));
+      if (saved.shiftOrder && typeof saved.shiftOrder === "object") {
+        const order = saved.shiftOrder as Partial<ShiftOrder>;
+        if ((order.kind === "TEMPERATURE" || order.kind === "GRID_OUTPUT") && typeof order.target === "number" && typeof order.tolerance === "number" && typeof order.id === "number") setShiftOrder(order as ShiftOrder);
+      }
     } catch {
       localStorage.removeItem(qserfSessionStorageKey);
     } finally {
@@ -618,6 +727,9 @@ export default function QserfPlant() {
       combustionStallFuelPenaltyPending, activeQserfTab, warheadStage, warheadActor,
       warheadSeconds, warheadStandbySeconds, warheadKeys, warheadKeysTurned, warheadLocation,
       warheadTartarusSealed, raiderFloppyHeld, raiderFloppyEscaped,
+      shiftStatus, shiftSecondsRemaining, shiftOrder, shiftOrderSeconds,
+      shiftMatchSeconds, shiftOrdersCompleted, shiftOrdersFailed, shiftPoints,
+      shiftElectrons, shiftFinalTier,
     }));
   });
 
@@ -661,10 +773,21 @@ export default function QserfPlant() {
         internalCoolingNetworks * superstructureCooling * 1.6 +
         activeRelief * 9 +
         (efssActive ? 28 : 0);
-      const escalation = temperature > 3000 ? (temperature - 2900) / 90 : 0;
-      setTemperature((value) =>
-        Math.max(0, value + (heat - cooling + escalation) * 0.5),
-      );
+      setTemperature((value) => {
+        // Runaway heating accelerates with core temperature, but it is a
+        // deliberately shallow curve. The old linear term fed back far too
+        // aggressively and could produce astronomical temperatures in a few
+        // ticks.
+        const escalation =
+          value > 3_000
+            ? 0.75 * Math.pow((value - 3_000) / 1_000, 1.2)
+            : 0;
+        return clamp(
+          value + (heat - cooling + escalation) * 0.5,
+          0,
+          DMR_MAX_TEMPERATURE_K,
+        );
+      });
       setFuel((cells) =>
         cells.map((cell) =>
           meltdownInProgress
@@ -1063,6 +1186,7 @@ export default function QserfPlant() {
   }, [playFaas, startupPhase]);
 
   useEffect(() => {
+    if (meltdownInProgress) return;
     const flags = warningFlags.current;
     const trigger = (
       key: keyof typeof flags,
@@ -1109,7 +1233,7 @@ export default function QserfPlant() {
       faasClips.replacementRequired,
     );
     trigger("fuelDepleted", online && fuelAverage <= 3, faasClips.fuelDepleted);
-  }, [fuelAverage, integrity, online, playEffect, playFaas, temperature]);
+  }, [fuelAverage, integrity, meltdownInProgress, online, playEffect, playFaas, temperature]);
 
   useEffect(() => {
     if (
@@ -1122,6 +1246,8 @@ export default function QserfPlant() {
       return;
     setMeltdownStage("ACTIVE");
     setMeltdownSeconds(0);
+    setTartarusSealForced(false);
+    setPhase1AnnouncementStep(0);
     setCodeBlackStartedAt(null);
     setPhase2Available(null);
     setPhase2UnlockTimes([null, null, null]);
@@ -1138,6 +1264,15 @@ export default function QserfPlant() {
     setPhase2HatchState("SEALED");
     setEvacuationLocation("CONTROL_ROOM");
     setTartarusSealLockedAt(null);
+    setShiftStatus("IDLE");
+    setShiftSecondsRemaining(NIGHTSHIFT_DURATION_SECONDS);
+    setShiftOrder(null);
+    setShiftOrderSeconds(0);
+    setShiftMatchSeconds(0);
+    setShiftOrdersCompleted(0);
+    setShiftOrdersFailed(0);
+    setShiftPoints(0);
+    setShiftFinalTier(0);
     if (phase1ExecutionTimer.current !== null) {
       window.clearTimeout(phase1ExecutionTimer.current);
       phase1ExecutionTimer.current = null;
@@ -1161,14 +1296,16 @@ export default function QserfPlant() {
       phase1Expired: false,
       shelterMinute: false,
       shelterAvailable: false,
+      nearestShelter: false,
+      radiationSealForced: false,
       shelterThirty: false,
       shelterTen: false,
       doorsClosing: false,
     };
     if (musicEnabled) setMusicKey("meltdownP1");
-    playFaas(faasClips.meltdownInstability, 0);
+    stopFaas();
     playEffect(qserfEffects.criticalOverheat, 0);
-    addLog("FAAS: Meltdown sequence initiated. Phase 1 is not yet available.");
+    addLog("FAAS: Meltdown sequence initiated. Awaiting Code Red directive.");
   }, [
     ending,
     integrity,
@@ -1189,6 +1326,67 @@ export default function QserfPlant() {
     );
     return () => window.clearInterval(timer);
   }, [ending, meltdownInProgress]);
+
+  useEffect(() => {
+    if (
+      !meltdownInProgress ||
+      ending ||
+      phase1AnnouncementStep < 0 ||
+      phase1AnnouncementStep >= phase1AnnouncementSequence.length ||
+      meltdownSeconds < phase1AnnouncementCueSeconds[phase1AnnouncementStep] ||
+      faasCurrentClip !== null
+    )
+      return;
+
+    // The P1 controls become available after, not alongside, the Code Red /
+    // Bravo-Niner transmission. Every other line is released only after the
+    // preceding clip's `ended` event returns the FAAS player to idle.
+    if (phase1AnnouncementStep === 5 && meltdownStage === "ACTIVE") {
+      const code = String(Math.floor(Math.random() * 1_000_000)).padStart(
+        6,
+        "0",
+      );
+      const location =
+        shutdownCodeLocations[
+          Math.floor(Math.random() * shutdownCodeLocations.length)
+        ];
+      const failures = [
+        ...(Math.random() < 0.045 ? ["CT-01"] : []),
+        ...(Math.random() < 0.045 ? ["CT-03"] : []),
+      ];
+      setShutdownCode(code);
+      setShutdownCodeLocation(location);
+      setShutdownCodeRevealed(false);
+      setCatalyzerFailures(failures);
+      setShutdownButtonMissing(Math.random() < 0.003);
+      setFaasCodeGuesses(0);
+      setMeltdownStage("PHASE_1_WINDOW");
+      // Stay on this index; the next pass plays the now-active shutdown
+      // window announcement rather than silently skipping it.
+      setPhase1AnnouncementStep(5);
+      addLog(
+        "CODE RED / Bravo-Niner transmission complete. Phase 1 Combustion Stall Protocol is now available.",
+      );
+      return;
+    }
+
+    const next = phase1AnnouncementSequence[phase1AnnouncementStep];
+    if (next.id === faasClips.codeRed.id) {
+      playEffect(qserfEffects.codeRed, 0);
+      meltdownMilestones.current.codeRed = true;
+    }
+    playFaas(next, 0);
+    setPhase1AnnouncementStep((step) => step + 1);
+  }, [
+    ending,
+    faasCurrentClip,
+    meltdownInProgress,
+    meltdownSeconds,
+    meltdownStage,
+    phase1AnnouncementStep,
+    playEffect,
+    playFaas,
+  ]);
 
   useEffect(() => {
     if (!ending || !endingVideoRef.current) return;
@@ -1238,85 +1436,39 @@ export default function QserfPlant() {
   useEffect(() => {
     if (!meltdownInProgress || ending) return;
     const flags = meltdownMilestones.current;
-    if (meltdownSeconds >= 120 && !flags.monitorFailure) {
-      flags.monitorFailure = true;
-      playFaas(
-        [faasClips.integrityMonitorFailed, faasClips.integrityMonitorNoData],
-        0,
-      );
-      addLog(
-        "FAAS: Structural integrity monitor fault. Display now reads Err%.",
-      );
-    }
-    if (meltdownSeconds >= 170 && !flags.evacuation) {
-      flags.evacuation = true;
-      playFaas(faasClips.scientificEvacuation, 0);
-      addLog("FAAS: Scientific personnel evacuation ordered.");
-    }
-    if (meltdownSeconds >= 235 && !flags.codeRed) {
-      flags.codeRed = true;
-      playFaas(faasClips.codeRed, 0);
-      playEffect(qserfEffects.codeRed, 0);
-      addLog("CODE RED declared. Locate the Phase 1 shutdown code.");
-    }
-    if (meltdownSeconds >= 297 && meltdownStage === "ACTIVE") {
-      const code = String(Math.floor(Math.random() * 1_000_000)).padStart(
-        6,
-        "0",
-      );
-      const location =
-        shutdownCodeLocations[
-          Math.floor(Math.random() * shutdownCodeLocations.length)
-        ];
-      const failures = [
-        ...(Math.random() < 0.045 ? ["CT-01"] : []),
-        ...(Math.random() < 0.045 ? ["CT-03"] : []),
-      ];
-      setShutdownCode(code);
-      setShutdownCodeLocation(location);
-      setShutdownCodeRevealed(false);
-      setCatalyzerFailures(failures);
-      setShutdownButtonMissing(Math.random() < 0.003);
-      setFaasCodeGuesses(0);
-      setMeltdownStage("PHASE_1_WINDOW");
-      playFaas(
-        [
-          faasClips.phase1Window,
-          faasClips.shutdownAttemptWarning,
-          faasClips.phase1TemperatureRequirement,
-        ],
-        0,
-      );
-      addLog(
-        "Phase 1 Combustion Stall Protocol window opened for 2:30. Locate the altered sticky note.",
-      );
-      return;
-    }
     if (
       meltdownStage === "PHASE_1_WINDOW" &&
-      meltdownSeconds >= 442 &&
+      meltdownSeconds >= MELTDOWN_P1_END - 5 &&
       !flags.phase1Deadline
     ) {
       flags.phase1Deadline = true;
-      playFaas(faasClips.phase1Deadline, 0);
-      addLog("FAAS: Phase 1 shutdown window closes in five seconds.");
+      addLog("Phase 1 shutdown window will close with the soundtrack transition.");
     }
     if (
-      meltdownSeconds >= 463 &&
-      (meltdownStage === "ACTIVE" || meltdownStage === "PHASE_1_WINDOW")
+      meltdownSeconds >= MELTDOWN_P1_END &&
+      (meltdownStage === "ACTIVE" || meltdownStage === "PHASE_1_WINDOW") &&
+      !flags.phase1Expired
     ) {
+      flags.phase1Expired = true;
+      stopFaas();
+      setPhase1AnnouncementStep(phase1AnnouncementSequence.length);
+      setMeltdownStage("ACTIVE");
+      addLog("Phase 1 shutdown window expired with the Phase 1 soundtrack.");
+      return;
+    }
+    if (meltdownSeconds >= MELTDOWN_CODE_BLACK && meltdownStage === "ACTIVE") {
       setMeltdownStage("CODE_BLACK");
       setCodeBlackStartedAt(meltdownSeconds);
+      if (musicEnabled) setMusicKey("meltdownP2");
       playFaas(faasClips.codeBlack, 0);
-      playFaas(faasClips.phase1Expired, 0);
       playEffect(qserfEffects.codeBlack, 0);
-      addLog("CODE BLACK declared. Phase 1 shutdown has expired.");
+      addLog("CODE BLACK declared. Phase 2 soundtrack and response sequence started.");
       return;
     }
     if (
       meltdownStage === "CODE_BLACK" &&
       codeBlackStartedAt !== null &&
-      meltdownSeconds - codeBlackStartedAt >= 31
+      phase2TimelineSeconds >= 31
     ) {
       const available =
         phase1Attempted ||
@@ -1330,19 +1482,16 @@ export default function QserfPlant() {
         setPhase2HatchState("EXPLODED");
         setPhase2Available(false);
         setMeltdownStage("EVACUATION");
-        playFaas(
-          [faasClips.phase2Unavailable, faasClips.emergencyEvacuate],
-          0,
-        );
+        playFaas(faasClips.emergencyEvacuate, 0);
         addLog("Phase 2 chamber hatch exploded. Blast shelters are opening.");
         return;
       }
       setPhase2HatchState(available ? "UNLOCKED" : "SEALED");
       setMeltdownStage(available ? "PHASE_2_WINDOW" : "EVACUATION");
+      // The shelter and Code Omni calls are scheduled later below; do not
+      // queue a second evacuation message immediately behind this one.
       playFaas(
-        available
-          ? faasClips.phase2Available
-          : [faasClips.phase2Unavailable, faasClips.emergencyEvacuate],
+        available ? faasClips.phase2Available : faasClips.phase2Unavailable,
         0,
       );
       addLog(
@@ -1352,63 +1501,74 @@ export default function QserfPlant() {
       );
       return;
     }
-    if (
-      meltdownSeconds >= codeBlackClock + 67 &&
-      !flags.shelterAvailable
-    ) {
+    if (phase2TimelineSeconds >= 74 && !flags.shelterAvailable) {
       flags.shelterAvailable = true;
-      playFaas([faasClips.seekShelter, faasClips.nearestShelter], 0);
+      playFaas(faasClips.seekShelter, 0);
       addLog("FAAS: Shelter and Tartarus Zone evacuation routes are available.");
     }
-    if (meltdownSeconds >= codeBlackClock + 67 && !flags.codeOmni) {
-      flags.codeOmni = true;
-      setMeltdownStage("CODE_OMNI");
-      playFaas(faasClips.codeOmni, 0);
-      addLog("CODE OMNI issued. All monitoring systems unavailable.");
-      return;
+    if (phase2TimelineSeconds >= 90 && !flags.nearestShelter) {
+      flags.nearestShelter = true;
+      playFaas(faasClips.nearestShelter, 0);
     }
-    if (meltdownSeconds >= reactorExplosionAt - 60 && !flags.shelterMinute) {
+    if (phase2TimelineSeconds >= 106 && !flags.codeOmni) {
+      flags.codeOmni = true;
+      playFaas(faasClips.codeOmni, 0);
+      addLog("CODE OMNI issued. Monitoring data is unavailable; manual controls remain active.");
+    }
+    if (phase2SecondsRemaining <= 60 && !flags.shelterMinute) {
       flags.shelterMinute = true;
       playFaas(faasClips.blastShelterMinute, 0);
       addLog("FAAS: Blast shelters close in one minute.");
     }
-    if (meltdownSeconds >= reactorExplosionAt - 30 && !flags.shelterThirty) {
+    if (phase2SecondsRemaining <= 30 && !flags.shelterThirty) {
       flags.shelterThirty = true;
       playFaas(faasClips.blastShelterThirty, 0);
       addLog("FAAS: Blast shelters close in 30 seconds.");
     }
-    if (meltdownSeconds >= reactorExplosionAt - 10 && !flags.shelterTen) {
-      flags.shelterTen = true;
-      playFaas(faasClips.blastShelterTen, 0);
-      addLog("FAAS: Blast shelters close in 10 seconds.");
+    if (
+      phase2SecondsRemaining <= 40 &&
+      !flags.radiationSealForced
+    ) {
+      flags.radiationSealForced = true;
+      if (tartarusSealLockedAt === null) {
+        setTartarusSealLockedAt(meltdownSeconds);
+        setTartarusSealForced(true);
+        playFaas(faasClips.radiationLeakSealDoors, 0);
+        addLog("FAAS forced the Tartarus radiation seal closed. Find shelter.");
+      }
     }
-    if (meltdownSeconds >= reactorExplosionAt - 1 && !flags.doorsClosing) {
+    if (phase2SecondsRemaining <= 20 && !flags.doorsClosing) {
       flags.doorsClosing = true;
       playFaas(faasClips.blastDoorsClosing, 0);
+      addLog("Blast doors closing in 20 seconds.");
     }
-    if (
-      meltdownSeconds >= codeBlackClock + 197 &&
-      meltdownStage !== "BLACK_HOLE"
-    ) {
-      setMeltdownStage("BLACK_HOLE");
-      playFaas(faasClips.meltdownEvacuate, 0);
-      addLog("Blast doors sealed. DMR implosion has formed a black hole.");
-      return;
-    }
-    const reactorExplosionDue = meltdownSeconds >= reactorExplosionAt;
+    const p2TrackFinished =
+      musicEnabled &&
+      musicKey === "meltdownP2" &&
+      musicDurationSeconds > 0 &&
+      musicElapsedSeconds >= musicDurationSeconds - 0.1;
+    const reactorExplosionDue =
+      p2TrackFinished ||
+      ((!musicEnabled || musicDurationSeconds === 0) &&
+        meltdownSeconds >= reactorExplosionAt);
     if (reactorExplosionDue && meltdownStage !== "TERMINAL") {
       setMeltdownStage("TERMINAL");
       // All live buses are silenced before aftermath playback: the ending
       // video itself is the sole audible source from the moment of explosion.
       stopFaas();
       stopSoundscape();
-      setEnding(
+      const outcome =
         evacuationLocation === "BLAST_SHELTER"
           ? "goodBlastShelter"
           : evacuationLocation === "TARTARUS_ZONE" && tartarusSealLockedInTime
             ? "tartarusZone"
-            : "emergencyDeath",
-      );
+            : "emergencyDeath";
+      setMeltdownExplosionTransition(true);
+      phase2EndingTimer.current = window.setTimeout(() => {
+        phase2EndingTimer.current = null;
+        setMeltdownExplosionTransition(false);
+        setEnding(outcome);
+      }, 700);
       addLog(
         evacuationLocation === "BLAST_SHELTER"
           ? "Blast shelter sealed. Shelter aftermath projected."
@@ -1425,11 +1585,17 @@ export default function QserfPlant() {
     meltdownStage,
     playEffect,
     playFaas,
+    musicEnabled,
+    musicElapsedSeconds,
+    musicDurationSeconds,
+    musicKey,
+    setMusicKey,
     setMusicEnabled,
     stopFaas,
     stopSoundscape,
     evacuationLocation,
     tartarusSealLockedInTime,
+    tartarusSealLockedAt,
   ]);
 
   const togglePump = (index: number) =>
@@ -1447,10 +1613,19 @@ export default function QserfPlant() {
   };
   const declareCodeBlack = (reason: string) => {
     if (!meltdownInProgress) return;
+    // A failed Phase 1 attempt transitions to a fresh Phase 2 clock.  Do not
+    // leave Phase 1 calls queued behind the Code Black transmission.
+    stopFaas();
+    // This is a failure transition, not a natural P1 timeout. Mark P1 as
+    // concluded so neither the timer nor its expiry transmission can run.
+    meltdownMilestones.current.phase1Expired = true;
+    setPhase1AnnouncementStep(phase1AnnouncementSequence.length);
     setMeltdownStage("CODE_BLACK");
     setCodeBlackStartedAt(meltdownSeconds);
+    // A failed shutdown skips the remainder of Phase 1. Crossfade rather
+    // than hard-cutting its score, then make Code Black live immediately.
+    if (musicEnabled) transitionMusic("meltdownP2", 800);
     playFaas(faasClips.codeBlack, 0);
-    playFaas(faasClips.phase1Expired, 0);
     playEffect(qserfEffects.codeBlack, 0);
     addLog(reason);
   };
@@ -1461,11 +1636,11 @@ export default function QserfPlant() {
     addLog("Operator entered a blast shelter. Awaiting reactor-explosion outcome.");
   };
   const travelToTartarus = () => {
-    if (!evacuationAvailable) return;
+    if (!evacuationAvailable || tartarusSealForced) return;
     setEvacuationLocation("TARTARUS_ZONE");
     setTartarusSealLockedAt(null);
     playFaas(faasClips.tartarusZone, 0);
-    addLog("Operator arrived in Tartarus Zone. Lock the seal before T−20 seconds.");
+    addLog("Operator arrived in Tartarus Zone. Lock the seal before T−40 seconds.");
   };
   const lockTartarusSeal = () => {
     if (
@@ -1547,10 +1722,8 @@ export default function QserfPlant() {
     if (unlocked.length > 1 && now - Math.min(...unlocked) > 3000) {
       setMeltdownStage("EVACUATION");
       setPhase2Available(false);
-      playFaas(
-        [faasClips.phase2Unavailable, faasClips.emergencyEvacuate],
-        0,
-      );
+      playFaas(faasClips.phase2Unavailable, 0);
+      playFaasAfterDelay(faasClips.emergencyEvacuate, 5_000, 0);
       addLog("Phase 2 fuel unlock timing failed. Blast shelters opening.");
       return;
     }
@@ -1562,12 +1735,13 @@ export default function QserfPlant() {
     setTemperature(295);
     setIntegrity((value) => Math.max(value, 45));
     if (musicEnabled) setMusicKey("shutdown");
-    playFaas(
-      [faasClips.phase2ShutdownInProgress, faasClips.phase2Lowering, faasClips.shutdownSucceeded],
-      0,
-    );
+    // Keep the recovery transmissions intelligible rather than stacking the
+    // three Phase 2 calls in the same audio queue frame.
+    playFaas(faasClips.phase2ShutdownInProgress, 0);
+    playFaasAfterDelay(faasClips.phase2Lowering, 3_500, 0);
+    playFaasAfterDelay(faasClips.shutdownSucceeded, 7_000, 0);
     addLog(
-      "Manual combustion stall successful. Phase 2 aftermath will project in 10 seconds.",
+      "Manual combustion stall successful. Phase 2 aftermath will project shortly.",
     );
     // Preserve a short recovery beat, then silence every live audio bus so
     // the ending recording is the only sound while it is on screen.
@@ -1576,7 +1750,7 @@ export default function QserfPlant() {
       stopFaas();
       stopSoundscape();
       setEnding("phase2Shutdown");
-    }, 10_000);
+    }, 11_000);
   };
   const start = () => {
     if (!startupReady) return;
@@ -1840,8 +2014,11 @@ export default function QserfPlant() {
     setPrimaryGridBlackout(false);
     setCombustionStallFuelPenaltyPending(false);
     setEnding(null);
+    setMeltdownExplosionTransition(false);
     setMeltdownStage("NORMAL");
     setMeltdownSeconds(0);
+    setTartarusSealForced(false);
+    setPhase1AnnouncementStep(-1);
     setCodeBlackStartedAt(null);
     setPhase2Available(null);
     setPhase2UnlockTimes([null, null, null]);
@@ -1903,6 +2080,8 @@ export default function QserfPlant() {
       phase1Expired: false,
       shelterMinute: false,
       shelterAvailable: false,
+      nearestShelter: false,
+      radiationSealForced: false,
       shelterThirty: false,
       shelterTen: false,
       doorsClosing: false,
@@ -1910,9 +2089,103 @@ export default function QserfPlant() {
     stopSoundscape();
     setLog(["FAAS: DMR-01 standing by."]);
   };
+  const triggerInstantMeltdown = () => {
+    if (meltdownInProgress || ending) return;
+    setStartupPhase("ONLINE");
+    setMaintenance(false);
+    setTemperature(4_000);
+    setIntegrity(0);
+    addLog("Meltdown test initiated: DMR temperature set to 4,000 K and integrity set to 0%.");
+  };
   const reactorOutput = online
-    ? Math.max(0, (temperature - 300) * 0.025 + runningPumps * 1.3)
+    ? clamp(
+        (temperature - 300) * 0.025 + runningPumps * 1.3,
+        0,
+        DMR_MAX_OUTPUT_GW,
+      )
     : 0;
+  const shiftOrderMatched =
+    shiftOrder !== null &&
+    online &&
+    !meltdownInProgress &&
+    (shiftOrder.kind === "TEMPERATURE"
+      ? Math.abs(temperature - shiftOrder.target) <= shiftOrder.tolerance
+      : Math.abs(reactorOutput - shiftOrder.target) <= shiftOrder.tolerance);
+
+  useEffect(() => {
+    if (shiftStatus !== "ACTIVE") return;
+    const timer = window.setTimeout(() => {
+      if (shiftSecondsRemaining <= 1) {
+        const tier = nightshiftTierFor(shiftOrdersCompleted);
+        const reward = nightshiftRewardFor(tier);
+        setShiftSecondsRemaining(0);
+        setShiftStatus("COMPLETE");
+        setShiftFinalTier(tier);
+        if (reward) setShiftElectrons((value) => value + reward);
+        addLog(
+          tier
+            ? `Nightshift complete: Tier ${tier} earned ${reward.toLocaleString()} electrons.`
+            : "Nightshift complete: no reward tier reached.",
+        );
+        return;
+      }
+      setShiftSecondsRemaining((value) => value - 1);
+      if (!shiftOrder) {
+        setShiftOrder(makeNightshiftOrder());
+        setShiftOrderSeconds(0);
+        setShiftMatchSeconds(0);
+        return;
+      }
+      if (shiftOrderMatched) {
+        const reward = shiftOrder.kind === "GRID_OUTPUT" ? 2 : 1;
+        setShiftOrdersCompleted((value) => value + 1);
+        setShiftPoints((value) => value + reward);
+        setShiftOrder(makeNightshiftOrder());
+        setShiftOrderSeconds(0);
+        setShiftMatchSeconds(0);
+        addLog(`Nightshift ${shiftOrder.kind === "GRID_OUTPUT" ? "GWh" : "temperature"} order completed (+${reward} points).`);
+        return;
+      }
+      setShiftMatchSeconds(0);
+      if (shiftOrderSeconds >= NIGHTSHIFT_ORDER_SECONDS - 1) {
+        setShiftOrdersFailed((value) => value + 1);
+        setShiftPoints((value) => Math.max(0, value - 1));
+        setShiftOrder(makeNightshiftOrder());
+        setShiftOrderSeconds(0);
+        setShiftMatchSeconds(0);
+        addLog("Nightshift order missed (−1 point). Next grid order issued.");
+        return;
+      }
+      setShiftOrderSeconds((value) => value + 1);
+    }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [
+    meltdownInProgress,
+    online,
+    reactorOutput,
+    shiftMatchSeconds,
+    shiftOrder,
+    shiftOrderMatched,
+    shiftOrderSeconds,
+    shiftOrdersCompleted,
+    shiftSecondsRemaining,
+    shiftStatus,
+    temperature,
+  ]);
+
+  const startNightshift = () => {
+    if (!online || meltdownInProgress) return;
+    setShiftStatus("ACTIVE");
+    setShiftSecondsRemaining(NIGHTSHIFT_DURATION_SECONDS);
+    setShiftOrder(makeNightshiftOrder());
+    setShiftOrderSeconds(0);
+    setShiftMatchSeconds(0);
+    setShiftOrdersCompleted(0);
+    setShiftOrdersFailed(0);
+    setShiftPoints(0);
+    setShiftFinalTier(0);
+    addLog("Nightshift started. Grid Management Desk order received.");
+  };
   const logTone = useMemo(
     () =>
       status.includes("MELTDOWN")
@@ -1954,6 +2227,13 @@ export default function QserfPlant() {
           <Button variant="outline" onClick={reset}>
             RESET DMR
           </Button>
+          <Button
+            variant="destructive"
+            disabled={meltdownInProgress || ending !== null}
+            onClick={triggerInstantMeltdown}
+          >
+            INSTANT MELTDOWN
+          </Button>
           <Button asChild>
             <Link to="/archive">ARCHIVE</Link>
           </Button>
@@ -1985,7 +2265,7 @@ export default function QserfPlant() {
         <Meter
           label="GRID OUTPUT"
           value={monitoringLost ? "NO DATA" : reactorOutput.toFixed(1)}
-          unit={monitoringLost ? undefined : "GW/h"}
+          unit={monitoringLost ? undefined : "GW"}
           tone="text-violet-300"
         />
         <Meter label="DMR STATUS" value={status} tone={logTone} />
@@ -2632,7 +2912,7 @@ export default function QserfPlant() {
                     <p className="text-cyan-100/80">
                       Choose an evacuation location before the reactor explosion.
                       Blast shelters provide a protected aftermath route. Tartarus
-                      Zone requires its seal to be locked at least 20 seconds before
+                      Zone requires its seal to be locked at least 40 seconds before
                       the explosion.
                     </p>
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -2658,9 +2938,9 @@ export default function QserfPlant() {
                             ? "default"
                             : "outline"
                         }
-                        disabled={meltdownSeconds >= reactorExplosionAt}
+                        disabled={meltdownSeconds >= reactorExplosionAt || tartarusSealForced}
                         onClick={travelToTartarus}
-                        tooltip="Moves the operator to Tartarus Zone. Its seal must then be locked at least 20 seconds before reactor explosion."
+                        tooltip="Moves the operator to Tartarus Zone. Its seal must be locked before the automatic radiation seal closes at T−40."
                       >
                         {evacuationLocation === "TARTARUS_ZONE"
                           ? "IN TARTARUS ZONE"
@@ -2677,7 +2957,7 @@ export default function QserfPlant() {
                             meltdownSeconds > tartarusSealDeadline
                           }
                           onClick={lockTartarusSeal}
-                          tooltip="Locks the Tartarus Zone seal. It must be locked no later than T−20 seconds to survive the reactor-explosion outcome."
+                          tooltip="Locks the Tartarus Zone seal. It must be locked before T−40, when FAAS automatically seals the zone."
                         >
                           {tartarusSealLockedAt !== null
                             ? tartarusSealLockedInTime
@@ -2688,9 +2968,11 @@ export default function QserfPlant() {
                         <span className="text-[10px] text-cyan-200">
                           {tartarusSealLockedInTime
                             ? "Tartarus seal is secured for the outcome."
-                            : meltdownSeconds > tartarusSealDeadline
-                              ? "Seal deadline missed; seek a blast shelter."
-                              : `Seal deadline: T−20 (${Math.max(0, tartarusSealDeadline - meltdownSeconds)}s remaining).`}
+                            : tartarusSealForced
+                              ? "FAAS has automatically sealed Tartarus Zone."
+                              : meltdownSeconds > tartarusSealDeadline
+                                ? "Seal deadline missed; seek a blast shelter."
+                                : `Seal deadline: T−40 (${Math.max(0, tartarusSealDeadline - meltdownSeconds)}s remaining).`}
                         </span>
                       </div>
                     )}
@@ -2979,7 +3261,11 @@ export default function QserfPlant() {
                         // Start the track for the event currently in progress;
                         // never revive an unrelated previous track.
                         setMusicKey(
-                          meltdownInProgress ? "meltdownP1" : null,
+                          meltdownInProgress
+                            ? codeBlackStartedAt !== null
+                              ? "meltdownP2"
+                              : "meltdownP1"
+                            : null,
                         );
                         setMusicEnabled(true);
                       }
@@ -3005,6 +3291,74 @@ export default function QserfPlant() {
                   />
                 </label>
               </div>
+            </CardContent>
+          </Card>
+          <Card className="border-violet-400/45 bg-violet-950/15">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-3 text-sm text-violet-200">
+                <span>SHIFT MANAGER / POWER GRID</span>
+                <span className="text-[10px] tracking-widest text-violet-300">
+                  {shiftStatus}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="rounded border border-violet-400/25 bg-black/30 p-2">
+                  <p className="text-slate-400">SHIFT REMAINING</p>
+                  <p className="mt-1 text-lg font-black text-violet-100">
+                    {formatMeltdownTime(shiftSecondsRemaining)}
+                  </p>
+                </div>
+                <div className="rounded border border-violet-400/25 bg-black/30 p-2">
+                  <p className="text-slate-400">ELECTRONS</p>
+                  <p className="mt-1 text-lg font-black text-amber-200">
+                    {shiftElectrons.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              {shiftOrder ? (
+                <div className={`rounded border p-3 ${shiftOrderMatched ? "border-emerald-400/60 bg-emerald-950/20" : "border-violet-400/35 bg-black/30"}`}>
+                  <p className="text-[10px] font-black tracking-[.14em] text-violet-200">
+                    ACTIVE POWER ORDER
+                  </p>
+                  <p className="mt-1 text-base font-black text-slate-100">
+                    {shiftOrder.kind === "TEMPERATURE"
+                      ? `${shiftOrder.target.toLocaleString()} K ±${shiftOrder.tolerance} K`
+                      : `${shiftOrder.target} GWh ±${shiftOrder.tolerance} GWh`}
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {Math.max(0, NIGHTSHIFT_ORDER_SECONDS - shiftOrderSeconds)}s remaining · {shiftOrderMatched ? "TARGET MET" : "ADJUST TO TARGET"}
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded border border-slate-700 bg-black/30 p-3 text-slate-400">
+                  Start a nightshift to receive a grid order.
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-1 text-center text-[10px] font-black">
+                {[1, 2, 3].map((tier) => {
+                  const threshold = tier * 3;
+                  const reward = nightshiftRewardFor(tier);
+                  const reached = (shiftStatus === "COMPLETE" ? shiftFinalTier : nightshiftTierFor(shiftOrdersCompleted)) >= tier;
+                  return (
+                    <div key={tier} className={`rounded border px-1 py-2 ${reached ? "border-emerald-400/60 bg-emerald-950/30 text-emerald-200" : "border-slate-700 bg-black/25 text-slate-400"}`}>
+                      TIER {tier}<br />{threshold} ORDERS<br />{reward.toLocaleString()} e−
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                {shiftOrdersCompleted} complete / {shiftOrdersFailed} missed · {shiftPoints} shift points
+              </p>
+              <Button
+                className="w-full"
+                disabled={shiftStatus === "ACTIVE" || !online || meltdownInProgress}
+                onClick={startNightshift}
+                tooltip="Begins a compressed eight-hour nightshift. Complete temperature and grid-output orders while keeping the DMR safe."
+              >
+                {shiftStatus === "COMPLETE" ? "START NEW NIGHTSHIFT" : "START NIGHTSHIFT"}
+              </Button>
             </CardContent>
           </Card>
           <Card className="border-slate-700 bg-slate-950/80">
@@ -3102,6 +3456,15 @@ export default function QserfPlant() {
           <div className="flex h-full items-center justify-center bg-white/80">
             <p className="text-center font-mono text-sm font-black tracking-[.32em] text-zinc-900 md:text-xl">
               FACILITY DETONATION CONFIRMED
+            </p>
+          </div>
+        </div>
+      )}
+      {meltdownExplosionTransition && (
+        <div className="fixed inset-0 z-[99] animate-pulse bg-white" aria-live="assertive">
+          <div className="flex h-full items-center justify-center bg-white/80">
+            <p className="text-center font-mono text-sm font-black tracking-[.32em] text-zinc-900 md:text-xl">
+              REACTOR EXPLOSION DETECTED
             </p>
           </div>
         </div>

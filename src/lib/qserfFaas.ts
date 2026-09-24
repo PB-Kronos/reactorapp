@@ -406,6 +406,11 @@ export const faasClips = {
     "07_Facility_System/Locations/tartarus_zone.mp3",
     "emergency",
   ),
+  radiationLeakSealDoors: clip(
+    "radiation-leak-seal-doors-find-shelter",
+    "04_Emergency/07_radiation_leak_seal_doors_find_shelter.mp3",
+    "emergency",
+  ),
   blastShelterMinute: clip(
     "blast-shelter-minute",
     "04_Emergency/BLAST_01_closing_in_1_minute_lockdown.mp3",
