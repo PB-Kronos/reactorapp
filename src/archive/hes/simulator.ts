@@ -145,7 +145,9 @@ export type PlantState = {
 const coldUnit = (id: 1 | 2 = 1): UnitState => ({
   id,
   brake: true,
-  nitrogen: false,
+  // The nitrogen accumulator is charged at shutdown. It is discharged by a
+  // turbine trip to force the wicket gates shut; it is not a start permissive.
+  nitrogen: true,
   mivBypass: 0,
   mivCommand: 0,
   miv: 0,
@@ -230,7 +232,7 @@ const initial: PlantState = {
   reservoir: 78.4,
   tailwater: 5.2,
   tailwaterDemand: 6,
-  gridDemand: 250,
+  gridDemand: 10.9,
   points: 6420,
   unit: coldUnit(),
   unit2: coldUnit(2),
@@ -466,10 +468,16 @@ export function usePlantSimulator() {
           const turbineFill = clamp(ease(Number.isFinite(u.turbineFill) ? u.turbineFill : 0, miv, 0.045), 0, 100);
           const canTurn =
             !u.brake && miv > 90 && turbineFill > 90 && lubricationSafe && !u.tripped;
+          // Prior to synchronization, Auto Runup governs the selected speed
+          // (or the operator may hold speed manually with the wicket gates).
+          // Once C3 is manually closed in synchronism, grid frequency holds
+          // the runner at 250 RPM and wicket movement changes MW instead.
           const turbineRpmTarget = canTurn
-            ? u.autoRunup
-              ? u.speedTarget === 248 ? 250 : u.speedTarget
-              : wicket * 2.48
+            ? u.c3
+              ? 250
+              : u.autoRunup
+                ? u.speedTarget === 248 ? 250 : u.speedTarget
+                : Math.min(250, wicket * 12.5)
             : 0;
           const rpm = clamp(ease(u.rpm, turbineRpmTarget, 0.035), 0, 285);
           const excitation = clamp(
@@ -502,7 +510,7 @@ export function usePlantSimulator() {
             u.wicketHydraulic && hydraulicPressure < 35 && wicket <= 0;
           const preliminaryMw =
             u.c3 && Math.abs(rpm - 250) < 3 && Math.abs(voltage - 13.8) < 1
-              ? clamp(wicket * 4.5 * (turbineFill / 100) - 40, 0, 410)
+              ? clamp(13 * (wicket / 100) * (turbineFill / 100), 0, 13)
               : 0;
           const bearingTemp = clamp(
             ease(
@@ -536,9 +544,12 @@ export function usePlantSimulator() {
             rpm,
             excitation,
             voltage,
-            wicket: trip ? Math.max(0, wicket - 2.5) : wicket,
+            wicket: trip
+              ? Math.max(0, wicket - (u.nitrogen ? 6 : 0.35))
+              : wicket,
             miv: trip ? Math.max(0, miv - 2) : miv,
             mivCommand: trip ? 0 : u.mivCommand,
+            nitrogen: trip && wicket <= 6 ? false : u.nitrogen,
             turbineFill,
             c3: u.c3 && !trip,
             mw: trip ? 0 : preliminaryMw,
@@ -562,11 +573,11 @@ export function usePlantSimulator() {
           const wicket2 = u2.wicketHydraulic && hydraulicPressure >= 150 && !u2.tripped
             ? commandedWicket2
             : Math.max(0, u2.wicket - 1.25);
-          const rpm2 = clamp(ease(u2.rpm, canTurn2 ? (u2.autoRunup ? (u2.speedTarget === 248 ? 250 : u2.speedTarget) : wicket2 * 2.5) : 0, 0.035), 0, 285);
+          const rpm2 = clamp(ease(u2.rpm, canTurn2 ? (u2.c3 ? 250 : u2.autoRunup ? (u2.speedTarget === 248 ? 250 : u2.speedTarget) : Math.min(250, wicket2 * 12.5)) : 0, 0.035), 0, 285);
           const excitation2 = clamp(ease(u2.excitation, u2.excitationMaster ? (u2.autoExcitation ? 82 : u2.excitation) : 0, 0.05), 0, 110);
           const voltage2 = clamp(((rpm2 / 250) * 13.8 * excitation2) / 82, 0, 16);
           const preliminaryMw2 = u2.c3 && Math.abs(rpm2 - 250) < 3 && Math.abs(voltage2 - 13.8) < 1
-            ? clamp(wicket2 * 4.5 * (turbineFill2 / 100) - 40, 0, 410)
+            ? clamp(13 * (wicket2 / 100) * (turbineFill2 / 100), 0, 13)
             : 0;
           const automaticTrip2 = rpm2 > 3 && (generatorTrip || oilTrip || u2.bearingTemp > 105 || u2.vibration > 4);
           const trip2 = u2.tripped || automaticTrip2;
@@ -575,9 +586,12 @@ export function usePlantSimulator() {
             rpm: rpm2,
             excitation: excitation2,
             voltage: voltage2,
-            wicket: trip2 ? Math.max(0, wicket2 - 2.5) : wicket2,
+            wicket: trip2
+              ? Math.max(0, wicket2 - (u2.nitrogen ? 6 : 0.35))
+              : wicket2,
             miv: trip2 ? Math.max(0, miv2 - 2) : miv2,
             mivCommand: trip2 ? 0 : u2.mivCommand,
+            nitrogen: trip2 && wicket2 <= 6 ? false : u2.nitrogen,
             turbineFill: turbineFill2,
             c3: u2.c3 && !trip2,
             mw: trip2 ? 0 : preliminaryMw2,
@@ -587,7 +601,7 @@ export function usePlantSimulator() {
             vibration: clamp(0.3 + Math.abs(250 - rpm2) / 90 + (u2.wicket > 90 ? 0.5 : 0), 0.2, 5),
             shaftPumpLatched: rpm2 > 3 && (u2.shaftPumpLatched || rpm2 >= 125),
           };
-          const splitTarget = clamp((s.gridDemand / 2 + 40) / 4.5, 0, 100);
+          const splitTarget = clamp((s.gridDemand / 2 / 13) * 100, 0, 100);
           if (s.loadSplitting && unit.synced && unit2.synced) {
             unit.wicket = ease(unit.wicket, splitTarget, 0.04);
             unit2.wicket = ease(unit2.wicket, splitTarget, 0.04);
@@ -659,9 +673,9 @@ export function usePlantSimulator() {
           gridDemand: clamp(
             s.gridDemand +
               (Math.random() > 0.5 ? 1 : -1) *
-                Math.floor(1 + Math.random() * 65),
-            1,
-            410,
+                (0.1 + Math.random() * 1.4),
+            0.5,
+            26,
           ),
         })),
       55000,
@@ -721,8 +735,8 @@ export function usePlantSimulator() {
     if (!state.coolantPumps[0] || !state.coolantPumps[1]) a.push({ text: "COOLANT PUMP TRIP", color: "red" });
     if (state.coolantFilterDiff[0] >= 4) a.push({ text: "FILTER A DELTAP HIGH", color: "amber" });
     if (state.coolantFilterDiff[1] >= 4) a.push({ text: "FILTER B DELTAP HIGH", color: "amber" });
-    if (state.controls.transformerFan1 === 0 && totalMw > 300) a.push({ text: "XMFR 1 TEMPERATURE HIGH", color: "amber" });
-    if (state.controls.transformerFan2 === 0 && state.unit2.mw > 200) a.push({ text: "XMFR 2 TEMPERATURE HIGH", color: "amber" });
+    if (state.controls.transformerFan1 === 0 && state.unit.mw > 10) a.push({ text: "XMFR 1 TEMPERATURE HIGH", color: "amber" });
+    if (state.controls.transformerFan2 === 0 && state.unit2.mw > 10) a.push({ text: "XMFR 2 TEMPERATURE HIGH", color: "amber" });
     if (u.autoExcitation) a.push({ text: "AVR ENABLED", color: "blue" });
     if (totalMw < state.gridDemand - 5)
       a.push({ text: "UNDER DEMAND", color: "amber" });
@@ -928,7 +942,8 @@ export function usePlantSimulator() {
         voltage: 13.8,
         c3: true,
         synced: true,
-        mw: 239,
+        turbineFill: 98,
+        mw: 8,
       };
       setState((s) => ({
         ...s,
