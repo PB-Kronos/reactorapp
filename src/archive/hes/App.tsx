@@ -252,14 +252,11 @@ function Procedures({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
       state.coolantValve && state.coolantPumps.every(Boolean),
     ],
     [
-      "MIV bypass is at 100%; nitrogen isolator is open and both charge pumps exceed 60%",
-      u.mivBypass >= 99 &&
-        u.nitrogen &&
-        state.controls.nitrogenIsolator &&
-        Math.min(state.controls.nitrogenCharge1, state.controls.nitrogenCharge2) >= 60,
+      "MIV bypass is at 100% and shared hydraulic pressure is at least 150 bar",
+      u.mivBypass >= 99 && state.hydraulicPressure >= 150,
     ],
     ["MIV open and brake released", u.miv >= 99 && !u.brake],
-    ["Auto Runup set to 250 RPM", u.autoRunup && u.speedTarget === 250],
+    ["Auto Runup set to 248 RPM", u.autoRunup && u.speedTarget === 248],
     [
       "Electric lube pump turned off after 125 RPM; shaft pump active",
       u.rpm >= 125 && !state.electricOilPump,

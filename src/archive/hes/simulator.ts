@@ -20,12 +20,14 @@ export type UnitState = {
   brake: boolean;
   nitrogen: boolean;
   mivBypass: number;
+  /** Operator command; the indicated MIV position follows the water-wave model. */
+  mivCommand: number;
   miv: number;
   turbineFill: number;
   wicket: number;
   wicketHydraulic: boolean;
   autoRunup: boolean;
-  speedTarget: 0 | 100 | 200 | 250;
+  speedTarget: 0 | 100 | 200 | 248;
   rpm: number;
   excitationMaster: boolean;
   autoExcitation: boolean;
@@ -145,6 +147,7 @@ const coldUnit = (id: 1 | 2 = 1): UnitState => ({
   brake: true,
   nitrogen: false,
   mivBypass: 0,
+  mivCommand: 0,
   miv: 0,
   turbineFill: 0,
   wicket: 0,
@@ -266,8 +269,8 @@ export function usePlantSimulator() {
         spillwayMaster: [Boolean(oldMasters[0]), Boolean(oldMasters[1]), Boolean(oldMasters[2]), false],
         spillwayBrakes: [Boolean(restored.spillwayBrakes?.[0] ?? true), Boolean(restored.spillwayBrakes?.[1] ?? true), Boolean(restored.spillwayBrakes?.[2] ?? true), true],
         spillwaySetpointPriority: restored.spillwaySetpointPriority || false,
-        unit: { ...coldUnit(), ...restored.unit, turbineFill: Number.isFinite(restored.unit?.turbineFill) ? restored.unit!.turbineFill : 0, speedTarget: (restored.unit?.speedTarget as number | undefined) === 248 ? 250 : restored.unit?.speedTarget },
-        unit2: { ...coldUnit(2), ...restored.unit2, id: 2, turbineFill: Number.isFinite(restored.unit2?.turbineFill) ? restored.unit2!.turbineFill : 0, speedTarget: (restored.unit2?.speedTarget as number | undefined) === 248 ? 250 : restored.unit2?.speedTarget },
+        unit: { ...coldUnit(), ...restored.unit, turbineFill: Number.isFinite(restored.unit?.turbineFill) ? restored.unit!.turbineFill : 0, mivCommand: Number.isFinite(restored.unit?.mivCommand) ? restored.unit!.mivCommand : restored.unit?.miv ?? 0, speedTarget: (restored.unit?.speedTarget as number | undefined) === 250 ? 248 : restored.unit?.speedTarget },
+        unit2: { ...coldUnit(2), ...restored.unit2, id: 2, turbineFill: Number.isFinite(restored.unit2?.turbineFill) ? restored.unit2!.turbineFill : 0, mivCommand: Number.isFinite(restored.unit2?.mivCommand) ? restored.unit2!.mivCommand : restored.unit2?.miv ?? 0, speedTarget: (restored.unit2?.speedTarget as number | undefined) === 250 ? 248 : restored.unit2?.speedTarget },
       };
     } catch {
       return initial;
@@ -443,20 +446,29 @@ export function usePlantSimulator() {
           );
     // Wickets use electric drive at low speed; hydraulic drive takes over after pressure is available.
     const gatePower = u.wicketHydraulic ? hydraulicPressure >= 150 : s.offsitePower && s.controls.unit1WicketBreaker;
+          // In the observed automatic run-up, the governor settles at about
+          // 20% wicket opening (about 0.20 water flow) as the unit reaches
+          // 250 RPM; manual wicket controls take over once auto-runup is off.
+          const commandedWicket = u.autoRunup && u.speedTarget === 248
+            ? ease(u.wicket, 20, 0.035)
+            : u.wicket;
           const wicket =
-            gatePower && !u.tripped ? u.wicket : Math.max(0, u.wicket - 1.25);
+            gatePower && !u.tripped ? commandedWicket : Math.max(0, u.wicket - 1.25);
           const lubricationSafe =
             oilPressure > 2.2 &&
             (s.electricOilPump || shaftPump);
           // The scroll case and runner do not fill instantly when an MIV moves.
           // Keeping the fill as a state gives the MIV/fill instruments a useful,
           // observable relationship during instruction and run-up.
-          const turbineFill = clamp(ease(Number.isFinite(u.turbineFill) ? u.turbineFill : 0, u.miv, 0.045), 0, 100);
+          const miv = u.mivCommand >= 99
+            ? 97.5 + 2.5 * Math.sin(Date.now() / 1700 + u.id)
+            : ease(u.miv, u.mivCommand, 0.08);
+          const turbineFill = clamp(ease(Number.isFinite(u.turbineFill) ? u.turbineFill : 0, miv, 0.045), 0, 100);
           const canTurn =
-            !u.brake && u.miv > 90 && turbineFill > 90 && lubricationSafe && !u.tripped;
+            !u.brake && miv > 90 && turbineFill > 90 && lubricationSafe && !u.tripped;
           const turbineRpmTarget = canTurn
             ? u.autoRunup
-              ? u.speedTarget
+              ? u.speedTarget === 248 ? 250 : u.speedTarget
               : wicket * 2.48
             : 0;
           const rpm = clamp(ease(u.rpm, turbineRpmTarget, 0.035), 0, 285);
@@ -525,7 +537,8 @@ export function usePlantSimulator() {
             excitation,
             voltage,
             wicket: trip ? Math.max(0, wicket - 2.5) : wicket,
-            miv: trip ? Math.max(0, u.miv - 2) : u.miv,
+            miv: trip ? Math.max(0, miv - 2) : miv,
+            mivCommand: trip ? 0 : u.mivCommand,
             turbineFill,
             c3: u.c3 && !trip,
             mw: trip ? 0 : preliminaryMw,
@@ -538,13 +551,22 @@ export function usePlantSimulator() {
           // Unit 2 shares the plant hydraulic header and cooling/filtration
           // services, but retains its own turbine, MIV and excitation controls.
           const u2 = s.unit2;
-          const turbineFill2 = clamp(ease(Number.isFinite(u2.turbineFill) ? u2.turbineFill : 0, u2.miv, 0.045), 0, 100);
-          const canTurn2 = !u2.brake && u2.miv > 90 && turbineFill2 > 90 && lubricationSafe && !u2.tripped && s.controls.t2IntakeGate && (u2.rpm >= 5 || (s.controls.t2TurningGear && s.controls.t2JackingPump));
-          const rpm2 = clamp(ease(u2.rpm, canTurn2 ? (u2.autoRunup ? u2.speedTarget : u2.wicket * 2.5) : 0, 0.035), 0, 285);
+          const miv2 = u2.mivCommand >= 99
+            ? 97.5 + 2.5 * Math.sin(Date.now() / 1700 + u2.id)
+            : ease(u2.miv, u2.mivCommand, 0.08);
+          const turbineFill2 = clamp(ease(Number.isFinite(u2.turbineFill) ? u2.turbineFill : 0, miv2, 0.045), 0, 100);
+          const canTurn2 = !u2.brake && miv2 > 90 && turbineFill2 > 90 && lubricationSafe && !u2.tripped && s.controls.t2IntakeGate && (u2.rpm >= 5 || (s.controls.t2TurningGear && s.controls.t2JackingPump));
+          const commandedWicket2 = u2.autoRunup && u2.speedTarget === 248
+            ? ease(u2.wicket, 20, 0.035)
+            : u2.wicket;
+          const wicket2 = u2.wicketHydraulic && hydraulicPressure >= 150 && !u2.tripped
+            ? commandedWicket2
+            : Math.max(0, u2.wicket - 1.25);
+          const rpm2 = clamp(ease(u2.rpm, canTurn2 ? (u2.autoRunup ? (u2.speedTarget === 248 ? 250 : u2.speedTarget) : wicket2 * 2.5) : 0, 0.035), 0, 285);
           const excitation2 = clamp(ease(u2.excitation, u2.excitationMaster ? (u2.autoExcitation ? 82 : u2.excitation) : 0, 0.05), 0, 110);
           const voltage2 = clamp(((rpm2 / 250) * 13.8 * excitation2) / 82, 0, 16);
           const preliminaryMw2 = u2.c3 && Math.abs(rpm2 - 250) < 3 && Math.abs(voltage2 - 13.8) < 1
-            ? clamp(u2.wicket * 4.5 * (turbineFill2 / 100) - 40, 0, 410)
+            ? clamp(wicket2 * 4.5 * (turbineFill2 / 100) - 40, 0, 410)
             : 0;
           const automaticTrip2 = rpm2 > 3 && (generatorTrip || oilTrip || u2.bearingTemp > 105 || u2.vibration > 4);
           const trip2 = u2.tripped || automaticTrip2;
@@ -553,8 +575,9 @@ export function usePlantSimulator() {
             rpm: rpm2,
             excitation: excitation2,
             voltage: voltage2,
-            wicket: trip2 ? Math.max(0, u2.wicket - 2.5) : u2.wicket,
-            miv: trip2 ? Math.max(0, u2.miv - 2) : u2.miv,
+            wicket: trip2 ? Math.max(0, wicket2 - 2.5) : wicket2,
+            miv: trip2 ? Math.max(0, miv2 - 2) : miv2,
+            mivCommand: trip2 ? 0 : u2.mivCommand,
             turbineFill: turbineFill2,
             c3: u2.c3 && !trip2,
             mw: trip2 ? 0 : preliminaryMw2,
@@ -758,20 +781,20 @@ export function usePlantSimulator() {
     setUnit2: (value: Partial<UnitState>) => patchUnit2(value),
     setMiv: (target: number) => {
       const u = latest.current.unit;
-      if (target > 0 && (!u.nitrogen || !latest.current.controls.nitrogenIsolator || Math.min(latest.current.controls.nitrogenCharge1, latest.current.controls.nitrogenCharge2) < 60 || u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
-        log("MIV open blocked — 150 bar, bypass and nitrogen required", "warn");
+      if (target > 0 && (u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
+        log("MIV open blocked — 150 bar and fully open bypass required", "warn");
         return;
       }
-      patchUnit({ miv: target });
+      patchUnit({ mivCommand: target });
       log(`MIV commanded ${target}%`);
     },
     setMiv2: (target: number) => {
       const u = latest.current.unit2;
-      if (target > 0 && (!u.nitrogen || !latest.current.controls.nitrogenIsolator || Math.min(latest.current.controls.nitrogenCharge1, latest.current.controls.nitrogenCharge2) < 60 || u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
-        log("Unit 2 MIV open blocked — 150 bar, bypass and nitrogen required", "warn");
+      if (target > 0 && (u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
+        log("Unit 2 MIV open blocked — 150 bar and fully open bypass required", "warn");
         return;
       }
-      patchUnit2({ miv: target });
+      patchUnit2({ mivCommand: target });
       log(`Unit 2 MIV commanded ${target}%`);
     },
     setC3: (closed: boolean) => {
@@ -892,11 +915,12 @@ export function usePlantSimulator() {
         brake: false,
         nitrogen: true,
         mivBypass: 100,
+        mivCommand: 100,
         miv: 100,
         wicket: 62,
         wicketHydraulic: true,
         autoRunup: true,
-        speedTarget: 250 as const,
+        speedTarget: 248 as const,
         rpm: 250,
         excitationMaster: true,
         autoExcitation: false,
