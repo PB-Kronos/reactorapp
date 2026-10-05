@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "ngrok http 1080 --host-header=localhost:1080 --pooling-enabled | vite --host",
+    "host": "vite --host",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
