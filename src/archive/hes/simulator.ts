@@ -302,7 +302,9 @@ export function usePlantSimulator() {
       () =>
         setState((s) => {
           const u = s.unit;
-          const busBAvailable = s.busB || u.synced;
+          // Hydraulic auxiliaries retain their off-site/bus supply when a
+          // generator breaker opens; C3 is not a hydraulic interlock.
+          const busBAvailable = s.busB || s.offsitePower || u.synced;
           const hydraulicPreheaters = [...s.hydraulicPreheaters] as [
             boolean,
             boolean,
@@ -338,13 +340,9 @@ export function usePlantSimulator() {
               85,
             );
           }) as [number, number];
-          let hydraulicPump = s.hydraulicPump;
-          if (s.hydraulicAuto) {
-            const desired = u.synced ? "B" : "A";
-            const desiredTemp =
-              desired === "A" ? hydraulicTemps[0] : hydraulicTemps[1];
-            if (desiredTemp >= 37 && desiredTemp <= 45) hydraulicPump = desired;
-          }
+          // Temperature automation conditions the selected pump; it must not
+          // silently transfer pumps when C3 changes state.
+          const hydraulicPump = s.hydraulicPump;
           const selected =
             hydraulicPump === "A" ? 0 : hydraulicPump === "B" ? 1 : -1;
           const selectedPowered =
