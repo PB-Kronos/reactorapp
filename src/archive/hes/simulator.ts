@@ -21,6 +21,7 @@ export type UnitState = {
   nitrogen: boolean;
   mivBypass: number;
   miv: number;
+  turbineFill: number;
   wicket: number;
   wicketHydraulic: boolean;
   autoRunup: boolean;
@@ -70,6 +71,22 @@ export type PlantState = {
     lvBus: boolean;
     villageBus: boolean;
     grid400V: boolean;
+    u1OilCoolingPump: boolean;
+    u2OilCoolingPump: boolean;
+    u1GeneratorPreheater: boolean;
+    u2GeneratorPreheater: boolean;
+    u1GeneratorPump: boolean;
+    u2GeneratorPump: boolean;
+    u1GeneratorAutoCooling: boolean;
+    u2GeneratorAutoCooling: boolean;
+    t1TrashRackAuto: boolean;
+    t2TrashRackAuto: boolean;
+    edgFuelValve: boolean;
+    edgFuelPump1: boolean;
+    edgFuelPump2: boolean;
+    edgAutoMode: boolean;
+    edgIgnitionBreaker: boolean;
+    edgFanSpeed: number;
   };
   hydraulicPump: "off" | "A" | "B";
   hydraulicAuto: boolean;
@@ -106,11 +123,12 @@ export type PlantState = {
   inverter: boolean;
   battery: number;
   edg: "off" | "runup" | "active";
+  edgFuelLevel: number;
   offsitePower: boolean;
-  spillwayMaster: [boolean, boolean, boolean];
-  spillwayBrakes: [boolean, boolean, boolean];
+  spillwayMaster: [boolean, boolean, boolean, boolean];
+  spillwayBrakes: [boolean, boolean, boolean, boolean];
   spillwaySetpointPriority: boolean;
-  spillways: [number, number, number];
+  spillways: [number, number, number, number];
   reservoir: number;
   tailwater: number;
   tailwaterDemand: number;
@@ -128,6 +146,7 @@ const coldUnit = (id: 1 | 2 = 1): UnitState => ({
   nitrogen: false,
   mivBypass: 0,
   miv: 0,
+  turbineFill: 0,
   wicket: 0,
   wicketHydraulic: false,
   autoRunup: false,
@@ -156,6 +175,13 @@ const initial: PlantState = {
     generatorPumpSpeed: 50, generatorAutoCooling: false, generatorRefill1: false,
     generatorRefill2: false, recirculationPump: false, transformerFan1: 0,
     transformerFan2: 0, lvBus: false, villageBus: false, grid400V: true,
+    u1OilCoolingPump: false, u2OilCoolingPump: false,
+    u1GeneratorPreheater: false, u2GeneratorPreheater: false,
+    u1GeneratorPump: false, u2GeneratorPump: false,
+    u1GeneratorAutoCooling: false, u2GeneratorAutoCooling: false,
+    t1TrashRackAuto: false, t2TrashRackAuto: false, edgFuelValve: false,
+    edgFuelPump1: false, edgFuelPump2: false, edgAutoMode: true,
+    edgIgnitionBreaker: false, edgFanSpeed: 0,
   },
   hydraulicPump: "off",
   hydraulicAuto: false,
@@ -192,11 +218,12 @@ const initial: PlantState = {
   inverter: true,
   battery: 100,
   edg: "off",
+  edgFuelLevel: 75,
   offsitePower: true,
-  spillwayMaster: [false, false, false],
-  spillwayBrakes: [true, true, true],
+  spillwayMaster: [false, false, false, false],
+  spillwayBrakes: [true, true, true, true],
   spillwaySetpointPriority: false,
-  spillways: [0, 0, 0],
+  spillways: [0, 0, 0, 0],
   reservoir: 78.4,
   tailwater: 5.2,
   tailwaterDemand: 6,
@@ -226,7 +253,7 @@ export function usePlantSimulator() {
       const saved = localStorage.getItem("hes-simulator-v3");
       if (!saved) return initial;
       const restored = JSON.parse(saved) as Partial<PlantState>;
-      // Archive v4 added the third-gate-only spillway arrangement and brakes.
+      // Spillway 4 is retained as an explicitly inoperable, closed gate.
       // Older saved plants remain usable instead of producing an invalid panel.
       const oldGates = restored.spillways || initial.spillways;
       const oldMasters = restored.spillwayMaster || initial.spillwayMaster;
@@ -235,12 +262,12 @@ export function usePlantSimulator() {
         ...restored,
         controls: { ...initial.controls, ...restored.controls },
         logs: [],
-        spillways: [oldGates[0] || 0, oldGates[1] || 0, oldGates[2] || 0],
-        spillwayMaster: [Boolean(oldMasters[0]), Boolean(oldMasters[1]), Boolean(oldMasters[2])],
-        spillwayBrakes: restored.spillwayBrakes || initial.spillwayBrakes,
+        spillways: [oldGates[0] || 0, oldGates[1] || 0, oldGates[2] || 0, 0],
+        spillwayMaster: [Boolean(oldMasters[0]), Boolean(oldMasters[1]), Boolean(oldMasters[2]), false],
+        spillwayBrakes: [Boolean(restored.spillwayBrakes?.[0] ?? true), Boolean(restored.spillwayBrakes?.[1] ?? true), Boolean(restored.spillwayBrakes?.[2] ?? true), true],
         spillwaySetpointPriority: restored.spillwaySetpointPriority || false,
-        unit: { ...coldUnit(), ...restored.unit, speedTarget: (restored.unit?.speedTarget as number | undefined) === 248 ? 250 : restored.unit?.speedTarget },
-        unit2: { ...coldUnit(2), ...restored.unit2, id: 2, speedTarget: (restored.unit2?.speedTarget as number | undefined) === 248 ? 250 : restored.unit2?.speedTarget },
+        unit: { ...coldUnit(), ...restored.unit, turbineFill: Number.isFinite(restored.unit?.turbineFill) ? restored.unit!.turbineFill : 0, speedTarget: (restored.unit?.speedTarget as number | undefined) === 248 ? 250 : restored.unit?.speedTarget },
+        unit2: { ...coldUnit(2), ...restored.unit2, id: 2, turbineFill: Number.isFinite(restored.unit2?.turbineFill) ? restored.unit2!.turbineFill : 0, speedTarget: (restored.unit2?.speedTarget as number | undefined) === 248 ? 250 : restored.unit2?.speedTarget },
       };
     } catch {
       return initial;
@@ -397,7 +424,7 @@ export function usePlantSimulator() {
             0.5,
             6,
           );
-          const oilCooling = s.oilAuto
+          const oilCooling = (s.oilAuto || s.controls.u1OilCoolingPump || s.controls.u2OilCoolingPump)
             ? s.oilTemp > 50
               ? true
               : s.oilTemp < 42
@@ -421,8 +448,12 @@ export function usePlantSimulator() {
           const lubricationSafe =
             oilPressure > 2.2 &&
             (s.electricOilPump || shaftPump);
+          // The scroll case and runner do not fill instantly when an MIV moves.
+          // Keeping the fill as a state gives the MIV/fill instruments a useful,
+          // observable relationship during instruction and run-up.
+          const turbineFill = clamp(ease(Number.isFinite(u.turbineFill) ? u.turbineFill : 0, u.miv, 0.045), 0, 100);
           const canTurn =
-            !u.brake && u.miv > 90 && lubricationSafe && !u.tripped;
+            !u.brake && u.miv > 90 && turbineFill > 90 && lubricationSafe && !u.tripped;
           const turbineRpmTarget = canTurn
             ? u.autoRunup
               ? u.speedTarget
@@ -441,9 +472,9 @@ export function usePlantSimulator() {
           const voltage = clamp(((rpm / 250) * 13.8 * excitation) / 82, 0, 16);
           const preGenTemp = s.generatorTemp;
           const generatorTemp = clamp(
-            (s.generatorCooling || s.controls.generatorAutoCooling) && coolantFlow
+            (s.generatorCooling || s.controls.generatorAutoCooling || s.controls.u1GeneratorPump || s.controls.u2GeneratorPump || s.controls.u1GeneratorAutoCooling || s.controls.u2GeneratorAutoCooling) && coolantFlow
               ? ease(preGenTemp, 34, 0.006 + s.controls.generatorPumpSpeed / 5000)
-              : s.generatorPreheater
+              : (s.generatorPreheater || s.controls.u1GeneratorPreheater || s.controls.u2GeneratorPreheater)
                 ? ease(preGenTemp, 42, 0.015)
                 : preGenTemp,
             3,
@@ -459,7 +490,7 @@ export function usePlantSimulator() {
             u.wicketHydraulic && hydraulicPressure < 35 && wicket <= 0;
           const preliminaryMw =
             u.c3 && Math.abs(rpm - 250) < 3 && Math.abs(voltage - 13.8) < 1
-              ? clamp(wicket * 4.5 - 40, 0, 410)
+              ? clamp(wicket * 4.5 * (turbineFill / 100) - 40, 0, 410)
               : 0;
           const bearingTemp = clamp(
             ease(
@@ -495,6 +526,7 @@ export function usePlantSimulator() {
             voltage,
             wicket: trip ? Math.max(0, wicket - 2.5) : wicket,
             miv: trip ? Math.max(0, u.miv - 2) : u.miv,
+            turbineFill,
             c3: u.c3 && !trip,
             mw: trip ? 0 : preliminaryMw,
             synced,
@@ -506,12 +538,13 @@ export function usePlantSimulator() {
           // Unit 2 shares the plant hydraulic header and cooling/filtration
           // services, but retains its own turbine, MIV and excitation controls.
           const u2 = s.unit2;
-          const canTurn2 = !u2.brake && u2.miv > 90 && lubricationSafe && !u2.tripped && s.controls.t2IntakeGate && (u2.rpm >= 5 || (s.controls.t2TurningGear && s.controls.t2JackingPump));
+          const turbineFill2 = clamp(ease(Number.isFinite(u2.turbineFill) ? u2.turbineFill : 0, u2.miv, 0.045), 0, 100);
+          const canTurn2 = !u2.brake && u2.miv > 90 && turbineFill2 > 90 && lubricationSafe && !u2.tripped && s.controls.t2IntakeGate && (u2.rpm >= 5 || (s.controls.t2TurningGear && s.controls.t2JackingPump));
           const rpm2 = clamp(ease(u2.rpm, canTurn2 ? (u2.autoRunup ? u2.speedTarget : u2.wicket * 2.5) : 0, 0.035), 0, 285);
           const excitation2 = clamp(ease(u2.excitation, u2.excitationMaster ? (u2.autoExcitation ? 82 : u2.excitation) : 0, 0.05), 0, 110);
           const voltage2 = clamp(((rpm2 / 250) * 13.8 * excitation2) / 82, 0, 16);
           const preliminaryMw2 = u2.c3 && Math.abs(rpm2 - 250) < 3 && Math.abs(voltage2 - 13.8) < 1
-            ? clamp(u2.wicket * 4.5 - 40, 0, 410)
+            ? clamp(u2.wicket * 4.5 * (turbineFill2 / 100) - 40, 0, 410)
             : 0;
           const automaticTrip2 = rpm2 > 3 && (generatorTrip || oilTrip || u2.bearingTemp > 105 || u2.vibration > 4);
           const trip2 = u2.tripped || automaticTrip2;
@@ -522,6 +555,7 @@ export function usePlantSimulator() {
             voltage: voltage2,
             wicket: trip2 ? Math.max(0, u2.wicket - 2.5) : u2.wicket,
             miv: trip2 ? Math.max(0, u2.miv - 2) : u2.miv,
+            turbineFill: turbineFill2,
             c3: u2.c3 && !trip2,
             mw: trip2 ? 0 : preliminaryMw2,
             synced: u2.c3 && !trip2 && Math.abs(rpm2 - 250) < 3 && Math.abs(voltage2 - 13.8) < 1,
@@ -536,8 +570,8 @@ export function usePlantSimulator() {
             unit2.wicket = ease(unit2.wicket, splitTarget, 0.04);
           }
           const spillways = s.spillwaySetpointPriority
-            ? (s.spillways.map(() =>
-                clamp((s.tailwaterDemand - s.tailwater + 3) * 16, 0, 100),
+            ? (s.spillways.map((_, index) =>
+                index === 3 ? 0 : clamp((s.tailwaterDemand - s.tailwater + 3) * 16, 0, 100),
               ) as PlantState["spillways"])
             : s.spillways;
           const flow =
@@ -559,7 +593,9 @@ export function usePlantSimulator() {
             u.autoExcitation,
           ].filter(Boolean).length;
           const autoDeduction = autoCount * 0.05;
-          const trashRackRunning = s.trashRackAuto && unit.wicket > 15;
+          const trashRackRunning = (s.trashRackAuto || s.controls.t1TrashRackAuto || s.controls.t2TrashRackAuto) && (unit.wicket > 15 || unit2.wicket > 15);
+          const edgFuelLevel = clamp(s.edgFuelLevel + (s.controls.edgFuelValve ? 0.025 : 0) - (s.edg === "active" ? 0.012 : 0), 0, 100);
+          const edg = s.edg === "active" && edgFuelLevel <= 0 ? "off" : s.edg;
           return {
             ...s,
             hydraulicPump,
@@ -582,6 +618,8 @@ export function usePlantSimulator() {
             tailwater,
             busB: busBAvailable,
             trashRackRunning,
+            edgFuelLevel,
+            edg,
             points: Math.max(0, s.points - autoDeduction / 4),
             acknowledged: false,
           };
@@ -757,16 +795,26 @@ export function usePlantSimulator() {
       patchUnit2({ c3: closed });
       log(`Unit 2 breaker C3 ${closed ? "closed" : "opened"}`, closed ? "ok" : "warn");
     },
-    adjustWicket: (percent: number) =>
-      setState((s) => ({
-        ...s,
-        unit: { ...s.unit, wicket: clamp(s.unit.wicket + percent, 0, 100) },
-      })),
-    adjustWicket2: (percent: number) =>
-      setState((s) => ({
-        ...s,
-        unit2: { ...s.unit2, wicket: clamp(s.unit2.wicket + percent, 0, 100) },
-      })),
+    adjustWicket: (percent: number) => {
+      const s = latest.current;
+      const hydraulicDrive = s.unit.wicketHydraulic && s.hydraulicPressure >= 150;
+      const electricDrive = !s.unit.wicketHydraulic && s.offsitePower && s.controls.unit1WicketBreaker;
+      if (!hydraulicDrive && !electricDrive) {
+        log("Unit 1 wicket command blocked — select hydraulic drive at 150 bar or close the electric wicket breaker", "warn");
+        return;
+      }
+      patchUnit({ wicket: clamp(s.unit.wicket + percent, 0, 100) });
+      log(`Unit 1 wicket demand ${percent > 0 ? "+" : ""}${percent}%`);
+    },
+    adjustWicket2: (percent: number) => {
+      const s = latest.current;
+      if (!s.unit2.wicketHydraulic || s.hydraulicPressure < 150) {
+        log("Unit 2 wicket command blocked — hydraulic wicket drive and 150 bar are required", "warn");
+        return;
+      }
+      patchUnit2({ wicket: clamp(s.unit2.wicket + percent, 0, 100) });
+      log(`Unit 2 wicket demand ${percent > 0 ? "+" : ""}${percent}%`);
+    },
     trip: () => {
       patchUnit({ tripped: true, c3: false, autoRunup: false });
       log("UNIT 1 MANUAL TRIP", "alarm");
@@ -794,19 +842,19 @@ export function usePlantSimulator() {
     setSpillway: (i: number, v: number) =>
       setState((s) => {
         const gates = [...s.spillways] as PlantState["spillways"];
-        gates[i] = s.spillwayMaster[i] && !s.spillwayBrakes[i] && !s.spillwaySetpointPriority ? v : 0;
+        gates[i] = i < 3 && s.spillwayMaster[i] && !s.spillwayBrakes[i] && !s.spillwaySetpointPriority ? v : 0;
         return { ...s, spillways: gates };
       }),
     setSpillMaster: (i: number, v: boolean) =>
       setState((s) => {
         const masters = [...s.spillwayMaster] as PlantState["spillwayMaster"];
-        masters[i] = v;
+        masters[i] = i < 3 && v;
         return { ...s, spillwayMaster: masters };
       }),
     setSpillBrake: (i: number, applied: boolean) =>
       setState((s) => {
         const brakes = [...s.spillwayBrakes] as PlantState["spillwayBrakes"];
-        brakes[i] = applied;
+        brakes[i] = i < 3 ? applied : true;
         return { ...s, spillwayBrakes: brakes };
       }),
     setTailwaterDemand: (tailwaterDemand: number) =>

@@ -252,8 +252,11 @@ function Procedures({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
       state.coolantValve && state.coolantPumps.every(Boolean),
     ],
     [
-      "MIV bypass is at 100%; nitrogen is armed",
-      u.mivBypass >= 99 && u.nitrogen,
+      "MIV bypass is at 100%; nitrogen isolator is open and both charge pumps exceed 60%",
+      u.mivBypass >= 99 &&
+        u.nitrogen &&
+        state.controls.nitrogenIsolator &&
+        Math.min(state.controls.nitrogenCharge1, state.controls.nitrogenCharge2) >= 60,
     ],
     ["MIV open and brake released", u.miv >= 99 && !u.brake],
     ["Auto Runup set to 250 RPM", u.autoRunup && u.speedTarget === 250],
@@ -262,6 +265,10 @@ function Procedures({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
       u.rpm >= 125 && !state.electricOilPump,
     ],
     ["Excitation set and C3 synchronized", u.excitationMaster && u.c3],
+    [
+      "Hydraulic wicket drive selected before loading the unit",
+      u.wicketHydraulic && state.hydraulicPressure >= 150,
+    ],
     [
       "Pump B temperature in band after grid synchronization",
       u.synced &&
