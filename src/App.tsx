@@ -19,6 +19,7 @@ const ApolloFacility = lazy(() => import("./pages/ApolloFacility"));
 const IitppPlant = lazy(() => import("./pages/IitppPlant"));
 const QserfPlant = lazy(() => import("./pages/QserfPlant"));
 const Foxtrot9 = lazy(() => import("./pages/Foxtrot9"));
+const HesArchive = lazy(() => import("./pages/HesArchive"));
 const queryClient = new QueryClient();
 const Loading = () => (
   <div className="grid min-h-screen place-items-center bg-slate-950 font-mono text-cyan-300">
@@ -618,6 +619,7 @@ const App = () => (
             <Route path="/iitpp" element={<IitppPlant />} />
             <Route path="/qserf" element={<QserfPlant />} />
             <Route path="/qserf/foxtrot-9" element={<Foxtrot9 />} />
+            <Route path="/archive/hes" element={<HesArchive />} />
             <Route path="/reactor" element={<ReactorSimulator />} />
             <Route path="/naramo" element={<NaramoPlant />} />
             <Route path="/mainframe" element={<Mainframe />} />

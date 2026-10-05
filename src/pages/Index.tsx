@@ -107,6 +107,7 @@ const Index = () => {
       login: "LOGIN <yourname>\nRegisters your public operator name in this browser and lets the leaderboard track your score.\nExample: LOGIN UnitOperator",
       logout: "LOGOUT\nEnds the score-recording session and switches to guest mode. The reactor remains available, but guest operation earns no points.",
       reactor: "REACTOR\nOpens the Unit 2 control room in fullscreen. Guest entry is allowed; LOGIN <yourname> is recommended to record points.",
+      archive: "ARCHIVE\nOpens the current public control-room simulation archive.",
       naramo: "NARAMO\nOpens the separate Naramo Plant simulator. It uses simple aggregate IN/OUT control rods, coolant, feedwater, FRV/TAS turbine control, grids, and meltdown response.",
       console: "CONSOLE\nOpens the advanced Mainframe terminal. Use LOGIN SUPERVISOR there for full simulator command access.",
       supervisor: "SUPERVISOR\nOpens the plant supervisor terminal. Use it to create a shared room, assign Unit 1 and Unit 2 demand, manage optional interlock, and copy station invite links.",
@@ -195,6 +196,9 @@ const Index = () => {
     else if (lower === "reactor") {
       await fullscreen();
       navigate("/reactor?solo=1");
+      return;
+    } else if (lower === "archive") {
+      navigate("/archive");
       return;
     } else if (lower === "naramo") {
       await fullscreen();
@@ -347,6 +351,14 @@ const Index = () => {
                     className="h-7 border-amber-700 bg-amber-950/20 px-2 text-[10px] tracking-wide text-amber-200 hover:bg-amber-400 hover:text-black"
                   >
                     SUPERVISOR ROOM
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate("/archive")}
+                    className="h-7 border-sky-700 bg-sky-950/20 px-2 text-[10px] tracking-wide text-sky-200 hover:bg-sky-400 hover:text-black"
+                  >
+                    SIM ARCHIVE
                   </Button>
                   <Button
                     size="sm"
