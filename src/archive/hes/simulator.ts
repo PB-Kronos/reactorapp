@@ -39,6 +39,38 @@ export type UnitState = {
   shaftPumpLatched: boolean;
 };
 export type PlantState = {
+  controls: {
+    t1HydraulicIsolator: boolean;
+    t2HydraulicIsolator: boolean;
+    hydraulicAutoPressure: boolean;
+    hydraulicPressureSetpoint: number;
+    hydraulicTransferPump: boolean;
+    pumpATripped: boolean;
+    pumpBTripped: boolean;
+    nitrogenIsolator: boolean;
+    nitrogenCharge1: number;
+    nitrogenCharge2: number;
+    fireAuto: boolean;
+    fireDischarge: boolean;
+    t2IntakeGate: boolean;
+    t2TurningGear: boolean;
+    t2JackingPump: boolean;
+    t2DraftTubeDrain: boolean;
+    unit1IntakeGate: boolean;
+    unit1WicketBreaker: boolean;
+    oilRefillValve: boolean;
+    oilPumpSpeed: number;
+    generatorPumpSpeed: number;
+    generatorAutoCooling: boolean;
+    generatorRefill1: boolean;
+    generatorRefill2: boolean;
+    recirculationPump: boolean;
+    transformerFan1: 0 | 1 | 2;
+    transformerFan2: 0 | 1 | 2;
+    lvBus: boolean;
+    villageBus: boolean;
+    grid400V: boolean;
+  };
   hydraulicPump: "off" | "A" | "B";
   hydraulicAuto: boolean;
   hydraulicPressure: number;
@@ -114,6 +146,17 @@ const coldUnit = (id: 1 | 2 = 1): UnitState => ({
   shaftPumpLatched: false,
 });
 const initial: PlantState = {
+  controls: {
+    t1HydraulicIsolator: false, t2HydraulicIsolator: false, hydraulicAutoPressure: false,
+    hydraulicPressureSetpoint: 175, hydraulicTransferPump: false, pumpATripped: false,
+    pumpBTripped: false, nitrogenIsolator: false, nitrogenCharge1: 0, nitrogenCharge2: 0,
+    fireAuto: false, fireDischarge: false, t2IntakeGate: false, t2TurningGear: false,
+    t2JackingPump: false, t2DraftTubeDrain: false, unit1IntakeGate: false,
+    unit1WicketBreaker: false, oilRefillValve: false, oilPumpSpeed: 50,
+    generatorPumpSpeed: 50, generatorAutoCooling: false, generatorRefill1: false,
+    generatorRefill2: false, recirculationPump: false, transformerFan1: 0,
+    transformerFan2: 0, lvBus: false, villageBus: false, grid400V: true,
+  },
   hydraulicPump: "off",
   hydraulicAuto: false,
   hydraulicPressure: 0,
@@ -190,13 +233,14 @@ export function usePlantSimulator() {
       return {
         ...initial,
         ...restored,
+        controls: { ...initial.controls, ...restored.controls },
         logs: [],
         spillways: [oldGates[0] || 0, oldGates[1] || 0, oldGates[2] || 0],
         spillwayMaster: [Boolean(oldMasters[0]), Boolean(oldMasters[1]), Boolean(oldMasters[2])],
         spillwayBrakes: restored.spillwayBrakes || initial.spillwayBrakes,
         spillwaySetpointPriority: restored.spillwaySetpointPriority || false,
-        unit: { ...coldUnit(), ...restored.unit, speedTarget: restored.unit?.speedTarget === 248 ? 250 : restored.unit?.speedTarget },
-        unit2: { ...coldUnit(2), ...restored.unit2, id: 2, speedTarget: restored.unit2?.speedTarget === 248 ? 250 : restored.unit2?.speedTarget },
+        unit: { ...coldUnit(), ...restored.unit, speedTarget: (restored.unit?.speedTarget as number | undefined) === 248 ? 250 : restored.unit?.speedTarget },
+        unit2: { ...coldUnit(2), ...restored.unit2, id: 2, speedTarget: (restored.unit2?.speedTarget as number | undefined) === 248 ? 250 : restored.unit2?.speedTarget },
       };
     } catch {
       return initial;
@@ -218,6 +262,8 @@ export function usePlantSimulator() {
     setState((s) => ({ ...s, unit: { ...s.unit, ...value } }));
   const patchUnit2 = (value: Partial<UnitState>) =>
     setState((s) => ({ ...s, unit2: { ...s.unit2, ...value } }));
+  const patchControls = (value: Partial<PlantState["controls"]>) =>
+    setState((s) => ({ ...s, controls: { ...s.controls, ...value } }));
 
   useEffect(() => {
     const timer = setInterval(
@@ -271,9 +317,9 @@ export function usePlantSimulator() {
             hydraulicPump === "A" ? 0 : hydraulicPump === "B" ? 1 : -1;
           const selectedPowered =
             selected === 0
-              ? s.offsitePower
+              ? s.offsitePower && !s.controls.pumpATripped
               : selected === 1
-                ? busBAvailable
+                ? busBAvailable && !s.controls.pumpBTripped
                 : false;
           const temp =
             selected === 0
@@ -299,19 +345,22 @@ export function usePlantSimulator() {
               0.1,
             ),
           ] as [number, number];
-          const hydraulicPressure = clamp(
+          const rawHydraulicPressure = clamp(
             ease(
               s.hydraulicPressure,
               selected === 0
-                ? hydraulicRpm[0] * 1.82
+                ? hydraulicRpm[0] * (s.controls.hydraulicAutoPressure ? s.controls.hydraulicPressureSetpoint / 100 : 1.82)
                 : selected === 1
-                  ? hydraulicRpm[1] * 1.82
+                  ? hydraulicRpm[1] * (s.controls.hydraulicAutoPressure ? s.controls.hydraulicPressureSetpoint / 100 : 1.82)
                   : 0,
               0.08,
             ),
             0,
             185,
           );
+          const hydraulicPressure = (s.controls.t1HydraulicIsolator || s.controls.t2HydraulicIsolator)
+            ? Math.min(rawHydraulicPressure, 25)
+            : rawHydraulicPressure;
           const coolantFlow =
             s.coolantValve && s.coolantPumps[0] && s.coolantPumps[1];
           const activeCoolant = s.coolantFilter === "A" ? 0 : 1;
@@ -326,10 +375,10 @@ export function usePlantSimulator() {
             5,
             90,
           );
-          // Once the shaft pump picks up at 150 RPM it stays primed until the
+          // Once the shaft pump picks up at 125 RPM it stays primed until the
           // rotor stops, so the electric-to-shaft-pump handover is stable.
           const shaftPumpLatched =
-            u.rpm > 3 && (u.shaftPumpLatched || u.rpm >= 150);
+            u.rpm > 3 && (u.shaftPumpLatched || u.rpm >= 125);
           const shaftPump = shaftPumpLatched;
           const oilTarget = s.electricOilPump || shaftPump ? 4.2 : 0;
           const oilPressure = clamp(
@@ -360,13 +409,13 @@ export function usePlantSimulator() {
             ease(
               s.oilTemp,
               oilTempTarget,
-              oilCooling && coolantFlow ? 0.018 : 0.007,
+              oilCooling && coolantFlow ? 0.007 + s.controls.oilPumpSpeed / 5000 : 0.007,
             ),
             8,
             110,
           );
     // Wickets use electric drive at low speed; hydraulic drive takes over after pressure is available.
-    const gatePower = u.wicketHydraulic ? hydraulicPressure >= 150 : s.offsitePower;
+    const gatePower = u.wicketHydraulic ? hydraulicPressure >= 150 : s.offsitePower && s.controls.unit1WicketBreaker;
           const wicket =
             gatePower && !u.tripped ? u.wicket : Math.max(0, u.wicket - 1.25);
           const lubricationSafe =
@@ -392,8 +441,8 @@ export function usePlantSimulator() {
           const voltage = clamp(((rpm / 250) * 13.8 * excitation) / 82, 0, 16);
           const preGenTemp = s.generatorTemp;
           const generatorTemp = clamp(
-            s.generatorCooling && coolantFlow
-              ? ease(preGenTemp, 34, 0.018)
+            (s.generatorCooling || s.controls.generatorAutoCooling) && coolantFlow
+              ? ease(preGenTemp, 34, 0.006 + s.controls.generatorPumpSpeed / 5000)
               : s.generatorPreheater
                 ? ease(preGenTemp, 42, 0.015)
                 : preGenTemp,
@@ -457,7 +506,7 @@ export function usePlantSimulator() {
           // Unit 2 shares the plant hydraulic header and cooling/filtration
           // services, but retains its own turbine, MIV and excitation controls.
           const u2 = s.unit2;
-          const canTurn2 = !u2.brake && u2.miv > 90 && lubricationSafe && !u2.tripped;
+          const canTurn2 = !u2.brake && u2.miv > 90 && lubricationSafe && !u2.tripped && s.controls.t2IntakeGate && (u2.rpm >= 5 || (s.controls.t2TurningGear && s.controls.t2JackingPump));
           const rpm2 = clamp(ease(u2.rpm, canTurn2 ? (u2.autoRunup ? u2.speedTarget : u2.wicket * 2.5) : 0, 0.035), 0, 285);
           const excitation2 = clamp(ease(u2.excitation, u2.excitationMaster ? (u2.autoExcitation ? 82 : u2.excitation) : 0, 0.05), 0, 110);
           const voltage2 = clamp(((rpm2 / 250) * 13.8 * excitation2) / 82, 0, 16);
@@ -479,7 +528,7 @@ export function usePlantSimulator() {
             tripped: trip2,
             bearingTemp: clamp(ease(u2.bearingTemp, 25 + preliminaryMw2 * 0.11 + (oilPressure < 2 ? 38 : 0), 0.01), 15, 125),
             vibration: clamp(0.3 + Math.abs(250 - rpm2) / 90 + (u2.wicket > 90 ? 0.5 : 0), 0.2, 5),
-            shaftPumpLatched: rpm2 > 3 && (u2.shaftPumpLatched || rpm2 >= 150),
+            shaftPumpLatched: rpm2 > 3 && (u2.shaftPumpLatched || rpm2 >= 125),
           };
           const splitTarget = clamp((s.gridDemand / 2 + 40) / 4.5, 0, 100);
           if (s.loadSplitting && unit.synced && unit2.synced) {
@@ -597,6 +646,22 @@ export function usePlantSimulator() {
     if (state.edg === "runup") a.push({ text: "EDG RUNUP", color: "green" });
     if (state.edg === "active") a.push({ text: "EDG ACTIVE", color: "green" });
     if (state.islandFeed) a.push({ text: "ISLAND POWER FEED", color: "green" });
+    if (state.controls.t1HydraulicIsolator || state.controls.t2HydraulicIsolator) a.push({ text: "HYDRAULIC SHUTOFF", color: "red" });
+    if (state.controls.pumpATripped) a.push({ text: "PUMP A TRIP", color: "red" });
+    if (state.controls.pumpBTripped) a.push({ text: "PUMP B TRIP", color: "red" });
+    if (state.hydraulicAuto) a.push({ text: "HYDRAULIC AUTO CONTROL", color: "blue" });
+    if (state.oilAuto) a.push({ text: "OIL TEMPERATURE AUTO", color: "blue" });
+    if (state.controls.generatorAutoCooling) a.push({ text: "AUTOMATIC GENERATOR COOLING", color: "blue" });
+    if (!state.controls.nitrogenIsolator) a.push({ text: "NITROGEN ISOLATED", color: "red" });
+    if (Math.min(state.controls.nitrogenCharge1, state.controls.nitrogenCharge2) < 60) a.push({ text: "SUPPRESSION PRESSURE INSUFFICIENT", color: "red" });
+    if (state.controls.t2TurningGear) a.push({ text: "TURNING GEAR ENGAGED", color: "green" });
+    if (state.controls.t2JackingPump && state.oilPressure > 2.2) a.push({ text: "JACKING PRESSURE OK", color: "green" });
+    if (state.controls.fireDischarge) a.push({ text: "FIRE SUPPRESSION DISCHARGED", color: "amber" });
+    if (!state.coolantPumps[0] || !state.coolantPumps[1]) a.push({ text: "COOLANT PUMP TRIP", color: "red" });
+    if (state.coolantFilterDiff[0] >= 4) a.push({ text: "FILTER A DELTAP HIGH", color: "amber" });
+    if (state.coolantFilterDiff[1] >= 4) a.push({ text: "FILTER B DELTAP HIGH", color: "amber" });
+    if (state.controls.transformerFan1 === 0 && totalMw > 300) a.push({ text: "XMFR 1 TEMPERATURE HIGH", color: "amber" });
+    if (state.controls.transformerFan2 === 0 && state.unit2.mw > 200) a.push({ text: "XMFR 2 TEMPERATURE HIGH", color: "amber" });
     if (u.autoExcitation) a.push({ text: "AVR ENABLED", color: "blue" });
     if (totalMw < state.gridDemand - 5)
       a.push({ text: "UNDER DEMAND", color: "amber" });
@@ -655,7 +720,7 @@ export function usePlantSimulator() {
     setUnit2: (value: Partial<UnitState>) => patchUnit2(value),
     setMiv: (target: number) => {
       const u = latest.current.unit;
-      if (target > 0 && (!u.nitrogen || u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
+      if (target > 0 && (!u.nitrogen || !latest.current.controls.nitrogenIsolator || Math.min(latest.current.controls.nitrogenCharge1, latest.current.controls.nitrogenCharge2) < 60 || u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
         log("MIV open blocked — 150 bar, bypass and nitrogen required", "warn");
         return;
       }
@@ -664,7 +729,7 @@ export function usePlantSimulator() {
     },
     setMiv2: (target: number) => {
       const u = latest.current.unit2;
-      if (target > 0 && (!u.nitrogen || u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
+      if (target > 0 && (!u.nitrogen || !latest.current.controls.nitrogenIsolator || Math.min(latest.current.controls.nitrogenCharge1, latest.current.controls.nitrogenCharge2) < 60 || u.mivBypass < 99 || latest.current.hydraulicPressure < 150)) {
         log("Unit 2 MIV open blocked — 150 bar, bypass and nitrogen required", "warn");
         return;
       }
@@ -746,6 +811,16 @@ export function usePlantSimulator() {
       }),
     setTailwaterDemand: (tailwaterDemand: number) =>
       patch({ tailwaterDemand: clamp(tailwaterDemand, 4, 10) }),
+    setControl: (value: Partial<PlantState["controls"]>) => patchControls(value),
+    resetHydraulicPump: (pump: "A" | "B") => {
+      const temperature = latest.current.hydraulicTemps[pump === "A" ? 0 : 1];
+      if (temperature < 37 || temperature > 45) {
+        log(`${pump} pump reset blocked — temperature outside 37–45°C`, "warn");
+        return;
+      }
+      patchControls(pump === "A" ? { pumpATripped: false } : { pumpBTripped: false });
+      log(`Pump ${pump} trip reset`);
+    },
     toggleLoadSplitting: () => patch({ loadSplitting: !latest.current.loadSplitting }),
     setDemand: (gridDemand: number) => patch({ gridDemand }),
     acknowledge: () => patch({ acknowledged: true }),
@@ -798,6 +873,7 @@ export function usePlantSimulator() {
         generatorTemp: 38,
         islandFeed: true,
         edg: "active",
+        controls: { ...s.controls, nitrogenIsolator: true, nitrogenCharge1: 100, nitrogenCharge2: 100, unit1WicketBreaker: true, t2IntakeGate: true },
         startupTransformer: false,
         busA1: true,
         busB: true,

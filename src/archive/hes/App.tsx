@@ -13,20 +13,12 @@ import {
 } from "lucide-react";
 import {
   Annunciator,
-  AuxiliariesPanel,
-  ElectricalPanel,
-  SpillwayPanel,
-  TurbinePanel,
-  UnitsPanel,
+  WikiControlRoom,
 } from "./Controls";
 import { type Page, rank, usePlantSimulator } from "./simulator";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "overview", label: "Overview", icon: Activity },
-  { id: "turbine", label: "Turbine", icon: Gauge },
-  { id: "auxiliaries", label: "Auxiliaries", icon: Droplets },
-  { id: "electrical", label: "Electrical", icon: Zap },
-  { id: "units", label: "Unit monitor", icon: ShieldCheck },
-  { id: "spillway", label: "Spillways", icon: Radio },
+  { id: "turbine", label: "Control room", icon: Gauge },
   { id: "procedures", label: "Procedures", icon: BookOpen },
 ];
 function Overview({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
@@ -240,16 +232,6 @@ function Overview({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
             <p>No operator actions logged.</p>
           )}
         </article>
-        <article className="panel quick-scenarios">
-          <div className="panel-title">
-            <div>
-              <p className="label">SCENARIOS</p>
-              <h2>Plant state</h2>
-            </div>
-          </div>
-          <button onClick={command.warmStart}>LOAD WARM UNIT 1</button>
-          <button onClick={command.reset}>RESET TO COLD & DARK</button>
-        </article>
       </section>
     </>
   );
@@ -264,7 +246,7 @@ function Procedures({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
         state.hydraulicTemps[0] <= 45 &&
         state.hydraulicPressure >= 160,
     ],
-    ["Electric lube pump is on before rotation", state.electricOilPump || u.rpm >= 150],
+    ["Electric lube pump is on before rotation", state.electricOilPump || u.rpm >= 125],
     [
       "Coolant valve, inlet and outlet pumps are running",
       state.coolantValve && state.coolantPumps.every(Boolean),
@@ -276,8 +258,8 @@ function Procedures({ sim }: { sim: ReturnType<typeof usePlantSimulator> }) {
     ["MIV open and brake released", u.miv >= 99 && !u.brake],
     ["Auto Runup set to 250 RPM", u.autoRunup && u.speedTarget === 250],
     [
-      "Electric lube pump turned off after 150 RPM; shaft pump active",
-      u.rpm >= 150 && !state.electricOilPump,
+      "Electric lube pump turned off after 125 RPM; shaft pump active",
+      u.rpm >= 125 && !state.electricOilPump,
     ],
     ["Excitation set and C3 synchronized", u.excitationMaster && u.c3],
     [
@@ -372,11 +354,7 @@ export default function App() {
       </nav>
       <main className={page === "overview" ? "" : "panel-main"}>
         {page === "overview" && <Overview sim={sim} />}{" "}
-        {page === "turbine" && <TurbinePanel {...props} />}{" "}
-        {page === "auxiliaries" && <AuxiliariesPanel {...props} />}{" "}
-        {page === "electrical" && <ElectricalPanel {...props} />}{" "}
-        {page === "units" && <UnitsPanel {...props} />}{" "}
-        {page === "spillway" && <SpillwayPanel {...props} />}{" "}
+        {page === "turbine" && <WikiControlRoom {...props} />}{" "}
         {page === "procedures" && <Procedures sim={sim} />}
       </main>
       <footer>
