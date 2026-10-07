@@ -23,6 +23,7 @@ const server = spawn(
 const routes = [
   "/",
   "/archive",
+  "/chrono",
   "/naramo",
   "/a-core-game",
   "/iitpp",

@@ -4,6 +4,7 @@ import {
   Atom,
   BookOpen,
   Cpu,
+  Cable,
   Gauge,
   Orbit,
   Radiation,
@@ -13,6 +14,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const entries = [
+  {
+    title: "Chrono-Sim",
+    route: "/chrono",
+    status: "Original simulation",
+    icon: Cable,
+    description:
+      "An original hydro-electric station sandbox with RBWR-inspired turbine and electrical routing, plus isolated in-game signal wiring for configurable turbine automation.",
+  },
   {
     title: "Unit 2: The BWR Sim",
     route: "/reactor",
