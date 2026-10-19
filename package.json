@@ -10,7 +10,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:smoke": "pnpm build && node scripts/archive-smoke-check.mjs"
+    "test:smoke": "pnpm build && node scripts/archive-smoke-check.mjs",
+    "test:rbwr": "pnpm exec esbuild scripts/rbwr-unit2-process-check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=tmp/rbwr-unit2-process-check.mjs && node tmp/rbwr-unit2-process-check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

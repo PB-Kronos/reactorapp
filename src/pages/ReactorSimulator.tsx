@@ -53,6 +53,7 @@ import {
   WITHDRAWAL_RATES,
 } from "@/lib/rodProgram";
 import { getAprmForSteamKgS, getU2ThermalOutput } from "@/lib/thermalOutput";
+import { getUnit2RpsTrips } from "@/lib/rbwrUnit2Reference";
 import { addLeaderboardPoints, ensureLeaderboardPlayer, getLeaderboard } from "@/lib/leaderboard";
 import {
   type PlantSnapshot,
@@ -400,9 +401,11 @@ export default function ReactorSimulator() {
     "REACTOR LEVEL": false,
     "MANUAL TRIP": false,
     "LOOP TRIP": false,
-    "CORE TEMPERATURE": false,
+    "APRM UPSCALE": false,
+    "APRM DOWNSCALE": false,
     "RPV PRESSURE": false,
     "LOW REACTOR PERIOD": false,
+    "OFFSITE LOSS": false,
     "TURBINE VACUUM": false,
     "TURBINE ROLLDOWN": false,
   });
@@ -719,7 +722,10 @@ export default function ReactorSimulator() {
   const recircAFlow = recircPumpA && startupBusAvailable
     ? Math.max(0, recircSpeedA * 20 - (malfunctions.recircAFlowLossActive ? 20 : 0))
     : 0;
-  const recircBFlow = recircPumpB && startupBusAvailable
+  // Unit 2's B recirculation train is supplied from Bus B. Treating it as a
+  // Bus A load made the B flow indication survive the wrong electrical lineup
+  // and made the actual Bus B breaker largely cosmetic.
+  const recircBFlow = recircPumpB && busBAvailable
     ? Math.max(0, recircSpeedB * 20 - (malfunctions.recircBFlowLossActive ? 20 : 0))
     : 0;
   // The two 2,000 kg/s recirculation pumps provide up to 50 APRM points at
@@ -1025,8 +1031,10 @@ export default function ReactorSimulator() {
     {
       id: "high-steam",
       label: "HIGH STEAM PRESSURE",
-      active: pressure > 8800,
-      priority: pressure > 9500 ? "red" : "amber",
+      // U2Annunciator.lua: high steam at 8 MPa. The red band is retained as
+      // the display escalation immediately below the 10 MPa full RPS trip.
+      active: pressure > 8000,
+      priority: pressure >= 9500 ? "red" : "amber",
       tone: "high",
       pan: "center",
       page: "power-grid",
@@ -1121,7 +1129,7 @@ export default function ReactorSimulator() {
     {
       id: "reactor-high-level",
       label: "REACTOR LEVEL HIGH",
-      active: reactorLevel > 4.5,
+      active: reactorLevel >= 2.5,
       priority: "amber",
       tone: "high",
       pan: "center",
@@ -1226,7 +1234,7 @@ export default function ReactorSimulator() {
     {
       id: "low-reactor-period",
       label: "LOW REACTOR PERIOD",
-      active: reactorPeriod < 30,
+      active: reactorPeriod > 0 && reactorPeriod < 30,
       priority: "red",
       tone: "high",
       pan: "center",
@@ -1236,9 +1244,13 @@ export default function ReactorSimulator() {
     {
       id: "recirc-a-cavitation",
       label: "RECIRC A CAVITATION",
-      // Once rods have established at least 19% APRM the core flow is stable
-      // enough that this simplified low-power cavitation condition clears.
-      active: recircPumpA && recircSpeedA > 30 && rodAprm < 19,
+      // U2Annunciator.lua uses total indicated power, not rod-only power:
+      // the low-speed warning clears above 20% APRM; high recirc demand
+      // remains restricted until 40% APRM.
+      active:
+        recircPumpA &&
+        ((recircSpeedA > 30 && aprm < 20) ||
+          (recircSpeedA > 90 && aprm < 40)),
       priority: "amber",
       tone: "low",
       pan: "left",
@@ -1247,7 +1259,10 @@ export default function ReactorSimulator() {
     {
       id: "recirc-b-cavitation",
       label: "RECIRC B CAVITATION",
-      active: recircPumpB && recircSpeedB > 30 && rodAprm < 19,
+      active:
+        recircPumpB &&
+        ((recircSpeedB > 30 && aprm < 20) ||
+          (recircSpeedB > 90 && aprm < 40)),
       priority: "amber",
       tone: "low",
       pan: "right",
@@ -1259,7 +1274,7 @@ export default function ReactorSimulator() {
       active:
         recircPumpA &&
         recircPumpB &&
-        Math.abs(recircAFlow - recircBFlow) >= 20,
+        Math.abs(recircAFlow - recircBFlow) > 50,
       priority: "amber",
       tone: "double",
       pan: "center",
@@ -1363,7 +1378,7 @@ export default function ReactorSimulator() {
     {
       id: "mcc-reactor-level-low",
       label: "REACTOR LEVEL LOW",
-      active: reactorLevel < -1.5,
+      active: reactorLevel < -2,
       priority: "amber",
       tone: "low",
       pan: "left",
@@ -2680,7 +2695,7 @@ export default function ReactorSimulator() {
     { name: "CONDENSATE PUMP A", commanded: condenserPumpOn, powered: startupBusAvailable && condenserPumpOn, demand: 3.5 },
     { name: "FEEDWATER PUMP A", commanded: pump1Online, powered: startupBusAvailable && pump1Online, demand: feedwaterFlow * .014 },
     { name: "RECIRCULATION PUMP A", commanded: recircPumpA, powered: startupBusAvailable && recircPumpA, demand: recircAFlow / 100 * 1.25 },
-    { name: "RECIRCULATION PUMP B", commanded: recircPumpB, powered: startupBusAvailable && recircPumpB, demand: recircBFlow / 100 * 1.25 },
+    { name: "RECIRCULATION PUMP B", commanded: recircPumpB, powered: busBAvailable && recircPumpB, demand: recircBFlow / 100 * 1.25 },
     { name: "CST MAKEUP", commanded: cstMakeup, powered: startupBusAvailable && cstMakeup, demand: 10 },
     { name: "CST DRAIN", commanded: cstDrain, powered: startupBusAvailable && cstDrain, demand: 5 },
     { name: "HOTWELL MAKEUP", commanded: hotwellMakeup, powered: startupBusAvailable && hotwellMakeup, demand: 0.5 },
@@ -2992,17 +3007,18 @@ export default function ReactorSimulator() {
     }
   }, [tutorialEnabled, sharedTurbineCapacityActive, sharedTurbineLoad, isLocked, startupBusAvailable, busATransformer, turbineBusEligible, busACapacity, turbineBusB, safetyBusS, startupLoad, busBLoad, safetyLoad]);
 
+  const previousAprmForRps = useRef(aprm);
   useEffect(() => {
-    const active = {
-      "REACTOR LEVEL": reactorLevel <= -5 || reactorLevel >= 6,
-      "MANUAL TRIP": false,
-      // LOOP is a turbine/grid event. It is latched by the offsite-loss
-      // event path above and must never become a reactor SCRAM condition.
-      "LOOP TRIP": false,
-      "CORE TEMPERATURE": temperature > 900,
-      "RPV PRESSURE": pressure > 9500,
-      "LOW REACTOR PERIOD": reactorPeriod < 20,
-    };
+    const active = getUnit2RpsTrips({
+      aprm,
+      previousAprm: previousAprmForRps.current,
+      reactorLevelM: reactorLevel,
+      pressureKpa: pressure,
+      reactorPeriodSeconds: reactorPeriod,
+      mode,
+      offsitePowerAvailable,
+    });
+    previousAprmForRps.current = aprm;
     if (!rpsTripInhibit && Object.values(active).some(Boolean)) {
       setRpsTrips((previous) =>
         Object.fromEntries(
@@ -3016,11 +3032,12 @@ export default function ReactorSimulator() {
     }
   }, [
     reactorLevel,
-    mccLevel,
-    temperature,
+    aprm,
     pressure,
     isRunning,
     reactorPeriod,
+    mode,
+    offsitePowerAvailable,
     rpsTripInhibit,
   ]);
   useEffect(() => {
@@ -3050,6 +3067,10 @@ export default function ReactorSimulator() {
     simulationPaused: simulationPaused || !sessionRestored,
     isRunning,
     temperature,
+    pressure,
+    fuelLevel,
+    turbineSpeed,
+    gridSync,
     mainValve: valveValue,
     mainSteamInletOpen,
     bypassValve,
@@ -3059,6 +3080,9 @@ export default function ReactorSimulator() {
     bypassSteamFlow,
     aprm,
     thermalSteamKgS: thermalOutput.steamKgS,
+    feedwaterKgS:
+      (pump1Online && startupBusAvailable ? feedwaterFlow * 20 : 0) +
+      (pump2Online && busBAvailable ? feedwaterPumpBFlow * 20 : 0),
     pump1Online,
     pump2Online,
     isLocked,
@@ -3335,13 +3359,21 @@ export default function ReactorSimulator() {
       setEvent("INSTANT STARTUP INHIBITED — reset RPS nodes first.");
       return;
     }
-    setRods((previous) =>
-      previous.map((rod) => ({
+    // Instant startup is explicitly a post-IPR handoff. Seed the displayed
+    // rod power at that lineup before selecting RUN, otherwise the genuine
+    // Unit 2 APRM-downscale protection sees the delayed 0% indication for one
+    // clock pass and immediately trips the shortcut scenario.
+    const instantRods = rods.map((rod) => ({
         ...rod,
-        position: 80,
+        // Unit 2's calibrated 20% APRM startup plateau is approximately
+        // half-withdrawn rods, not the former 20% physical withdrawal.
+        position: 50,
         temperature: Math.max(rod.temperature, 45),
-      })),
-    );
+      }));
+    const instantRodAprm = getAprm(instantRods);
+    setRods(instantRods);
+    rodAprmRef.current = instantRodAprm;
+    setRodAprm(instantRodAprm);
     setMode("RUN");
     setIprCycle(3);
     setIrmRange(8);
@@ -3356,12 +3388,12 @@ export default function ReactorSimulator() {
   };
   const resetTrips = () => {
     if (
-      reactorLevel <= -5 ||
-      reactorLevel >= 6 ||
+      reactorLevel < -4 ||
       mccLevel < 15 ||
-      temperature > 900 ||
-      pressure > 9500 ||
-      reactorPeriod < 20
+      pressure >= 10000 ||
+      (reactorPeriod > 0 && reactorPeriod < 20) ||
+      (mode === "RUN" && aprm < 5) ||
+      (!offsitePowerAvailable && aprm >= 50)
     ) {
       setEvent("RPS RESET REJECTED — unsafe process condition remains.");
       return;

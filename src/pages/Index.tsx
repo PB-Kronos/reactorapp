@@ -235,7 +235,7 @@ const Index = () => {
       );
       response = "Opening Unit 2 repository.";
     } else if (lower === "discord") {
-      window.open("https://discord.gg/TqZQwr6pTq", "_blank", "noopener,noreferrer");
+      window.open("https://discord.gg/S8g8VRhFgM", "_blank", "noopener,noreferrer");
       response = "Opening the Unit 2 Discord server.";
     } else if (lower === "contact") {
       if (argument.toLowerCase() === "discord") {
@@ -363,7 +363,7 @@ const Index = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => window.open("https://discord.gg/TqZQwr6pTq", "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open("https://discord.gg/S8g8VRhFgM", "_blank", "noopener,noreferrer")}
                     className="h-7 border-violet-700 bg-violet-950/20 px-2 text-[10px] tracking-wide text-violet-200 hover:bg-violet-400 hover:text-black"
                   >
                     JOIN DISCORD

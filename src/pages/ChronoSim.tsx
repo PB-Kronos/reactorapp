@@ -1,35 +1,1257 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Atom, Droplets, Factory, Gauge, RotateCcw, ShieldCheck, Zap } from "lucide-react";
+import {
+  ArrowLeft,
+  Atom,
+  Droplets,
+  Factory,
+  Gauge,
+  RotateCcw,
+  ShieldCheck,
+  Zap,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MaintainedSwitch } from "@/components/HardwareControls";
 
-type Tab = "overview" | "reactor" | "turbines" | "mcc" | "treatment" | "electrical" | "authority" | "manual";
+type Tab =
+  | "overview"
+  | "reactor"
+  | "turbines"
+  | "mcc"
+  | "treatment"
+  | "electrical"
+  | "authority"
+  | "manual";
 const saveKey = "chrono-sim-v2-once-through";
-const clamp = (n:number,a:number,b:number) => Math.max(a,Math.min(b,n));
-function Meter({label,value,unit,alert=false}:{label:string;value:string;unit:string;alert?:boolean}) { return <div className="rounded border border-slate-700 bg-slate-950/75 p-3"><p className="text-[10px] font-bold tracking-[.14em] text-slate-500">{label}</p><p className={`mt-1 text-2xl font-black ${alert?"text-amber-300":"text-cyan-200"}`}>{value}<span className="ml-1 text-xs text-slate-400">{unit}</span></p></div>; }
-function Status({label,on,fault=false}:{label:string;on:boolean;fault?:boolean}) { return <div className="flex items-center gap-2 text-[10px] font-bold tracking-wide text-slate-300"><span className={`h-2.5 w-2.5 rounded-full ${on?(fault?"bg-amber-300":"bg-emerald-400 shadow-[0_0_8px_#34d399]"):"bg-slate-700"}`}/>{label}</div>; }
-function Slider({label,value,onChange,tone="accent-cyan-300"}:{label:string;value:number;onChange:(value:number)=>void;tone?:string}) { return <label className="block text-xs text-slate-300">{label}<input className={`mt-2 w-full ${tone}`} type="range" min="0" max="100" value={value} onChange={e=>onChange(Number(e.target.value))}/><span className="text-cyan-200">{value}% command</span></label>; }
+const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+function Meter({
+  label,
+  value,
+  unit,
+  alert = false,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  alert?: boolean;
+}) {
+  return (
+    <div className="rounded border border-slate-700 bg-slate-950/75 p-3">
+      <p className="text-[10px] font-bold tracking-[.14em] text-slate-500">
+        {label}
+      </p>
+      <p
+        className={`mt-1 text-2xl font-black ${alert ? "text-amber-300" : "text-cyan-200"}`}
+      >
+        {value}
+        <span className="ml-1 text-xs text-slate-400">{unit}</span>
+      </p>
+    </div>
+  );
+}
+function Status({
+  label,
+  on,
+  fault = false,
+}: {
+  label: string;
+  on: boolean;
+  fault?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-[10px] font-bold tracking-wide text-slate-300">
+      <span
+        className={`h-2.5 w-2.5 rounded-full ${on ? (fault ? "bg-amber-300" : "bg-emerald-400 shadow-[0_0_8px_#34d399]") : "bg-slate-700"}`}
+      />
+      {label}
+    </div>
+  );
+}
+function Slider({
+  label,
+  value,
+  onChange,
+  tone = "accent-cyan-300",
+  suffix = "% command",
+  min = 0,
+  max = 100,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  tone?: string;
+  suffix?: string;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <label className="block text-xs text-slate-300">
+      {label}
+      <input
+        className={`mt-2 w-full ${tone}`}
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className="text-cyan-200">{value}{suffix}</span>
+    </label>
+  );
+}
 
 export default function ChronoSim() {
-  const [tab,setTab]=useState<Tab>("overview"),[ready,setReady]=useState(false);
-  const [intake,setIntake]=useState(0),[feed,setFeed]=useState(0),[coolant,setCoolant]=useState(0),[rods,setRods]=useState(100),[reactorOnline,setReactorOnline]=useState(false),[steamValve,setSteamValve]=useState(0),[bypass,setBypass]=useState(0),[condenser,setCondenser]=useState(false),[mccInlet,setMccInlet]=useState(0),[mccOutlet,setMccOutlet]=useState(0),[miv,setMiv]=useState(100),[waterGate,setWaterGate]=useState(0),[cleaner,setCleaner]=useState(false);
-  const [offsite,setOffsite]=useState(true),[trBreaker,setTrBreaker]=useState(false),[steamGen,setSteamGen]=useState(false),[waterGen,setWaterGen]=useState(false),[busB,setBusB]=useState(false),[safety,setSafety]=useState(false),[dc,setDc]=useState(true);
-  const [upstream,setUpstream]=useState(72),[downstream,setDownstream]=useState(72),[vessel,setVessel]=useState(50),[hotwell,setHotwell]=useState(50),[mccTank,setMccTank]=useState(35),[floodTank,setFloodTank]=useState(0),[pipeIntegrity,setPipeIntegrity]=useState(100),[pressure,setPressure]=useState(100),[temp,setTemp]=useState(290),[downstreamTemp,setDownstreamTemp]=useState(14),[steamRpm,setSteamRpm]=useState(0),[waterRpm,setWaterRpm]=useState(0),[activity,setActivity]=useState(0),[event,setEvent]=useState("CHRONO-SIM ONCE-THROUGH STATION READY.");
-  useEffect(()=>{try{const saved=JSON.parse(localStorage.getItem(saveKey)||"{}");const setters:Record<string,(v:any)=>void>={intake:setIntake,feed:setFeed,coolant:setCoolant,rods:setRods,reactorOnline:setReactorOnline,steamValve:setSteamValve,bypass:setBypass,condenser:setCondenser,mccInlet:setMccInlet,mccOutlet:setMccOutlet,miv:setMiv,waterGate:setWaterGate,cleaner:setCleaner,offsite:setOffsite,trBreaker:setTrBreaker,steamGen:setSteamGen,waterGen:setWaterGen,busB:setBusB,safety:setSafety,dc:setDc,upstream:setUpstream,downstream:setDownstream,vessel:setVessel,hotwell:setHotwell,mccTank:setMccTank,floodTank:setFloodTank,pipeIntegrity:setPipeIntegrity,pressure:setPressure,temp:setTemp,downstreamTemp:setDownstreamTemp,steamRpm:setSteamRpm,waterRpm:setWaterRpm,activity:setActivity};Object.entries(saved).forEach(([k,v])=>setters[k]?.(v));}catch{}setReady(true);},[]);
-  useEffect(()=>{if(ready)localStorage.setItem(saveKey,JSON.stringify({intake,feed,coolant,rods,reactorOnline,steamValve,bypass,condenser,mccInlet,mccOutlet,miv,waterGate,cleaner,offsite,trBreaker,steamGen,waterGen,busB,safety,dc,upstream,downstream,vessel,hotwell,mccTank,floodTank,pipeIntegrity,pressure,temp,downstreamTemp,steamRpm,waterRpm,activity}));},[ready,intake,feed,coolant,rods,reactorOnline,steamValve,bypass,condenser,mccInlet,mccOutlet,miv,waterGate,cleaner,offsite,trBreaker,steamGen,waterGen,busB,safety,dc,upstream,downstream,vessel,hotwell,mccTank,floodTank,pipeIntegrity,pressure,temp,downstreamTemp,steamRpm,waterRpm,activity]);
-  const intakeFlow=intake*Math.max(.2,upstream/100)*.38, feedFlow=feed*.24, coolingRestriction=clamp(1-mccTank/125,0.12,1), vesselCoolingAvailability=clamp(vessel/20,0,1), coolantFlow=coolant*.28*coolingRestriction*vesselCoolingAvailability, power=reactorOnline?clamp((100-rods)*1.05,0,105):0, boilPoint=373+pressure*.42+Math.max(0,vessel-75)*2.2, evaporation=clamp((temp-boilPoint)/140,0,1)*clamp((100-vessel)/35,0.05,1), steamMade=clamp(power*.28*evaporation,0,30), steamFlow=Math.min(steamMade+pressure*.018,steamValve*.28), wetCarryover=clamp(Math.max(0,vessel-65)*.045+Math.max(0,pressure-350)*.006,0,8), steamEfficiency=clamp(1-wetCarryover*.065,0.4,1), steamDrive=steamFlow+wetCarryover*.45, bypassFlow=Math.min(Math.max(0,steamMade-steamFlow),bypass*.28), condensate=condenser&&mccTank<98?(steamFlow+bypassFlow+wetCarryover)*.92:0, tankIn=Math.min(condensate,mccInlet*.28), tankOut=Math.min(mccTank*.28,mccOutlet*.28), mivFlow=Math.min(tankOut,miv*.28), reliefFlow=Math.max(0,tankOut-mivFlow)+(miv<35&&mccTank>60?(35-miv)*.025:0), hydroFlow=Math.min(mivFlow,waterGate*.28), discharge=Math.max(0,hydroFlow+Math.max(0,floodTank-85)*.1), steamKw=steamGen&&steamRpm>2500?steamRpm/3000*steamDrive*5.4*steamEfficiency:0, hydroKw=waterGen&&waterRpm>850?waterRpm/1000*hydroFlow*2.7:0, generation=steamKw+hydroKw, busA=(offsite&&trBreaker)||generation>4, safetyBus=busA&&safety, dcBus=safetyBus&&dc, load=5+(condenser?6:0)+(cleaner?5:0)+(coolantFlow>0?7:0)+(busB?8:0), capacity=generation>4?Math.max(25,generation):offsite&&trBreaker?38:0, balance=downstream-upstream, unsafe=activity>8&&discharge>.5, thermalPermit=downstreamTemp<=25, levelPermit=upstream>=25&&Math.abs(balance)<=15, startupReady=dcBus, pipeBurst=pipeIntegrity<=0;
-  useEffect(()=>{const timer=setInterval(()=>{setVessel(x=>clamp(x+(feedFlow-steamMade-wetCarryover)*.1,0,100));setHotwell(x=>clamp(x+(condensate-feedFlow-tankIn)*.1,0,100));setMccTank(x=>clamp(x+(tankIn-tankOut)*.16,0,100));setFloodTank(x=>clamp(x+(reliefFlow-(miv>65?x*.04:0))*0.18,0,100));setPipeIntegrity(x=>clamp(x-((floodTank>92?1.1:0)+(miv<20&&tankOut>8?.45:0)),0,100));setPressure(x=>clamp(x+(steamMade-steamFlow-bypassFlow+(mccTank>95?5:0))*1.8,50,900));setTemp(x=>clamp(x+(power*1.8-coolantFlow*1.8-feedFlow*.55+(mccTank>90?6:0)+(vessel>85?power*.45:0))* .16,280,900));setDownstreamTemp(x=>clamp(x+((condenser?13+power*.15:14)-x)*.045,4,80));setSteamRpm(x=>clamp(x+((steamDrive*180*steamEfficiency)-x)*.04,0,3100));setWaterRpm(x=>clamp(x+((hydroFlow*100)-x)*.05,0,1200));setUpstream(x=>clamp(x-intakeFlow*.012,0,100));setDownstream(x=>clamp(x+(discharge+(pipeBurst?floodTank*.35:0))*.012,0,100));setActivity(x=>clamp(x+power*.003-(cleaner?tankIn*.025:0),0,100));if(temp>780){setRods(100);setReactorOnline(false);setEvent("REACTOR TRIP — temperature protection inserted rods.");}if(load>capacity&&busB){setBusB(false);setEvent("BUS B OVERLOAD — breaker opened.");}if(pipeBurst)setEvent("PIPE BURST — surge-tank overflow damaged the discharge line.");else if(unsafe)setEvent("RADIATION RELEASE WARNING — downstream discharge exceeds treatment limit.");else if(!thermalPermit)setEvent("WATER AUTHORITY NOTICE — downstream thermal limit exceeded.");},250);return()=>clearInterval(timer);},[feedFlow,steamMade,wetCarryover,condensate,hydroFlow,steamFlow,steamDrive,steamEfficiency,bypassFlow,power,coolantFlow,intakeFlow,discharge,cleaner,temp,load,capacity,busB,unsafe,thermalPermit,tankIn,tankOut,reliefFlow,mccTank,miv,floodTank,pipeBurst,vessel]);
-  const reset=()=>{localStorage.removeItem(saveKey);setIntake(0);setFeed(0);setCoolant(0);setRods(100);setReactorOnline(false);setSteamValve(0);setBypass(0);setCondenser(false);setMccInlet(0);setMccOutlet(0);setMiv(100);setWaterGate(0);setCleaner(false);setOffsite(true);setTrBreaker(false);setSteamGen(false);setWaterGen(false);setBusB(false);setSafety(false);setDc(true);setUpstream(72);setDownstream(72);setVessel(50);setHotwell(50);setMccTank(35);setFloodTank(0);setPipeIntegrity(100);setPressure(100);setTemp(290);setDownstreamTemp(14);setSteamRpm(0);setWaterRpm(0);setActivity(0);setEvent("CHRONO-SIM RESET — station returned to cold initial conditions.");}; const tabs:Tab[]=["overview","reactor","turbines","mcc","treatment","electrical","authority","manual"];
-  return <main className="min-h-screen bg-[#06100e] p-4 font-mono text-slate-100 md:p-7"><header className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 border-b border-emerald-400/30 pb-5"><div><p className="text-xs font-black tracking-[.28em] text-emerald-300">ARCHIVE / ORIGINAL SIMULATION</p><h1 className="mt-2 text-3xl font-black">CHRONO-SIM <span className="text-cyan-300">ONCE-THROUGH ENERGY STATION</span></h1><p className="mt-1 text-xs text-slate-400">Upstream water → reactor steam cycle → treatment → downstream hydro turbine.</p></div><div className="flex gap-2"><Button asChild variant="outline"><Link to="/archive"><ArrowLeft className="mr-2 h-4 w-4"/>ARCHIVE</Link></Button><Button variant="outline" onClick={reset}><RotateCcw className="mr-2 h-4 w-4"/>RESET</Button></div></header><nav className="mx-auto mt-5 flex max-w-7xl flex-wrap gap-2">{tabs.map(x=><button key={x} onClick={()=>setTab(x)} className={`rounded border px-3 py-2 text-xs font-black uppercase ${tab===x?"border-emerald-300 bg-emerald-300 text-slate-950":"border-slate-700 bg-slate-900 text-slate-300"}`}>{x}</button>)}</nav><p className="mx-auto mt-3 max-w-7xl border border-emerald-700/40 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100">{event}</p><section className="mx-auto mt-5 max-w-7xl">
-  {tab==="overview"&&<div className="grid gap-4 lg:grid-cols-3"><Card className="border-emerald-500/25 bg-slate-900/80 lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2 text-emerald-100"><Factory/> PROCESS OVERVIEW</CardTitle></CardHeader><CardContent><div className="grid gap-3 sm:grid-cols-3"><Meter label="UPSTREAM LEVEL" value={upstream.toFixed(1)} unit="%" alert={Math.abs(balance)>10}/><Meter label="DOWNSTREAM LEVEL" value={downstream.toFixed(1)} unit="%" alert={Math.abs(balance)>10}/><Meter label="INTAKE FLOW" value={intakeFlow.toFixed(1)} unit="kg/s"/><Meter label="REACTOR POWER" value={power.toFixed(1)} unit="%" alert={temp>700}/><Meter label="STEAM OUTPUT" value={steamKw.toFixed(1)} unit="kW"/><Meter label="WATER OUTPUT" value={hydroKw.toFixed(1)} unit="kW"/></div><div className="mt-5 rounded border border-emerald-700/40 bg-slate-950 p-4 text-center text-xs leading-7 text-cyan-200">UPSTREAM ── INTAKE ── [ REACTOR ] ── STEAM TURBINE ── CONDENSER / CLEANER ── WATER TURBINE ── DOWNSTREAM<br/><span className="text-slate-400">There is no return pipe: all intake becomes treated downstream discharge.</span></div></CardContent></Card><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="text-emerald-100">STATION WATCH</CardTitle></CardHeader><CardContent className="space-y-3"><Status label="BUS A ENERGIZED" on={busA}/><Status label="BUS B ENERGIZED" on={generation>10&&busB}/><Status label="DC CONTROLS AVAILABLE" on={dcBus}/><Status label="CHANNELS BALANCED" on={Math.abs(balance)<5} fault={Math.abs(balance)>=5}/><Status label="RELEASE WITHIN LIMIT" on={!unsafe} fault={unsafe}/><p className="border-t border-slate-700 pt-3 text-xs leading-5 text-slate-400">The key challenge is water inventory: feedwater, cooling and downstream discharge must be balanced without any recirculation loop.</p></CardContent></Card></div>}
-  {tab==="reactor"&&<div className="grid gap-4 lg:grid-cols-2"><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="flex items-center gap-2 text-emerald-100"><Atom/> ONCE-THROUGH REACTOR</CardTitle></CardHeader><CardContent className="space-y-5"><div className="grid grid-cols-2 gap-3"><Meter label="VESSEL LEVEL" value={vessel.toFixed(1)} unit="%" alert={vessel<20||vessel>80}/><Meter label="CORE TEMPERATURE" value={temp.toFixed(0)} unit="K" alert={temp>700}/><Meter label="STEAM PRESSURE" value={pressure.toFixed(0)} unit="kPa"/><Meter label="BOILING THRESHOLD" value={boilPoint.toFixed(0)} unit="K" alert={temp<boilPoint&&power>5}/><Meter label="COOLANT FLOW" value={coolantFlow.toFixed(1)} unit="kg/s"/><Meter label="EVAPORATION" value={(evaporation*100).toFixed(0)} unit="%"/></div><Button className="w-full bg-emerald-400 text-slate-950 hover:bg-emerald-300" disabled={!startupReady||reactorOnline} onClick={()=>{setReactorOnline(true);setEvent("REACTOR STARTED — withdraw rods gradually; establish feedwater before sustained power.");}}>{reactorOnline?"REACTOR ONLINE":"START REACTOR"}</Button><p className="text-xs text-slate-400">Startup permissive: DC control power only. Feedwater and coolant are operating requirements, not startup interlocks.</p><Slider label="CONTROL ROD INSERTION" value={rods} onChange={setRods} tone="accent-emerald-300"/><Slider label="UPSTREAM INTAKE GATE" value={intake} onChange={setIntake}/><Slider label="FEEDWATER DISTRIBUTION" value={feed} onChange={setFeed}/><Slider label="COOLANT DISTRIBUTION" value={coolant} onChange={setCoolant}/></CardContent></Card><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="text-emerald-100">ALLOCATION / BOILING</CardTitle></CardHeader><CardContent className="space-y-3"><Meter label="AVAILABLE INTAKE" value={intakeFlow.toFixed(1)} unit="kg/s"/><Meter label="FEEDWATER PATH" value={feedFlow.toFixed(1)} unit="kg/s"/><Meter label="COOLANT PATH" value={coolantFlow.toFixed(1)} unit="kg/s"/><p className="text-xs leading-5 text-slate-400">Feedwater sustains vessel level and cools the core. Too much raises vessel level and suppresses evaporation. High steam pressure also raises the boiling threshold; heat then accumulates, potentially causing a stalled steam cycle or thermal runaway.</p></CardContent></Card></div>}
-  {tab==="turbines"&&<div className="grid gap-4 lg:grid-cols-2"><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="flex items-center gap-2 text-emerald-100"><Gauge/> STEAM TURBINE 1</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-3"><Meter label="SPEED" value={steamRpm.toFixed(0)} unit="RPM"/><Meter label="STEAM FLOW" value={steamFlow.toFixed(1)} unit="kg/s"/><Meter label="WET CARRYOVER" value={wetCarryover.toFixed(1)} unit="kg/s" alert={wetCarryover>2}/><Meter label="EFFICIENCY" value={(steamEfficiency*100).toFixed(0)} unit="%" alert={steamEfficiency<.8}/><Meter label="PRESSURE / RPM" value={pressure>0?(steamRpm/pressure).toFixed(2):"0"} unit="RPM/kPa" alert={steamEfficiency<.8}/><Meter label="OUTPUT" value={steamKw.toFixed(1)} unit="kW"/></div><Slider label="MAIN STEAM VALVE" value={steamValve} onChange={setSteamValve} tone="accent-emerald-300"/><Slider label="STEAM BYPASS" value={bypass} onChange={setBypass} tone="accent-amber-300"/><MaintainedSwitch label="CONDENSER / STEAM-TO-WATER" on={condenser} onChange={setCondenser}/><MaintainedSwitch label="STEAM GENERATOR BREAKER" on={steamGen} onChange={setSteamGen} disabled={steamRpm<2500}/><p className="text-xs leading-5 text-slate-400">Turbine 1 tolerates limited liquid-water carryover, but wet flow wastes expansion energy. As carryover rises, efficiency falls and more pressure is required for the same RPM.</p></CardContent></Card><Card className="border-cyan-500/25 bg-slate-900/80"><CardHeader><CardTitle className="flex items-center gap-2 text-cyan-100"><Droplets/> WATER TURBINE 2</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-3"><Meter label="FLOW" value={hydroFlow.toFixed(1)} unit="kg/s"/><Meter label="SPEED" value={waterRpm.toFixed(0)} unit="RPM"/><Meter label="OUTPUT" value={hydroKw.toFixed(1)} unit="kW"/></div><Slider label="WATER TURBINE WICKET GATES" value={waterGate} onChange={setWaterGate}/><MaintainedSwitch label="WATER GENERATOR BREAKER" on={waterGen} onChange={setWaterGen} disabled={waterRpm<850}/><Meter label="CONDENSATE AVAILABLE" value={condensate.toFixed(1)} unit="kg/s"/></CardContent></Card></div>}
-  {tab==="mcc"&&<div className="grid gap-4 lg:grid-cols-2"><Card className="border-cyan-500/25 bg-slate-900/80"><CardHeader><CardTitle className="flex items-center gap-2 text-cyan-100"><Droplets/> MCC CONDENSATE / HYDRO TRANSFER</CardTitle></CardHeader><CardContent className="space-y-5"><div className="grid grid-cols-3 gap-3"><Meter label="MCC TANK" value={mccTank.toFixed(1)} unit="%" alert={mccTank>85}/><Meter label="SURGE TANK" value={floodTank.toFixed(1)} unit="%" alert={floodTank>75}/><Meter label="PIPE INTEGRITY" value={pipeIntegrity.toFixed(0)} unit="%" alert={pipeIntegrity<50}/></div><Slider label="CONDENSER → MCC INLET VALVE" value={mccInlet} onChange={setMccInlet}/><Slider label="MCC OUTLET VALVE" value={mccOutlet} onChange={setMccOutlet}/><Slider label="MIV TO WATER TURBINE" value={miv} onChange={setMiv} tone="accent-amber-300"/><p className="text-xs leading-5 text-slate-400">Condenser water enters the MCC tank through the inlet valve. The outlet sends it toward the main isolation valve (MIV), then Water Turbine 2. A partially closed MIV diverts or surges water into the surge tank.</p></CardContent></Card><Card className="border-cyan-500/25 bg-slate-900/80"><CardHeader><CardTitle className="text-cyan-100">MCC FLOW AND PROTECTION</CardTitle></CardHeader><CardContent className="space-y-3"><Meter label="CONDENSER TO TANK" value={tankIn.toFixed(1)} unit="kg/s"/><Meter label="TANK OUTLET" value={tankOut.toFixed(1)} unit="kg/s"/><Meter label="MIV FLOW" value={mivFlow.toFixed(1)} unit="kg/s"/><Meter label="SURGE FLOW" value={reliefFlow.toFixed(1)} unit="kg/s" alert={reliefFlow>1}/><Status label="CONDENSATION AVAILABLE" on={condenser&&mccTank<98}/><Status label="COLD-WATER THROUGHPUT HEALTHY" on={mccTank<85} fault={mccTank>=85}/><Status label="PIPEWORK INTACT" on={!pipeBurst} fault={pipeBurst}/><p className="text-xs leading-5 text-slate-400">If the MCC tank fills, condenser flow backs up. Cold-water throughput is restricted, reactor heat rises, turbines can stall, and a sustained surge-tank load can burst the line.</p></CardContent></Card></div>}
-  {tab==="treatment"&&<div className="grid gap-4 lg:grid-cols-2"><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="flex items-center gap-2 text-emerald-100"><ShieldCheck/> WATER TREATMENT</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-2 gap-3"><Meter label="PROCESS ACTIVITY" value={activity.toFixed(2)} unit="units" alert={activity>8}/><Meter label="RELEASE LIMIT" value="8.00" unit="units"/></div><MaintainedSwitch label="DEMINERALIZER / RADIATION CLEANER" on={cleaner} onChange={setCleaner} disabled={!dcBus}/><p className="text-xs leading-5 text-slate-400">Core exposure adds contamination. The DC-powered cleaner removes it from condensate before the water turbine and downstream discharge.</p></CardContent></Card><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="text-emerald-100">CHANNEL AND RELEASE</CardTitle></CardHeader><CardContent className="space-y-3"><Meter label="UPSTREAM − DOWNSTREAM" value={balance.toFixed(1)} unit="level points" alert={Math.abs(balance)>5}/><Meter label="DOWNSTREAM DISCHARGE" value={discharge.toFixed(1)} unit="kg/s"/><Status label="TREATMENT POWER AVAILABLE" on={dcBus}/><Status label="RELEASE PERMITTED" on={!unsafe} fault={unsafe}/><p className="text-xs leading-5 text-slate-400">Keep river levels close together. High activity plus discharge is an unsafe release; turn treatment on or reduce reactor output.</p></CardContent></Card></div>}
-  {tab==="electrical"&&<div className="grid gap-4 lg:grid-cols-3"><Card className="border-emerald-500/25 bg-slate-900/80 lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2 text-emerald-100"><Zap/> ELECTRICAL ROUTING</CardTitle></CardHeader><CardContent><div className="grid gap-4 sm:grid-cols-3"><div className="space-y-3"><MaintainedSwitch label="OFFSITE SUPPLY" on={offsite} onChange={setOffsite}/><MaintainedSwitch label="BUS A TR. BRK" on={trBreaker} onChange={setTrBreaker} disabled={!offsite}/><MaintainedSwitch label="BUS A → SAFETY" on={safety} onChange={setSafety} disabled={!busA}/></div><div className="space-y-3"><MaintainedSwitch label="STEAM GEN. BRK" on={steamGen} onChange={setSteamGen} disabled={steamRpm<2500}/><MaintainedSwitch label="WATER GEN. BRK" on={waterGen} onChange={setWaterGen} disabled={waterRpm<850}/><MaintainedSwitch label="BUS B BRK" on={busB} onChange={setBusB} disabled={generation<10}/></div><div className="space-y-3"><MaintainedSwitch label="SAFETY → DC" on={dc} onChange={setDc} disabled={!safetyBus}/><Status label="BUS A" on={busA}/><Status label="BUS B" on={generation>10&&busB}/><Status label="SAFETY BUS" on={safetyBus}/><Status label="DC BUS" on={dcBus}/></div></div></CardContent></Card><Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="text-emerald-100">POWER BALANCE</CardTitle></CardHeader><CardContent className="space-y-3"><Meter label="TOTAL GENERATION" value={generation.toFixed(1)} unit="kW"/><Meter label="STATION LOAD" value={load.toFixed(1)} unit="kW" alert={load>capacity}/><Meter label="CAPACITY" value={capacity.toFixed(1)} unit="kW"/><p className="text-xs leading-5 text-slate-400">Offsite establishes controls. Both turbines add capacity when their generators are online.</p></CardContent></Card></div>}
-  {tab==="authority"&&<div className="grid gap-4 lg:grid-cols-2"><Card className="border-amber-500/30 bg-slate-900/80"><CardHeader><CardTitle className="text-amber-200">RIVER AND WATER AUTHORITY</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm leading-6 text-slate-300">The authority independently monitors abstraction, discharge, water temperature and radiological quality. Its notices describe environmental conditions, not the plant fault causing them.</p><Status label="ABSTRACTION RESERVE ACCEPTABLE" on={upstream>=25} fault={upstream<25}/><Status label="UPSTREAM / DOWNSTREAM LEVELS ACCEPTABLE" on={levelPermit} fault={!levelPermit}/><Status label="DOWNSTREAM TEMPERATURE ≤ 25 °C" on={thermalPermit} fault={!thermalPermit}/><Status label="RADIOLOGICAL RELEASE ACCEPTABLE" on={!unsafe} fault={unsafe}/></CardContent></Card><Card className="border-amber-500/30 bg-slate-900/80"><CardHeader><CardTitle className="text-amber-200">PERMIT INSTRUMENTS</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2"><Meter label="DOWNSTREAM WATER" value={downstreamTemp.toFixed(1)} unit="°C" alert={!thermalPermit}/><Meter label="PROCESS ACTIVITY" value={activity.toFixed(2)} unit="units" alert={activity>8}/><Meter label="UPSTREAM RESERVE" value={upstream.toFixed(1)} unit="%" alert={upstream<25}/><Meter label="LEVEL DIFFERENCE" value={balance.toFixed(1)} unit="points" alert={!levelPermit}/><p className="sm:col-span-2 text-xs leading-5 text-slate-400">Heat in the discharge is primarily set by reactor thermal power and condenser performance. Feedwater reduces reactor heat, while the condenser limits the water temperature that reaches the downstream channel.</p></CardContent></Card></div>}
-  {tab==="manual"&&<Card className="border-emerald-500/25 bg-slate-900/80"><CardHeader><CardTitle className="text-emerald-100">OPERATING CONCEPT</CardTitle></CardHeader><CardContent className="max-w-4xl space-y-4 text-sm leading-6 text-slate-300"><p><strong className="text-emerald-200">1. Energize controls.</strong> Use offsite, Bus A, safety and DC before starting condenser or treatment.</p><p><strong className="text-emerald-200">2. Start the reactor.</strong> Establish intake, feedwater and coolant first, then use START REACTOR and withdraw rods carefully.</p><p><strong className="text-emerald-200">3. Use both stages.</strong> Steam drives Turbine 1. Condense and clean it, then let its outgoing momentum drive Turbine 2.</p><p><strong className="text-emerald-200">4. Respect the permit.</strong> Feedwater also cools the reactor. Keep downstream water below 25 °C, water quality within limit, and upstream/downstream levels close.</p></CardContent></Card>}
-  </section></main>;
+  const [tab, setTab] = useState<Tab>("overview"),
+    [ready, setReady] = useState(false);
+  const [intake, setIntake] = useState(0),
+    [feed, setFeed] = useState(0),
+    [coolant, setCoolant] = useState(0),
+    [rods, setRods] = useState(100),
+    [reactorOnline, setReactorOnline] = useState(false),
+    [autoOutput, setAutoOutput] = useState(false),
+    [reactorSetpoint, setReactorSetpoint] = useState(800),
+    [steamValve, setSteamValve] = useState(0),
+    [autoSteam, setAutoSteam] = useState(false),
+    [steamSetpoint, setSteamSetpoint] = useState(500),
+    [bypass, setBypass] = useState(0),
+    [condenser, setCondenser] = useState(false),
+    [mccInlet, setMccInlet] = useState(0),
+    [mccOutlet, setMccOutlet] = useState(0),
+    [miv, setMiv] = useState(100),
+    [waterGate, setWaterGate] = useState(0),
+    [cleaner, setCleaner] = useState(false);
+  const [offsite, setOffsite] = useState(true),
+    [trBreaker, setTrBreaker] = useState(false),
+    [steamGen, setSteamGen] = useState(false),
+    [waterGen, setWaterGen] = useState(false),
+    [busB, setBusB] = useState(false),
+    [safety, setSafety] = useState(false),
+    [dc, setDc] = useState(true);
+  const [upstream, setUpstream] = useState(72),
+    [downstream, setDownstream] = useState(72),
+    [vessel, setVessel] = useState(50),
+    [hotwell, setHotwell] = useState(50),
+    [mccTank, setMccTank] = useState(35),
+    [floodTank, setFloodTank] = useState(0),
+    [pipeIntegrity, setPipeIntegrity] = useState(100),
+    [pressure, setPressure] = useState(100),
+    [temp, setTemp] = useState(290),
+    [downstreamTemp, setDownstreamTemp] = useState(14),
+    [steamRpm, setSteamRpm] = useState(0),
+    [waterRpm, setWaterRpm] = useState(0),
+    [activity, setActivity] = useState(0),
+    [event, setEvent] = useState("CHRONO-SIM ONCE-THROUGH STATION READY.");
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(saveKey) || "{}");
+      const setters: Record<string, (v: any) => void> = {
+        intake: setIntake,
+        feed: setFeed,
+        coolant: setCoolant,
+        rods: setRods,
+        reactorOnline: setReactorOnline,
+        autoOutput: setAutoOutput,
+        reactorSetpoint: setReactorSetpoint,
+        steamValve: setSteamValve,
+        autoSteam: setAutoSteam,
+        steamSetpoint: setSteamSetpoint,
+        bypass: setBypass,
+        condenser: setCondenser,
+        mccInlet: setMccInlet,
+        mccOutlet: setMccOutlet,
+        miv: setMiv,
+        waterGate: setWaterGate,
+        cleaner: setCleaner,
+        offsite: setOffsite,
+        trBreaker: setTrBreaker,
+        steamGen: setSteamGen,
+        waterGen: setWaterGen,
+        busB: setBusB,
+        safety: setSafety,
+        dc: setDc,
+        upstream: setUpstream,
+        downstream: setDownstream,
+        vessel: setVessel,
+        hotwell: setHotwell,
+        mccTank: setMccTank,
+        floodTank: setFloodTank,
+        pipeIntegrity: setPipeIntegrity,
+        pressure: setPressure,
+        temp: setTemp,
+        downstreamTemp: setDownstreamTemp,
+        steamRpm: setSteamRpm,
+        waterRpm: setWaterRpm,
+        activity: setActivity,
+      };
+      Object.entries(saved).forEach(([k, v]) => setters[k]?.(v));
+    } catch {}
+    setReady(true);
+  }, []);
+  useEffect(() => {
+    if (ready)
+      localStorage.setItem(
+        saveKey,
+        JSON.stringify({
+          intake,
+          feed,
+          coolant,
+          rods,
+          reactorOnline,
+          autoOutput,
+          reactorSetpoint,
+          steamValve,
+          autoSteam,
+          steamSetpoint,
+          bypass,
+          condenser,
+          mccInlet,
+          mccOutlet,
+          miv,
+          waterGate,
+          cleaner,
+          offsite,
+          trBreaker,
+          steamGen,
+          waterGen,
+          busB,
+          safety,
+          dc,
+          upstream,
+          downstream,
+          vessel,
+          hotwell,
+          mccTank,
+          floodTank,
+          pipeIntegrity,
+          pressure,
+          temp,
+          downstreamTemp,
+          steamRpm,
+          waterRpm,
+          activity,
+        }),
+      );
+  }, [
+    ready,
+    intake,
+    feed,
+    coolant,
+    rods,
+    reactorOnline,
+    autoOutput,
+    reactorSetpoint,
+    steamValve,
+    autoSteam,
+    steamSetpoint,
+    bypass,
+    condenser,
+    mccInlet,
+    mccOutlet,
+    miv,
+    waterGate,
+    cleaner,
+    offsite,
+    trBreaker,
+    steamGen,
+    waterGen,
+    busB,
+    safety,
+    dc,
+    upstream,
+    downstream,
+    vessel,
+    hotwell,
+    mccTank,
+    floodTank,
+    pipeIntegrity,
+    pressure,
+    temp,
+    downstreamTemp,
+    steamRpm,
+    waterRpm,
+    activity,
+  ]);
+  const intakeFlow = intake * Math.max(0.2, upstream / 100) * 0.38,
+    feedDemand = feed * 0.24,
+    feedFlow = Math.min(feedDemand, hotwell * 0.28),
+    vesselCoolingAvailability = clamp(vessel / 20, 0, 1),
+    coolantFlow = coolant * 0.28 * vesselCoolingAvailability,
+    rodWithdrawal = clamp((100 - rods) / 100, 0, 1),
+    feedSupport = clamp(feedFlow / 18, 0, 1),
+    reactorStrength = rodWithdrawal * (0.25 + feedSupport * 0.75),
+    power = reactorOnline ? clamp(reactorStrength * 105, 0, 105) : 0,
+    boilPoint = 355 + pressure * 0.28 + Math.max(0, vessel - 75) * 2.2,
+    evaporation =
+      clamp((temp - boilPoint + 85) / 160, 0, 1) *
+      clamp((100 - vessel) / 35, 0.05, 1),
+    thermalReadiness = clamp((temp - 290) / 260, 0.45, 1),
+    reactorPressureTarget = reactorOnline
+      ? clamp(
+          120 +
+            reactorStrength * 1200 * thermalReadiness * vesselCoolingAvailability,
+          50,
+          1200,
+        )
+      : 50,
+    valvePressureDrop = clamp(steamValve * 0.0055 + bypass * 0.003, 0, 0.72),
+    steamPressureTarget = clamp(
+      reactorPressureTarget * (1 - valvePressureDrop),
+      50,
+      1200,
+    ),
+    coreTempTarget = reactorOnline
+      ? clamp(295 + reactorStrength * 650 - coolantFlow * 7, 280, 900)
+      : 290,
+    steamMade = reactorOnline
+      ? clamp(reactorStrength * 26 * thermalReadiness, 0, 32)
+      : 0,
+    surgeAcceptance = clamp((100 - floodTank) / 18, 0, 1),
+    condenserCapacity = condenser ? 30 * surgeAcceptance : 0,
+    pressureFlowFactor = clamp((pressure - 50) / 450, 0, 1),
+    steamFlow = Math.min(
+      steamValve * 0.28 * pressureFlowFactor,
+      condenserCapacity,
+    ),
+    bypassFlow = Math.min(
+      bypass * 0.28 * pressureFlowFactor,
+      Math.max(0, condenserCapacity - steamFlow),
+    ),
+    wetCarryover = clamp(
+      Math.max(0, vessel - 65) * 0.045 + Math.max(0, pressure - 350) * 0.006,
+      0,
+      8,
+    ),
+    wetFlow = Math.min(
+      wetCarryover,
+      Math.max(0, condenserCapacity - steamFlow - bypassFlow),
+    ),
+    steamEfficiency = clamp(1 - wetFlow * 0.065, 0.4, 1),
+    steamDrive = steamFlow * pressure * 0.56 * steamEfficiency,
+    condensate = (steamFlow + bypassFlow + wetFlow) * 0.92,
+    tankIn = condensate,
+    tankOut = 0,
+    mivFlow = 0,
+    reliefFlow = 0,
+    pipeBurst = false,
+    hydroFlow = Math.min(floodTank * 0.28, waterGate * 0.28),
+    discharge = hydroFlow,
+    steamKw =
+      steamGen && steamRpm > 2500
+        ? steamFlow * pressure * 0.025 * steamEfficiency
+        : 0,
+    hydroKw =
+      waterGen && waterRpm > 850 ? (waterRpm / 1000) * hydroFlow * 2.7 : 0,
+    generation = steamKw + hydroKw,
+    busA = (offsite && trBreaker) || generation > 4,
+    safetyBus = busA && safety,
+    dcBus = safetyBus && dc,
+    load =
+      5 +
+      (condenser ? 6 : 0) +
+      (cleaner ? 5 : 0) +
+      (coolantFlow > 0 ? 7 : 0) +
+      (busB ? 8 : 0),
+    capacity =
+      generation > 4 ? Math.max(25, generation) : offsite && trBreaker ? 38 : 0,
+    balance = downstream - upstream,
+    unsafe = activity > 8 && discharge > 0.5,
+    thermalPermit = downstreamTemp <= 25,
+    levelPermit = upstream >= 25 && Math.abs(balance) <= 15,
+    startupReady = dcBus;
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setVessel((x) =>
+        clamp(x + (feedFlow - steamFlow - bypassFlow - wetFlow) * 0.1, 0, 100),
+      );
+      setHotwell((x) => clamp(x + (intakeFlow - feedFlow) * 0.1, 0, 100));
+      setFloodTank((x) => clamp(x + (condensate - hydroFlow) * 0.16, 0, 100));
+      setPressure((x) =>
+        clamp(x + (steamPressureTarget - x) * 0.14, 50, 1200),
+      );
+      if (autoOutput && reactorOnline) {
+        setRods((x) =>
+          clamp(x + (reactorPressureTarget < reactorSetpoint ? -0.55 : 0.55), 0, 100),
+        );
+      }
+      if (autoSteam && condenser) {
+        setSteamValve((x) =>
+          clamp(x + (pressure > steamSetpoint ? 0.75 : -0.75), 0, 100),
+        );
+      }
+      setTemp((x) =>
+        clamp(x + (coreTempTarget - x) * 0.045, 280, 950),
+      );
+      setDownstreamTemp((x) =>
+        clamp(x + ((condenser ? 13 + power * 0.15 : 14) - x) * 0.045, 4, 80),
+      );
+      setSteamRpm((x) => clamp(x + (steamDrive - x) * 0.04, 0, 3100));
+      setWaterRpm((x) => clamp(x + (hydroFlow * 100 - x) * 0.05, 0, 1200));
+      setUpstream((x) => clamp(x - intakeFlow * 0.012, 0, 100));
+      setDownstream((x) => clamp(x + discharge * 0.012, 0, 100));
+      setActivity((x) =>
+        clamp(x + power * 0.003 - (cleaner ? condensate * 0.025 : 0), 0, 100),
+      );
+      if (temp > 870) {
+        setRods(100);
+        setReactorOnline(false);
+        setEvent("REACTOR TRIP — temperature protection inserted rods.");
+      }
+      if (load > capacity && busB) {
+        setBusB(false);
+        setEvent("BUS B OVERLOAD — breaker opened.");
+      } else if (unsafe)
+        setEvent(
+          "RADIATION RELEASE WARNING — downstream discharge exceeds treatment limit.",
+        );
+      else if (!thermalPermit)
+        setEvent("WATER AUTHORITY NOTICE — downstream thermal limit exceeded.");
+    }, 250);
+    return () => clearInterval(timer);
+  }, [
+    feedFlow,
+    steamMade,
+    wetFlow,
+    condensate,
+    hydroFlow,
+    steamFlow,
+    steamDrive,
+    bypassFlow,
+    power,
+    steamPressureTarget,
+    coreTempTarget,
+    coolantFlow,
+    intakeFlow,
+    discharge,
+    cleaner,
+    temp,
+    load,
+    capacity,
+    busB,
+    autoOutput,
+    autoSteam,
+    reactorOnline,
+    reactorPressureTarget,
+    reactorSetpoint,
+    pressure,
+    steamSetpoint,
+    condenser,
+    unsafe,
+    thermalPermit,
+    vessel,
+    floodTank,
+  ]);
+  const reset = () => {
+    localStorage.removeItem(saveKey);
+    setIntake(0);
+    setFeed(0);
+    setCoolant(0);
+    setRods(100);
+    setReactorOnline(false);
+    setAutoOutput(false);
+    setReactorSetpoint(800);
+    setSteamValve(0);
+    setAutoSteam(false);
+    setSteamSetpoint(500);
+    setBypass(0);
+    setCondenser(false);
+    setMccInlet(0);
+    setMccOutlet(0);
+    setMiv(100);
+    setWaterGate(0);
+    setCleaner(false);
+    setOffsite(true);
+    setTrBreaker(false);
+    setSteamGen(false);
+    setWaterGen(false);
+    setBusB(false);
+    setSafety(false);
+    setDc(true);
+    setUpstream(72);
+    setDownstream(72);
+    setVessel(50);
+    setHotwell(50);
+    setMccTank(35);
+    setFloodTank(0);
+    setPipeIntegrity(100);
+    setPressure(100);
+    setTemp(290);
+    setDownstreamTemp(14);
+    setSteamRpm(0);
+    setWaterRpm(0);
+    setActivity(0);
+    setEvent("CHRONO-SIM RESET — station returned to cold initial conditions.");
+  };
+  const tabs: Tab[] = [
+    "overview",
+    "reactor",
+    "turbines",
+    "treatment",
+    "electrical",
+    "authority",
+    "manual",
+  ];
+  return (
+    <main className="min-h-screen bg-[#06100e] p-4 font-mono text-slate-100 md:p-7">
+      <header className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 border-b border-emerald-400/30 pb-5">
+        <div>
+          <p className="text-xs font-black tracking-[.28em] text-emerald-300">
+            ARCHIVE / ORIGINAL SIMULATION
+          </p>
+          <h1 className="mt-2 text-3xl font-black">
+            CHRONO-SIM{" "}
+            <span className="text-cyan-300">ONCE-THROUGH ENERGY STATION</span>
+          </h1>
+          <p className="mt-1 text-xs text-slate-400">
+            Upstream water → reactor steam cycle → treatment → downstream hydro
+            turbine.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link to="/archive">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              ARCHIVE
+            </Link>
+          </Button>
+          <Button variant="outline" onClick={reset}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            RESET
+          </Button>
+        </div>
+      </header>
+      <nav className="mx-auto mt-5 flex max-w-7xl flex-wrap gap-2">
+        {tabs.map((x) => (
+          <button
+            key={x}
+            onClick={() => setTab(x)}
+            className={`rounded border px-3 py-2 text-xs font-black uppercase ${tab === x ? "border-emerald-300 bg-emerald-300 text-slate-950" : "border-slate-700 bg-slate-900 text-slate-300"}`}
+          >
+            {x}
+          </button>
+        ))}
+      </nav>
+      <p className="mx-auto mt-3 max-w-7xl border border-emerald-700/40 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100">
+        {event}
+      </p>
+      <section className="mx-auto mt-5 max-w-7xl">
+        {tab === "overview" && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="border-emerald-500/25 bg-slate-900/80 lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-100">
+                  <Factory /> PROCESS OVERVIEW
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Meter
+                    label="UPSTREAM LEVEL"
+                    value={upstream.toFixed(1)}
+                    unit="%"
+                    alert={Math.abs(balance) > 10}
+                  />
+                  <Meter
+                    label="DOWNSTREAM LEVEL"
+                    value={downstream.toFixed(1)}
+                    unit="%"
+                    alert={Math.abs(balance) > 10}
+                  />
+                  <Meter
+                    label="INTAKE FLOW"
+                    value={intakeFlow.toFixed(1)}
+                    unit="kg/s"
+                  />
+                  <Meter
+                    label="REACTOR POWER"
+                    value={power.toFixed(1)}
+                    unit="%"
+                    alert={temp > 700}
+                  />
+                  <Meter
+                    label="STEAM OUTPUT"
+                    value={steamKw.toFixed(1)}
+                    unit="kW"
+                  />
+                  <Meter
+                    label="WATER OUTPUT"
+                    value={hydroKw.toFixed(1)}
+                    unit="kW"
+                  />
+                </div>
+                <div className="mt-5 rounded border border-emerald-700/40 bg-slate-950 p-4 text-center text-xs leading-7 text-cyan-200">
+                  UPSTREAM ── INTAKE ── [ REACTOR ] ── STEAM TURBINE ──
+                  CONDENSER / CLEANER ── WATER TURBINE ── DOWNSTREAM
+                  <br />
+                  <span className="text-slate-400">
+                    There is no return pipe: all intake becomes treated
+                    downstream discharge.
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-emerald-100">
+                  STATION WATCH
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Status label="BUS A ENERGIZED" on={busA} />
+                <Status label="BUS B ENERGIZED" on={generation > 10 && busB} />
+                <Status label="DC CONTROLS AVAILABLE" on={dcBus} />
+                <Status
+                  label="CHANNELS BALANCED"
+                  on={Math.abs(balance) < 5}
+                  fault={Math.abs(balance) >= 5}
+                />
+                <Status
+                  label="RELEASE WITHIN LIMIT"
+                  on={!unsafe}
+                  fault={unsafe}
+                />
+                <p className="border-t border-slate-700 pt-3 text-xs leading-5 text-slate-400">
+                  The key challenge is water inventory: feedwater, cooling and
+                  downstream discharge must be balanced without any
+                  recirculation loop.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "reactor" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-100">
+                  <Atom /> ONCE-THROUGH REACTOR
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid grid-cols-2 gap-3">
+                  <Meter
+                    label="VESSEL LEVEL"
+                    value={vessel.toFixed(1)}
+                    unit="%"
+                    alert={vessel < 20 || vessel > 80}
+                  />
+                  <Meter
+                    label="CORE TEMPERATURE"
+                    value={temp.toFixed(0)}
+                    unit="K"
+                    alert={temp > 700}
+                  />
+                  <Meter
+                    label="STEAM PRESSURE"
+                    value={pressure.toFixed(0)}
+                    unit="kPa"
+                  />
+                  <Meter
+                    label="BOILING THRESHOLD"
+                    value={boilPoint.toFixed(0)}
+                    unit="K"
+                    alert={temp < boilPoint && power > 5}
+                  />
+                  <Meter
+                    label="COOLANT FLOW"
+                    value={coolantFlow.toFixed(1)}
+                    unit="kg/s"
+                  />
+                  <Meter
+                    label="EVAPORATION"
+                    value={(evaporation * 100).toFixed(0)}
+                    unit="%"
+                  />
+                </div>
+                <Button
+                  className="w-full bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+                  disabled={!startupReady || reactorOnline}
+                  onClick={() => {
+                    setReactorOnline(true);
+                    setEvent(
+                      "REACTOR STARTED — withdraw rods gradually; establish feedwater before sustained power.",
+                    );
+                  }}
+                >
+                  {reactorOnline ? "REACTOR ONLINE" : "START REACTOR"}
+                </Button>
+                <p className="text-xs text-slate-400">
+                  Startup permissive: DC control power only. Feedwater and
+                  coolant are operating requirements, not startup interlocks.
+                </p>
+                <Slider
+                  label="CONTROL ROD INSERTION"
+                  value={rods}
+                  onChange={setRods}
+                  tone="accent-emerald-300"
+                />
+                <MaintainedSwitch
+                  label="AUTO REACTOR OUTPUT"
+                  on={autoOutput}
+                  onChange={setAutoOutput}
+                  disabled={!reactorOnline}
+                />
+                <Slider
+                  label="REACTOR PRESSURE TARGET"
+                  value={reactorSetpoint}
+                  onChange={setReactorSetpoint}
+                  min={100}
+                  max={1200}
+                  suffix=" kPa target"
+                />
+                <Slider
+                  label="UPSTREAM INTAKE GATE"
+                  value={intake}
+                  onChange={setIntake}
+                />
+                <Slider
+                  label="FEEDWATER DISTRIBUTION"
+                  value={feed}
+                  onChange={setFeed}
+                />
+                <Slider
+                  label="COOLANT DISTRIBUTION"
+                  value={coolant}
+                  onChange={setCoolant}
+                />
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-emerald-100">
+                  ALLOCATION / BOILING
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Meter
+                  label="AVAILABLE INTAKE"
+                  value={intakeFlow.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Meter
+                  label="FEEDWATER PATH"
+                  value={feedFlow.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Meter
+                  label="COOLANT PATH"
+                  value={coolantFlow.toFixed(1)}
+                  unit="kg/s"
+                />
+                <p className="text-xs leading-5 text-slate-400">
+                  Feedwater sustains vessel level and cools the core. Too much
+                  raises vessel level and suppresses evaporation. High steam
+                  pressure also raises the boiling threshold; heat then
+                  accumulates, potentially causing a stalled steam cycle or
+                  thermal runaway.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "turbines" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-100">
+                  <Gauge /> STEAM TURBINE 1
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <Meter label="SPEED" value={steamRpm.toFixed(0)} unit="RPM" />
+                  <Meter
+                    label="STEAM FLOW"
+                    value={steamFlow.toFixed(1)}
+                    unit="kg/s"
+                  />
+                  <Meter
+                    label="WET CARRYOVER"
+                    value={wetCarryover.toFixed(1)}
+                    unit="kg/s"
+                    alert={wetCarryover > 2}
+                  />
+                  <Meter
+                    label="EFFICIENCY"
+                    value={(steamEfficiency * 100).toFixed(0)}
+                    unit="%"
+                    alert={steamEfficiency < 0.8}
+                  />
+                  <Meter
+                    label="PRESSURE / RPM"
+                    value={
+                      pressure > 0 ? (steamRpm / pressure).toFixed(2) : "0"
+                    }
+                    unit="RPM/kPa"
+                    alert={steamEfficiency < 0.8}
+                  />
+                  <Meter label="OUTPUT" value={steamKw.toFixed(1)} unit="kW" />
+                </div>
+                <Slider
+                  label="MAIN STEAM VALVE"
+                  value={steamValve}
+                  onChange={setSteamValve}
+                  tone="accent-emerald-300"
+                />
+                <MaintainedSwitch
+                  label="AUTO MAIN STEAM"
+                  on={autoSteam}
+                  onChange={setAutoSteam}
+                  disabled={!condenser}
+                />
+                <Slider
+                  label="TURBINE PRESSURE TARGET"
+                  value={steamSetpoint}
+                  onChange={setSteamSetpoint}
+                  min={100}
+                  max={1000}
+                  suffix=" kPa target"
+                />
+                <Slider
+                  label="STEAM BYPASS"
+                  value={bypass}
+                  onChange={setBypass}
+                  tone="accent-amber-300"
+                />
+                <MaintainedSwitch
+                  label="CONDENSER / STEAM-TO-WATER"
+                  on={condenser}
+                  onChange={setCondenser}
+                />
+                <MaintainedSwitch
+                  label="STEAM GENERATOR BREAKER"
+                  on={steamGen}
+                  onChange={setSteamGen}
+                  disabled={steamRpm < 2500}
+                />
+                <p className="text-xs leading-5 text-slate-400">
+                  Turbine 1 tolerates limited liquid-water carryover, but wet
+                  flow wastes expansion energy. As carryover rises, efficiency
+                  falls and more pressure is required for the same RPM.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-cyan-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-cyan-100">
+                  <Droplets /> WATER TURBINE 2
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <Meter
+                    label="FLOW"
+                    value={hydroFlow.toFixed(1)}
+                    unit="kg/s"
+                  />
+                  <Meter label="SPEED" value={waterRpm.toFixed(0)} unit="RPM" />
+                  <Meter label="OUTPUT" value={hydroKw.toFixed(1)} unit="kW" />
+                </div>
+                <Slider
+                  label="WATER TURBINE WICKET GATES"
+                  value={waterGate}
+                  onChange={setWaterGate}
+                />
+                <MaintainedSwitch
+                  label="WATER GENERATOR BREAKER"
+                  on={waterGen}
+                  onChange={setWaterGen}
+                  disabled={waterRpm < 850}
+                />
+                <Meter
+                  label="CONDENSATE AVAILABLE"
+                  value={condensate.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Meter
+                  label="SURGE TANK"
+                  value={floodTank.toFixed(1)}
+                  unit="%"
+                  alert={floodTank > 85}
+                />
+                <p className="text-xs leading-5 text-slate-400">
+                  Condensate collects in the surge tank before Turbine 2. The
+                  wicket gates are the only controlled water outflow; closing
+                  them lets the visible surge inventory rise.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "mcc" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-cyan-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-cyan-100">
+                  <Droplets /> MCC CONDENSATE / HYDRO TRANSFER
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid grid-cols-3 gap-3">
+                  <Meter
+                    label="MCC TANK"
+                    value={mccTank.toFixed(1)}
+                    unit="%"
+                    alert={mccTank > 85}
+                  />
+                  <Meter
+                    label="SURGE TANK"
+                    value={floodTank.toFixed(1)}
+                    unit="%"
+                    alert={floodTank > 75}
+                  />
+                  <Meter
+                    label="PIPE INTEGRITY"
+                    value={pipeIntegrity.toFixed(0)}
+                    unit="%"
+                    alert={pipeIntegrity < 50}
+                  />
+                </div>
+                <Slider
+                  label="CONDENSER → MCC INLET VALVE"
+                  value={mccInlet}
+                  onChange={setMccInlet}
+                />
+                <Slider
+                  label="MCC OUTLET VALVE"
+                  value={mccOutlet}
+                  onChange={setMccOutlet}
+                />
+                <Slider
+                  label="MIV TO WATER TURBINE"
+                  value={miv}
+                  onChange={setMiv}
+                  tone="accent-amber-300"
+                />
+                <p className="text-xs leading-5 text-slate-400">
+                  Condenser water enters the MCC tank through the inlet valve.
+                  The outlet sends it toward the main isolation valve (MIV),
+                  then Water Turbine 2. A partially closed MIV diverts or surges
+                  water into the surge tank.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-cyan-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-cyan-100">
+                  MCC FLOW AND PROTECTION
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Meter
+                  label="CONDENSER TO TANK"
+                  value={tankIn.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Meter
+                  label="TANK OUTLET"
+                  value={tankOut.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Meter
+                  label="MIV FLOW"
+                  value={mivFlow.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Meter
+                  label="SURGE FLOW"
+                  value={reliefFlow.toFixed(1)}
+                  unit="kg/s"
+                  alert={reliefFlow > 1}
+                />
+                <Status
+                  label="CONDENSATION AVAILABLE"
+                  on={condenser && mccTank < 98}
+                />
+                <Status
+                  label="COLD-WATER THROUGHPUT HEALTHY"
+                  on={mccTank < 85}
+                  fault={mccTank >= 85}
+                />
+                <Status
+                  label="PIPEWORK INTACT"
+                  on={!pipeBurst}
+                  fault={pipeBurst}
+                />
+                <p className="text-xs leading-5 text-slate-400">
+                  If the MCC tank fills, condenser flow backs up. Cold-water
+                  throughput is restricted, reactor heat rises, turbines can
+                  stall, and a sustained surge-tank load can burst the line.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "treatment" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-100">
+                  <ShieldCheck /> WATER TREATMENT
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <Meter
+                    label="PROCESS ACTIVITY"
+                    value={activity.toFixed(2)}
+                    unit="units"
+                    alert={activity > 8}
+                  />
+                  <Meter label="RELEASE LIMIT" value="8.00" unit="units" />
+                </div>
+                <MaintainedSwitch
+                  label="DEMINERALIZER / RADIATION CLEANER"
+                  on={cleaner}
+                  onChange={setCleaner}
+                  disabled={!dcBus}
+                />
+                <p className="text-xs leading-5 text-slate-400">
+                  Core exposure adds contamination. The DC-powered cleaner
+                  removes it from condensate before the water turbine and
+                  downstream discharge.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-emerald-100">
+                  CHANNEL AND RELEASE
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Meter
+                  label="UPSTREAM − DOWNSTREAM"
+                  value={balance.toFixed(1)}
+                  unit="level points"
+                  alert={Math.abs(balance) > 5}
+                />
+                <Meter
+                  label="DOWNSTREAM DISCHARGE"
+                  value={discharge.toFixed(1)}
+                  unit="kg/s"
+                />
+                <Status label="TREATMENT POWER AVAILABLE" on={dcBus} />
+                <Status label="RELEASE PERMITTED" on={!unsafe} fault={unsafe} />
+                <p className="text-xs leading-5 text-slate-400">
+                  Keep river levels close together. High activity plus discharge
+                  is an unsafe release; turn treatment on or reduce reactor
+                  output.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "electrical" && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="border-emerald-500/25 bg-slate-900/80 lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-100">
+                  <Zap /> ELECTRICAL ROUTING
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-3">
+                    <MaintainedSwitch
+                      label="OFFSITE SUPPLY"
+                      on={offsite}
+                      onChange={setOffsite}
+                    />
+                    <MaintainedSwitch
+                      label="BUS A TR. BRK"
+                      on={trBreaker}
+                      onChange={setTrBreaker}
+                      disabled={!offsite}
+                    />
+                    <MaintainedSwitch
+                      label="BUS A → SAFETY"
+                      on={safety}
+                      onChange={setSafety}
+                      disabled={!busA}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <MaintainedSwitch
+                      label="STEAM GEN. BRK"
+                      on={steamGen}
+                      onChange={setSteamGen}
+                      disabled={steamRpm < 2500}
+                    />
+                    <MaintainedSwitch
+                      label="WATER GEN. BRK"
+                      on={waterGen}
+                      onChange={setWaterGen}
+                      disabled={waterRpm < 850}
+                    />
+                    <MaintainedSwitch
+                      label="BUS B BRK"
+                      on={busB}
+                      onChange={setBusB}
+                      disabled={generation < 10}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <MaintainedSwitch
+                      label="SAFETY → DC"
+                      on={dc}
+                      onChange={setDc}
+                      disabled={!safetyBus}
+                    />
+                    <Status label="BUS A" on={busA} />
+                    <Status label="BUS B" on={generation > 10 && busB} />
+                    <Status label="SAFETY BUS" on={safetyBus} />
+                    <Status label="DC BUS" on={dcBus} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-500/25 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-emerald-100">
+                  POWER BALANCE
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Meter
+                  label="TOTAL GENERATION"
+                  value={generation.toFixed(1)}
+                  unit="kW"
+                />
+                <Meter
+                  label="STATION LOAD"
+                  value={load.toFixed(1)}
+                  unit="kW"
+                  alert={load > capacity}
+                />
+                <Meter label="CAPACITY" value={capacity.toFixed(1)} unit="kW" />
+                <p className="text-xs leading-5 text-slate-400">
+                  Offsite establishes controls. Both turbines add capacity when
+                  their generators are online.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "authority" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-amber-500/30 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-amber-200">
+                  RIVER AND WATER AUTHORITY
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm leading-6 text-slate-300">
+                  The authority independently monitors abstraction, discharge,
+                  water temperature and radiological quality. Its notices
+                  describe environmental conditions, not the plant fault causing
+                  them.
+                </p>
+                <Status
+                  label="ABSTRACTION RESERVE ACCEPTABLE"
+                  on={upstream >= 25}
+                  fault={upstream < 25}
+                />
+                <Status
+                  label="UPSTREAM / DOWNSTREAM LEVELS ACCEPTABLE"
+                  on={levelPermit}
+                  fault={!levelPermit}
+                />
+                <Status
+                  label="DOWNSTREAM TEMPERATURE ≤ 25 °C"
+                  on={thermalPermit}
+                  fault={!thermalPermit}
+                />
+                <Status
+                  label="RADIOLOGICAL RELEASE ACCEPTABLE"
+                  on={!unsafe}
+                  fault={unsafe}
+                />
+              </CardContent>
+            </Card>
+            <Card className="border-amber-500/30 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="text-amber-200">
+                  PERMIT INSTRUMENTS
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                <Meter
+                  label="DOWNSTREAM WATER"
+                  value={downstreamTemp.toFixed(1)}
+                  unit="°C"
+                  alert={!thermalPermit}
+                />
+                <Meter
+                  label="PROCESS ACTIVITY"
+                  value={activity.toFixed(2)}
+                  unit="units"
+                  alert={activity > 8}
+                />
+                <Meter
+                  label="UPSTREAM RESERVE"
+                  value={upstream.toFixed(1)}
+                  unit="%"
+                  alert={upstream < 25}
+                />
+                <Meter
+                  label="LEVEL DIFFERENCE"
+                  value={balance.toFixed(1)}
+                  unit="points"
+                  alert={!levelPermit}
+                />
+                <p className="sm:col-span-2 text-xs leading-5 text-slate-400">
+                  Heat in the discharge is primarily set by reactor thermal
+                  power and condenser performance. Feedwater reduces reactor
+                  heat, while the condenser limits the water temperature that
+                  reaches the downstream channel.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {tab === "manual" && (
+          <Card className="border-emerald-500/25 bg-slate-900/80">
+            <CardHeader>
+              <CardTitle className="text-emerald-100">
+                OPERATING CONCEPT
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="max-w-4xl space-y-4 text-sm leading-6 text-slate-300">
+              <p>
+                <strong className="text-emerald-200">
+                  1. Energize controls.
+                </strong>{" "}
+                Use offsite, Bus A, safety and DC before starting condenser or
+                treatment.
+              </p>
+              <p>
+                <strong className="text-emerald-200">
+                  2. Start the reactor.
+                </strong>{" "}
+                Establish intake, feedwater and coolant first, then use START
+                REACTOR and withdraw rods carefully.
+              </p>
+              <p>
+                <strong className="text-emerald-200">
+                  3. Use both stages.
+                </strong>{" "}
+                Steam drives Turbine 1. Condense and clean it, then let its
+                outgoing momentum drive Turbine 2.
+              </p>
+              <p>
+                <strong className="text-emerald-200">
+                  4. Respect the permit.
+                </strong>{" "}
+                Feedwater also cools the reactor. Keep downstream water below 25
+                °C, water quality within limit, and upstream/downstream levels
+                close.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </section>
+    </main>
+  );
 }
