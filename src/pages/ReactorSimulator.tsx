@@ -966,7 +966,7 @@ export default function ReactorSimulator() {
     {
       id: "cond-vac-low",
       label: "COND PRESS HIGH",
-      active: condenserVacuum > 0.07 && condenserVacuum <= 0.25,
+      active: condenserVacuum > 0.07 && condenserVacuum <= 0.125,
       priority: "amber",
       tone: "low",
       pan: "left",
@@ -986,7 +986,7 @@ export default function ReactorSimulator() {
     {
       id: "no-cond-vac",
       label: "NO COND VAC",
-      active: isRunning && condenserVacuum > 0.25,
+      active: isRunning && condenserVacuum > 0.125,
       priority: "red",
       tone: "warble",
       pan: "right",
@@ -1015,7 +1015,7 @@ export default function ReactorSimulator() {
         isRunning &&
         condenserCirculationPumpOn &&
         sjaeOn &&
-        condenserVacuum > 0.25,
+        condenserVacuum > 0.125,
       priority: "red",
       tone: "pulse",
       pan: "left",
@@ -1489,7 +1489,7 @@ export default function ReactorSimulator() {
     {
       id: "turbine-vac",
       label: "TURBINE / NO COND VAC",
-      active: isRunning && valveValue > 15 && condenserVacuum > 0.25,
+      active: isRunning && valveValue > 15 && condenserVacuum > 0.125,
       priority: "red",
       tone: "warble",
       pan: "right",
@@ -3028,7 +3028,7 @@ export default function ReactorSimulator() {
       !rpsTripInhibit &&
       isRunning &&
       valveValue > 15 &&
-      condenserVacuum > 0.25
+      condenserVacuum > 0.125
     ) {
       setRpsTrips((previous) => ({ ...previous, "TURBINE VACUUM": true }));
       if (rolldownProtection) {
@@ -3670,10 +3670,16 @@ export default function ReactorSimulator() {
         // 7,100 kPa instead of relying on a one-frame pressure reading.
         const presetMainValve = scenario === "reactor-ready" ? 0 : gridLoad ? 60 : 60;
         const presetBypassValve = scenario === "reactor-ready" ? 100 : gridLoad ? 22 : 40;
-        const presetProcessFlow = gridLoad ? 72.3 : 20.9;
-        // At the preset steam rates, this puts the condenser model close to
-        // its 52–55 mbar design band without needing an auto-controller.
-        const presetCondenserValve = gridLoad ? 7.2 : 30;
+        // Match condensate/feedwater transport to the admitted steam source.
+        // The earlier 72.3% preset drained the hotwell from an empty starting
+        // inventory.  At the grid-load steam rate, 48.8% on this panel is
+        // roughly 976 kg/s and therefore keeps the water paths balanced.
+        const presetProcessFlow = gridLoad ? 48.8 : 20.9;
+        // The condenser valve is deliberately non-linear.  7.2% only holds
+        // about 228 mbar at the grid-load steam rate, which throws away most
+        // turbine efficiency.  13.5% establishes the intended 52–55 mbar
+        // operating band before an operator enables any auto controller.
+        const presetCondenserValve = gridLoad ? 13.5 : 30;
         setRpsTrips((previous) => Object.fromEntries(Object.keys(previous).map((key) => [key, false])));
         setIsRunning(true); setScramPressed(false); setMode("RUN"); setIprCycle(8); setIrmRange(8);
         setRods((previous) => previous.map((rod) => ({ ...rod, position: presetRodPosition, temperature: 25 + presetAprm * 3.2 })));
