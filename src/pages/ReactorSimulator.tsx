@@ -3057,6 +3057,7 @@ export default function ReactorSimulator() {
     reliefValvesOpen: srvOpen.filter(Boolean).length,
     turbineSteamFlow,
     bypassSteamFlow,
+    steamDemandKgS: requestedSteamFlow,
     aprm,
     thermalSteamKgS: thermalOutput.steamKgS,
     pump1Online,
@@ -3668,8 +3669,11 @@ export default function ReactorSimulator() {
         // These valve combinations are calculated from the same pressure
         // model used by the physics clock: they balance steam production near
         // 7,100 kPa instead of relying on a one-frame pressure reading.
-        const presetMainValve = scenario === "reactor-ready" ? 0 : gridLoad ? 60 : 60;
-        const presetBypassValve = scenario === "reactor-ready" ? 100 : gridLoad ? 22 : 40;
+        // 55.5% main admission exactly matches the grid-load steam source at
+        // nominal pressure.  It leaves usable valve authority either side of
+        // the preset instead of beginning on the source-limited plateau.
+        const presetMainValve = scenario === "reactor-ready" ? 0 : gridLoad ? 55.5 : 60;
+        const presetBypassValve = scenario === "reactor-ready" ? 100 : gridLoad ? 0 : 40;
         // Match condensate/feedwater transport to the admitted steam source.
         // The earlier 72.3% preset drained the hotwell from an empty starting
         // inventory.  At the grid-load steam rate, 48.8% on this panel is

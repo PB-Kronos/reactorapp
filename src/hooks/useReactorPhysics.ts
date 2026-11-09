@@ -11,6 +11,8 @@ interface UseReactorPhysicsProps {
   reliefValvesOpen?: number;
   turbineSteamFlow: number;
   bypassSteamFlow: number;
+  // Requested valve flow before vessel inventory limits delivered flow.
+  steamDemandKgS: number;
   aprm: number;
   thermalSteamKgS: number;
   pump1Online: boolean;
@@ -81,7 +83,16 @@ export const useReactorPhysics = (props: UseReactorPhysicsProps) => {
         // shutdown still rests at atmospheric pressure.
         const headerInventory = clamp(state.thermalSteamKgS / 200, 0, 1) * 7100;
         const steamProduction = (headerInventory + state.thermalSteamKgS * 17.5) * (state.steamProductionMultiplier ?? 1);
-        const steamRemoval = ((state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 + openReliefValves * 8000) * (state.steamRemovalMultiplier ?? 1);
+        // Delivered flow cannot exceed live reactor production, but demand
+        // above that source still expands steam from vessel inventory.  Keep a
+        // modest pressure-only draw for that excess so valve opening remains
+        // effective after the turbine is source-limited.
+        const admissionDraw = Math.max(0, state.steamDemandKgS - state.thermalSteamKgS);
+        const steamRemoval = (
+          (state.turbineSteamFlow + state.bypassSteamFlow) * 17.5 +
+          admissionDraw * 17.5 * 0.25 +
+          openReliefValves * 8000
+        ) * (state.steamRemovalMultiplier ?? 1);
         const target = clamp(101 + steamProduction - steamRemoval, 101, 12000);
         return clamp(previous + (target - previous) * 0.045, 101, 12000);
       });
